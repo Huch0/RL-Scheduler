@@ -1,5 +1,5 @@
 {
-    "resource": [
+    "resources": [
       {
         "name" : "resource 1",
         "type" : "A, B, C, D"

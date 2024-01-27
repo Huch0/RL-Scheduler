@@ -10,29 +10,30 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 
 class Resource():
-    def __init__(self):
-        self.task_schedule = [] # (order name, start_timing, finish_timing) -> (tasks)
-        self.name = ""
-        self.abilty = [] #task 1 ~ all
+    def __init__(self, resouces_dictionary):
+        self.task_schedule = [] # (tasks)
+        self.name = resouces_dictionary['name'] 
+        self.abilty = resouces_dictionary['name'] # "A, B, C, ..."
         self.reward = 0
 
 class Order():
-    def __init__(self):
-        self.name = ""
-        self.color = ""
-        self.earliest_start = 0
-        self.task_queue = [] # (tasks)
+    def __init__(self, order_dictionary):
+        self.name = order_dictionary['name']
+        self.color = order_dictionary['color']
+        self.task_queue = [Task(task_dictionary) for task_dictionary in order_dictionary['tasks']].sort(lambda x : x['step'])
         self.reward = 0
 
 class Task():
-    def __init__(self):
-        self.order = ""
-        self.task_type = ""
-        self.step = 0
-        self.duration = 0
-        self.predecessor = 0
-        self.start = 0
-        self.finish = 0
+    def __init__(self, task_dictionary):
+        self.sequence = task_dictionary['sequence']
+        self.step = task_dictionary['step']
+        self.type = task_dictionary['type']
+        self.predecessor = task_dictionary['predecessor']
+        self.earliest_start = task_dictionary['earliest_start']
+        self.duration = task_dictionary['duration']
+        self.start = task_dictionary['start']
+        self.finish = task_dictionary['finish']
+        
 
 class SchedulingEnv(gym.Env):
     """
@@ -43,30 +44,34 @@ class SchedulingEnv(gym.Env):
     # Because of google colab, we cannot implement the GUI ('human' render mode)
     metadata = {"render.modes": ["seaborn"]}
     #resources_json, orders_json,
-    def __init__(self, tasks, render_mode="seaborn"):
+    def __init__(self, resources, orders, render_mode="seaborn"):
         super(SchedulingEnv, self).__init__()
 
         # Find the maximum 'resource' and 'predecessor' values in the tasks list
-        self.resource_list = []
-        max_resource = max(tasks, key=lambda task: task['resource'])[
-            'resource']
-        max_predecessor = max(
-            tasks, key=lambda task: task['predecessor'] if task['predecessor'] is not None else 0)['predecessor']
+        self.resources = [Resource(resource_info) for resource_info in resources]
+        self.orders = [Order(order_info) for order_info in orders]
 
-        self.original_tasks = tasks
-        self.num_tasks = len(tasks)
+        # 각 오더의 번호와 매칭되는 버퍼, 추후 크기를 키울 예정
+        self.schedule_buffer = [False for _ in range(len(self.orders))]
+        len_resource = len(self.resources)
+        len_orders = len(self.orders)
 
-        self.action_space = spaces.MultiDiscrete(len(self.resource_list))
+        #추후 수정 
+        max_predecessor = 10 
+        self.original_tasks = [order.task_queue for order in self.orders]
+        self.num_tasks = sum([len(order.task_queue) for order in self.orders])
+
+        self.action_space = spaces.MultiDiscrete(len_resource, len_orders)
         self.observation_space = spaces.Dict({
             'sequence': spaces.Box(low=-1, high=self.num_tasks, shape=(self.num_tasks,), dtype=np.int32),
-            'resource': spaces.Box(low=0, high=max_resource, shape=(self.num_tasks,), dtype=np.int32),
+            'resource': spaces.Box(low=0, high=len_resource, shape=(self.num_tasks,), dtype=np.int32),
             'predecessor': spaces.Box(low=-1, high=max_predecessor, shape=(self.num_tasks,), dtype=np.int32),
             'earliest_start': spaces.Box(low=-1, high=5000, shape=(self.num_tasks,), dtype=np.int32),
             'duration': spaces.Box(low=0, high=5000, shape=(self.num_tasks,), dtype=np.int32),
             'start': spaces.Box(low=-1, high=5000, shape=(self.num_tasks,), dtype=np.int32),
             'finish': spaces.Box(low=-1, high=5000, shape=(self.num_tasks,), dtype=np.int32),
         })
-        self.current_schedule = copy.deepcopy(tasks)
+        self.current_schedule = copy.deepcopy(order.task_queue for order in self.orders)
         self.num_scheduled_tasks = 0
         self.num_steps = 0
 
@@ -80,6 +85,13 @@ class SchedulingEnv(gym.Env):
         self.current_schedule = copy.deepcopy(self.original_tasks)
         self.num_scheduled_tasks = 0
         self.num_steps = 0
+
+        for i in range(len(self.resources)):
+            self.resources[i].reward = 0
+            self.resources.task_schedule = []
+
+        for i in range(len(self.orders)):
+            self.orders[i].reward = 0
 
         return self._get_observation(), {}  # empty info dict
 
@@ -191,14 +203,12 @@ class SchedulingEnv(gym.Env):
         # 경고 무시 설정
         plt.rcParams['figure.max_open_warning'] = 0
 
-    
         return fig
 
     def close(self):
         pass
 
     def _possible_schedule_list(self):
-        latest_task_time = 0
         ready_tasks = []
         for i in range(len(self.current_schedule)):
             if self.current_schedule[i]['earliest_start'] is None:
@@ -315,9 +325,12 @@ class SchedulingEnv(gym.Env):
 
 if __name__ == "__main__":
     from stable_baselines3.common.env_checker import check_env
-    from helpers import load_orders
+    from helpers import load_orders, load_resources, load_orders_new_version
 
-    env = SchedulingEnv(tasks=load_orders("../orders/orders-default.json"))
+    env = SchedulingEnv(
+        resources = load_resources("../resources/resources-default.json"),
+        orders = load_orders_new_version("../orders/orders-new-version.json")
+    )
     # If the environment don't follow the interface, an error will be thrown
     check_env(env, warn=True)
 

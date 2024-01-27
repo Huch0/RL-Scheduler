@@ -1,61 +1,64 @@
 import json
 from scheduler_env import Resource, Order, Task
 
+def load_resources(file_path):
+    resources = []
+
+    with open(file_path, 'r') as file:
+        data = json.load(file)
+
+    for resource_data in data["resources"]:
+        resource = {}
+        resource['name'] = resource_data["name"]
+        resource['ability'] = resource_data["type"].split(', ')
+        resources.append(resource)
+
+    return resources
+
 # Opens JSON file passed as argument with order data and populates global variables orders and tasks
 def load_orders_new_version(file):
     # Just in case we are reloading tasks
-    tasks = []
-    orders = []
+    
+    orders = [] # 리턴할 용도
+    orders_new_version = [] # 파일 읽고 저장할 때 쓰는 용도
     f = open(file)
 
     # returns JSON object as  a dictionary
     data = json.load(f)
     f.close()
-    orders = data['orders']
+    orders_new_version = data['orders']
 
-    # General order of index
-    stepIndex = 0
-
-    for order in orders:
+    for order in orders_new_version:
+        order_dictonary = {}
         # Initial index of steps within order
-        orderIndex = stepIndex
-        name = order['name']
-        color = order['color']
+        order_dictonary['name'] = order['name']
+        order_dictonary['color'] = order['color']
         earliestStart = order['earliest_start']
 
-        for step in order['tasks']:
-            stepIndex += 1
-            duration = step['duration']
-            predecessor = step['predecessor']
-            task_type = step['type']
-
-            if not (predecessor is None):
-                absPredecessor = predecessor + orderIndex
-
+        tasks = []
+        for task in order['tasks']:
+            predecessor = task['predecessor']
             task = {}
             # Sequence is the scheduling order, the series of which defines a State or Node.
             task['sequence'] = None
-            task['index'] = stepIndex
-            task['order'] = name
-            task['color'] = color
-            task['type'] = task_type
-
+            task['step'] = task['step']
+            task['type'] = task['type']
             if predecessor is None:
                 task['predecessor'] = None
                 task['earliest_start'] = earliestStart
             else:
-                task['predecessor'] = absPredecessor
+                task['predecessor'] = predecessor
                 task['earliest_start'] = None
-
-            task['duration'] = duration
+            task['duration'] = task['duration']
             task['start'] = None
             task['finish'] = None
 
-            tasks.append(Task(task))
+            tasks.append(task)
+        
+        order_dictonary['tasks'] = tasks
+        orders.append(order_dictonary)
 
-        orders.append(Order())
-    return tasks
-    
+    return orders
 
 
 
