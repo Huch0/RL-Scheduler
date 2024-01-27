@@ -9,6 +9,31 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 
+class Resource():
+    def __init__(self):
+        self.task_schedule = [] # (order name, start_timing, finish_timing) -> (tasks)
+        self.name = ""
+        self.abilty = [] #task 1 ~ all
+        self.reward = 0
+
+class Order():
+    def __init__(self):
+        self.name = ""
+        self.color = ""
+        self.earliest_start = 0
+        self.task_queue = [] # (tasks)
+        self.reward = 0
+
+class Task():
+    def __init__(self):
+        self.order = ""
+        self.task_type = ""
+        self.step = 0
+        self.duration = 0
+        self.predecessor = 0
+        self.start = 0
+        self.finish = 0
+
 class SchedulingEnv(gym.Env):
     """
     Custom Environment that follows gym interface.
@@ -16,13 +41,13 @@ class SchedulingEnv(gym.Env):
     """
 
     # Because of google colab, we cannot implement the GUI ('human' render mode)
-    metadata = {"render.modes": ["rgb_array"]}
-
-    def __init__(self, tasks, render_mode="rgb_array"):
+    metadata = {"render.modes": ["seaborn"]}
+    #resources_json, orders_json,
+    def __init__(self, tasks, render_mode="seaborn"):
         super(SchedulingEnv, self).__init__()
 
         # Find the maximum 'resource' and 'predecessor' values in the tasks list
-        self.resources = set(task['resource'] for task in tasks)
+        self.resource_list = []
         max_resource = max(tasks, key=lambda task: task['resource'])[
             'resource']
         max_predecessor = max(
@@ -31,7 +56,7 @@ class SchedulingEnv(gym.Env):
         self.original_tasks = tasks
         self.num_tasks = len(tasks)
 
-        self.action_space = spaces.Discrete(self.num_tasks)
+        self.action_space = spaces.MultiDiscrete(len(self.resource_list))
         self.observation_space = spaces.Dict({
             'sequence': spaces.Box(low=-1, high=self.num_tasks, shape=(self.num_tasks,), dtype=np.int32),
             'resource': spaces.Box(low=0, high=max_resource, shape=(self.num_tasks,), dtype=np.int32),
@@ -73,6 +98,7 @@ class SchedulingEnv(gym.Env):
 
         if not invalid_action:
             self._schedule_task(action)
+            
             reward = 0
         else:
             reward = -1
@@ -95,7 +121,7 @@ class SchedulingEnv(gym.Env):
             info,
         )
 
-    def render(self, mode="rgb_array"):
+    def render(self, mode="seaborn"):
         if mode == "console":
             # You can implement console rendering if needed
             pass
@@ -162,7 +188,10 @@ class SchedulingEnv(gym.Env):
         # Place the legend outside the plot area
         ax.legend(loc='upper left', bbox_to_anchor=(1, 1))
         plt.title("Task Schedule Visualization")
+        # 경고 무시 설정
+        plt.rcParams['figure.max_open_warning'] = 0
 
+    
         return fig
 
     def close(self):
@@ -288,7 +317,7 @@ if __name__ == "__main__":
     from stable_baselines3.common.env_checker import check_env
     from helpers import load_orders
 
-    env = SchedulingEnv(tasks=load_orders("./orders/orders-default.json"))
+    env = SchedulingEnv(tasks=load_orders("../orders/orders-default.json"))
     # If the environment don't follow the interface, an error will be thrown
     check_env(env, warn=True)
 
@@ -304,7 +333,7 @@ if __name__ == "__main__":
         action = env.action_space.sample()
         obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
-        # env.render()
+        #env.render()
         # print(action, reward, step)
         # print("obs=", obs, "reward=", reward, "done=", done)
         if done:
