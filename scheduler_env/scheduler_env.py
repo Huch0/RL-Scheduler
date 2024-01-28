@@ -7,6 +7,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+from stable_baselines3.common.env_checker import check_env
+from helpers import load_resources, load_orders_new_version
 
 
 class Resource():
@@ -16,11 +18,14 @@ class Resource():
         self.abilty = resouces_dictionary['name'] # "A, B, C, ..."
         self.reward = 0
 
+    def __str__(self):
+        return f"{self.name}"
+
 class Order():
     def __init__(self, order_dictionary):
         self.name = order_dictionary['name']
         self.color = order_dictionary['color']
-        self.task_queue = [Task(task_dictionary) for task_dictionary in order_dictionary['tasks']].sort(lambda x : x['step'])
+        self.task_queue = [Task(task_dictionary) for task_dictionary in order_dictionary['tasks']]
         self.reward = 0
 
 class Task():
@@ -33,7 +38,25 @@ class Task():
         self.duration = task_dictionary['duration']
         self.start = task_dictionary['start']
         self.finish = task_dictionary['finish']
-        
+        self.resource = -1
+        self.color = ""
+        self.order = -1
+
+    def to_dict(self):
+        return {
+            'sequence': self.sequence,
+            'step' : self.step,
+            'type' : self.type,
+            'predecessor' : self.predecessor,
+            'earliest_start' : self.earliest_start,
+            'duration' : self.duration,
+            'start': self.start,
+            'finish': self.finish,
+            'resource': self.resource,
+            'color' : self.color,
+            'order' : self.order
+        }
+    
 
 class SchedulingEnv(gym.Env):
     """
@@ -51,8 +74,10 @@ class SchedulingEnv(gym.Env):
         self.resources = [Resource(resource_info) for resource_info in resources]
         self.orders = [Order(order_info) for order_info in orders]
 
+        self.original_orders = copy.deepcopy(self.orders)
+        self.original_resources = copy.deepcopy(self.resources)
         # 각 오더의 번호와 매칭되는 버퍼, 추후 크기를 키울 예정
-        self.schedule_buffer = [False for _ in range(len(self.orders))]
+        self.schedule_buffer = [-1 for _ in range(len(self.orders))]
         len_resource = len(self.resources)
         len_orders = len(self.orders)
 
@@ -60,18 +85,22 @@ class SchedulingEnv(gym.Env):
         max_predecessor = 10 
         self.original_tasks = [order.task_queue for order in self.orders]
         self.num_tasks = sum([len(order.task_queue) for order in self.orders])
+        max_tasks = max([len(order.task_queue) for order in self.orders])
 
-        self.action_space = spaces.MultiDiscrete(len_resource, len_orders)
+        self.action_space = spaces.MultiDiscrete([len_resource, len_orders])
         self.observation_space = spaces.Dict({
+            'resource_reward': spaces.Box(low=0, high=5000, shape=(len_resource,), dtype=np.int32),
+            'order_reward' : spaces.Box(low=0, high=5000, shape=(len_orders,), dtype=np.int32),
+            'schedule_buffer' : spaces.Box(low=-1, high=max_tasks, shape=(len_orders,),dtype=np.int32),
             'sequence': spaces.Box(low=-1, high=self.num_tasks, shape=(self.num_tasks,), dtype=np.int32),
-            'resource': spaces.Box(low=0, high=len_resource, shape=(self.num_tasks,), dtype=np.int32),
-            'predecessor': spaces.Box(low=-1, high=max_predecessor, shape=(self.num_tasks,), dtype=np.int32),
             'earliest_start': spaces.Box(low=-1, high=5000, shape=(self.num_tasks,), dtype=np.int32),
             'duration': spaces.Box(low=0, high=5000, shape=(self.num_tasks,), dtype=np.int32),
             'start': spaces.Box(low=-1, high=5000, shape=(self.num_tasks,), dtype=np.int32),
             'finish': spaces.Box(low=-1, high=5000, shape=(self.num_tasks,), dtype=np.int32),
         })
-        self.current_schedule = copy.deepcopy(order.task_queue for order in self.orders)
+        
+        self.current_task_info = copy.deepcopy([order.task_queue for order in self.orders])
+        self.current_schedule = []
         self.num_scheduled_tasks = 0
         self.num_steps = 0
 
@@ -82,40 +111,47 @@ class SchedulingEnv(gym.Env):
         """
         super().reset(seed=seed, options=options)
 
-        self.current_schedule = copy.deepcopy(self.original_tasks)
+        self.orders = self.original_orders
+        self.resources = self.original_resources
+        self.schedule_buffer = [-1 for _ in range(len(self.orders))]
+        
+        # for i in range(len(self.orders)):
+        #     self.orders[i].task_queue = self.current_task_info[i]   
+        #     self.orders[i].reward = 0
+            
         self.num_scheduled_tasks = 0
         self.num_steps = 0
 
-        for i in range(len(self.resources)):
-            self.resources[i].reward = 0
-            self.resources.task_schedule = []
-
-        for i in range(len(self.orders)):
-            self.orders[i].reward = 0
+        # for i in range(len(self.resources)):
+        #     self.resources[i].reward = 0
+        #     self.resources[i].task_schedule = []
 
         return self._get_observation(), {}  # empty info dict
 
     def step(self, action):
-        if action < 0 or action >= self.num_tasks:
+        def error_action(act):
+            return act[0] < 0 or act[1] < 0 or act[0] >= len(self.resources) or act[1] >= len(self.orders)
+        if error_action(action):
             raise ValueError(
                 f"Received invalid action={action} which is not part of the action space"
             )
-        ready_tasks = self._possible_schedule_list()
+        
+        self._possible_schedule_list()
         self.num_steps += 1
 
         invalid_action = False
 
-        if self.current_schedule[action]['sequence'] is not None or action not in ready_tasks:
+        if self.schedule_buffer[action[1]] < 0:
             invalid_action = True
 
         if not invalid_action:
             self._schedule_task(action)
-            
+            self._calculate_step_reward(action)
             reward = 0
         else:
             reward = -1
 
-        terminated = bool(self.num_scheduled_tasks == self.num_tasks)
+        terminated = bool(self.schedule_buffer.count(-1) == len(self.orders))
 
         if terminated:
             reward = self._calculate_reward()
@@ -162,8 +198,10 @@ class SchedulingEnv(gym.Env):
 
     def _make_chart(self):
         # Create a DataFrame to store task scheduling information
+        current_schedule = [task.to_dict() for task in self.current_schedule]
+        
         scheduled_df = list(
-            filter(lambda task: task['sequence'] is not None, self.current_schedule))
+            filter(lambda task: task['sequence'] is not None, current_schedule))
         scheduled_df = pd.DataFrame(scheduled_df)
 
         if scheduled_df.empty:
@@ -174,11 +212,11 @@ class SchedulingEnv(gym.Env):
 
         # Create a bar plot using matplotlib directly
         fig, ax = plt.subplots(figsize=(12, 6))
-        for resource in self.resources:
-            resource_tasks = scheduled_df[scheduled_df['resource'] == resource]
+        for i in range(len(self.resources)):
+            resource_tasks = scheduled_df[scheduled_df['resource'] == (i+1)]
 
             # Discriminate rows by lines
-            line_offset = resource - 0.9  # Adjust the line offset for better visibility
+            line_offset = (i+1) - 0.9  # Adjust the line offset for better visibility
 
             for index, task in resource_tasks.iterrows():
                 ax.bar(
@@ -189,7 +227,7 @@ class SchedulingEnv(gym.Env):
                     bottom=line_offset,  # Discriminate rows by lines
                     color=task['color'],
                     alpha=0.7,  # Transparency
-                    label=f'Task {int(task["index"])}',  # Label for the legend
+                    label=f'Task {int(task["step"])}',  # Label for the legend
                 )
 
         # Set y-axis ticks to show every resource
@@ -208,29 +246,53 @@ class SchedulingEnv(gym.Env):
     def close(self):
         pass
 
-    def _possible_schedule_list(self):
-        ready_tasks = []
-        for i in range(len(self.current_schedule)):
-            if self.current_schedule[i]['earliest_start'] is None:
-                # Look at predecessor finish date
-                predecessor = self.current_schedule[i]['predecessor']
+    def _possible_schedule_list(self, target_order = None):
+        buffer_index = 0
 
-                for pred_task in self.current_schedule:
-                    if pred_task['index'] == predecessor:
-                        # Predecessor is found
-                        # See if it is finished.
-                        # If so, task is good to go
-                        if pred_task['finish'] is None:
-                            break
-                        else:
-                            # it is finished
-                            self.current_schedule[i]['earliest_start'] = pred_task['finish']
-                            ready_tasks.append(i)
+        # target_order은 매번 모든 Order를 보는 계산량을 줄이기 위해 설정할 변수
+        # None은 최초의 호출에서, 또는 Reset이 이뤄질 경우를 위해 존재
+        if target_order == None:
+            for order in self.orders:
+                # Assume order['steps'] is a list of tasks for the current order
+                selected_task_index = -1
+                for i in range(len(order.task_queue)):
+                    # 아직 스케줄링을 시작하지 않은 Task를 찾는다
+                    if order.task_queue[i].finish is None:
+                        selected_task_index = i
+                        break
+                # 스케줄링 하지 않은 Task를 발견했다면        
+                if selected_task_index >= 0:
+                    selected_task = order.task_queue[selected_task_index]
+        
+                    # 만약 초기 시작 제한이 없다면 
+                    # 초기 시작 제한을 이전 Task의 Finish Time으로 걸어주고 버퍼에 등록한다.
+                    if selected_task.earliest_start is None:
+                        if selected_task_index > 0:
+                            selected_task.earliest_start = order.task_queue[selected_task_index-1].finish
+                
+                self.schedule_buffer[buffer_index] = selected_task_index
+                buffer_index += 1
+                
+        # Action으로 인해 봐야할 버퍼의 인덱스가 정해짐
 
-            elif self.current_schedule[i]['finish'] is None:
-                ready_tasks.append(i)
+        else:
+            selected_task_index = -1
+            for i in range(len(self.orders[target_order].task_queue)):
+                # 아직 스케줄링을 시작하지 않은 Task를 찾는다
+                if order.task_queue[i].finish is None:
+                    selected_task_index = i
+                    break
+            if selected_task_index >= 0:
+                selected_task = order.task_queue[selected_task_index]
 
-        return ready_tasks
+                # 만약 초기 시작 제한이 없다면 
+                # 초기 시작 제한을 이전 Task의 Finish Time으로 걸어주고 버퍼에 등록한다.
+                if selected_task.earliest_start is None:
+                    if selected_task_index > 0:
+                        selected_task.earliest_start = order.task_queue[selected_task_index-1].finish
+            
+            self.schedule_buffer[target_order] = selected_task_index        
+        #print(self.schedule_buffer)
 
     def _schedule_task(self, action):
         # Implement the scheduling logic based on the action
@@ -238,33 +300,24 @@ class SchedulingEnv(gym.Env):
         # based on the selected task index (action) and the current state.
 
         # Example: updating start and finish times
-        selected_task = self.current_schedule[action]
-        task_earliest_start = selected_task['earliest_start']
-        task_index = selected_task['index']
-        task_duration = selected_task['duration']
-        task_resource = selected_task['resource']
-
-        last_sequence = 0
-        all_scheduled = list(
-            filter(lambda task: task['sequence'] is not None, self.current_schedule))
-
-        if all_scheduled:
-            last_sequence = max(all_scheduled, key=lambda task: task['sequence'])[
-                'sequence']
-
-        resource_tasks = sorted(list(filter(lambda task: task['resource'] == task_resource
-                                            and task['finish'] is not None, self.current_schedule)), key=lambda task: task['start'])
+        selected_resource = self.resources[action[0]]
+        selected_order = self.orders[action[1]]
+        selected_task = selected_order.task_queue[self.schedule_buffer[action[1]]]
+        task_earliest_start = selected_task.earliest_start
+        task_index = selected_task.step
+        task_duration = selected_task.duration
+        resource_tasks = sorted(selected_resource.task_schedule, key=lambda task: task.start)
 
         open_windows = []
         start_window = 0
         last_alloc = 0
 
         for scheduled_task in resource_tasks:
-            resource_init = scheduled_task['start']
+            resource_init = scheduled_task.start
 
             if resource_init > start_window:
                 open_windows.append([start_window, resource_init])
-            start_window = scheduled_task['finish']
+            start_window = scheduled_task.finish
 
             last_alloc = max(last_alloc, start_window)
 
@@ -286,17 +339,23 @@ class SchedulingEnv(gym.Env):
 
         # If no window was found, schedule it after the end of the last task on the resource
         if not window_found:
-            min_earliest_start = max(task_earliest_start or 0, last_alloc)
+            if task_earliest_start > 0:
+                min_earliest_start = max(task_earliest_start, last_alloc)
+            else:
+                min_earliest_start = last_alloc
 
-        # Search the schedule plan, find the task and schedule it
-        for i in range(0, len(self.current_schedule)):
-            if self.current_schedule[i]['index'] == task_index:
-                self.current_schedule[i]['sequence'] = last_sequence + 1
-                self.current_schedule[i]['start'] = min_earliest_start
-                self.current_schedule[i]['finish'] = min_earliest_start + \
-                    task_duration
-                break
+        # schedule it
+        selected_task.sequence = self.num_scheduled_tasks + 1
+        selected_task.start = min_earliest_start
+        selected_task.finish = min_earliest_start + task_duration
+        selected_task.resource = action[0]
 
+        # 사실 여기서 color랑 order를 주는건 적절치 않은 코드임!!!!
+        selected_task.color = self.orders[action[1]].color
+        selected_task.order = action[1]
+
+        self.current_schedule.append(selected_task)
+        selected_resource.task_schedule.append(selected_task)
         self.num_scheduled_tasks += 1
         return
 
@@ -305,28 +364,33 @@ class SchedulingEnv(gym.Env):
         # You can use the start and finish times of tasks to calculate rewards.
         # Example: reward based on minimizing the makespan
         makespan = max(self.current_schedule,
-                       key=lambda x: x['finish'])['finish']
-        return -makespan  # Negative makespan to convert it into a minimization problem
+                       key=lambda x: x.finish).finish
+        
+        sum_of_orders_reward = sum([order.reward for order in self.orders])
+        sum_of_resources_reward = sum([resource.reward for resource in self.resources])
+        
+        return -makespan + sum_of_orders_reward + sum_of_resources_reward # Negative makespan to convert it into a minimization problem
 
+    def _calculate_step_reward(self, action):
+        # 이 부분의 Reward 체계화 필요
+        
+        self.resources[action[0]].reward += 1 * (0.9)**self.num_steps
+        self.orders[action[1]].reward += 1 * (0.9)**self.num_steps
+        
     def _get_observation(self):
-        ready_tasks = self._possible_schedule_list()
-
         observation = {
-            'sequence': np.array([task['sequence'] if task['sequence'] is not None else -1 for task in self.current_schedule], dtype=np.int32),
-            'resource': np.array([task['resource'] for task in self.current_schedule], dtype=np.int32),
-            'predecessor': np.array([task['predecessor'] if task['predecessor'] is not None else -1 for task in self.current_schedule], dtype=np.int32),
-            'earliest_start': np.array([task['earliest_start'] if task['earliest_start'] is not None else -1 for task in self.current_schedule], dtype=np.int32),
-            'duration': np.array([task['duration'] for task in self.current_schedule], dtype=np.int32),
-            'start': np.array([task['start'] if task['start'] is not None else -1 for task in self.current_schedule], dtype=np.int32),
-            'finish': np.array([task['finish'] if task['finish'] is not None else -1 for task in self.current_schedule], dtype=np.int32),
+            'resource_reward' : np.array([resource.reward for resource in self.resources], dtype=np.int32),
+            'order_reward' : np.array([order.reward for order in self.orders], dtype=np.int32),
+            'schedule_buffer' : np.array(self.schedule_buffer, dtype=np.int32),
+            'sequence': np.array([task.sequence if task.sequence is not None else -1 for order in self.orders for task in order.task_queue], dtype=np.int32),
+            'earliest_start': np.array([task.earliest_start if task.earliest_start is not None else -1 for order in self.orders for task in order.task_queue], dtype=np.int32),
+            'duration': np.array([task.duration for order in self.orders for task in order.task_queue], dtype=np.int32),
+            'start': np.array([task.start if task.start is not None else -1 for order in self.orders for task in order.task_queue], dtype=np.int32),
+            'finish': np.array([task.finish if task.finish is not None else -1 for order in self.orders for task in order.task_queue], dtype=np.int32),
         }
         return observation
 
-
 if __name__ == "__main__":
-    from stable_baselines3.common.env_checker import check_env
-    from helpers import load_orders, load_resources, load_orders_new_version
-
     env = SchedulingEnv(
         resources = load_resources("../resources/resources-default.json"),
         orders = load_orders_new_version("../orders/orders-new-version.json")

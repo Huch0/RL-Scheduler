@@ -1,5 +1,4 @@
 import json
-from scheduler_env import Resource, Order, Task
 
 def load_resources(file_path):
     resources = []
@@ -38,22 +37,22 @@ def load_orders_new_version(file):
         tasks = []
         for task in order['tasks']:
             predecessor = task['predecessor']
-            task = {}
+            task_dictionary = {}
             # Sequence is the scheduling order, the series of which defines a State or Node.
-            task['sequence'] = None
-            task['step'] = task['step']
-            task['type'] = task['type']
+            task_dictionary['sequence'] = None
+            task_dictionary['step'] = task['step']
+            task_dictionary['type'] = task['type']
             if predecessor is None:
-                task['predecessor'] = None
-                task['earliest_start'] = earliestStart
+                task_dictionary['predecessor'] = None
+                task_dictionary['earliest_start'] = earliestStart
             else:
-                task['predecessor'] = predecessor
-                task['earliest_start'] = None
-            task['duration'] = task['duration']
-            task['start'] = None
-            task['finish'] = None
+                task_dictionary['predecessor'] = predecessor
+                task_dictionary['earliest_start'] = None
+            task_dictionary['duration'] = task['duration']
+            task_dictionary['start'] = None
+            task_dictionary['finish'] = None
 
-            tasks.append(task)
+            tasks.append(task_dictionary)
         
         order_dictonary['tasks'] = tasks
         orders.append(order_dictonary)
