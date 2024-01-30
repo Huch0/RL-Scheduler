@@ -35,7 +35,7 @@
       "name": "Order 2",
       "color": "#6ec038",
       "earliest_start": 0,
-      "steps": [
+      "tasks": [
         {
           "step": 1,
           "type" : "B",
@@ -60,7 +60,7 @@
       "name": "Order 3",
       "color": "#ffc038",
       "earliest_start": 0,
-      "steps": [
+      "tasks": [
         {
           "step": 1,
           "type" : "D",

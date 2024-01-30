@@ -15,11 +15,12 @@ class Resource():
     def __init__(self, resouces_dictionary):
         self.task_schedule = [] # (tasks)
         self.name = resouces_dictionary['name'] 
-        self.abilty = resouces_dictionary['name'] # "A, B, C, ..."
+        self.ability = resouces_dictionary['name'] # "A, B, C, ..."
         self.reward = 0
 
     def __str__(self):
-        return f"{self.name}"
+        str_to_tasks = [str(task) for task in self.task_schedule]
+        return f"{self.name} : {str_to_tasks}"  
 
 class Order():
     def __init__(self, order_dictionary):
@@ -42,6 +43,22 @@ class Task():
         self.color = ""
         self.order = -1
 
+    def to_dict(self):
+        return {
+            'sequence': self.sequence,
+            'step' : self.step,
+            'type' : self.type,
+            'predecessor' : self.predecessor,
+            'earliest_start' : self.earliest_start,
+            'duration' : self.duration,
+            'start': self.start,
+            'finish': self.finish,
+            'resource': self.resource,
+            'color' : self.color,
+            'order' : self.order
+        }
+    def __str__(self):
+        return f"order : {self.order}, step : {self.step} | ({self.start}, {self.finish})"
     def to_dict(self):
         return {
             'sequence': self.sequence,
@@ -111,8 +128,8 @@ class SchedulingEnv(gym.Env):
         """
         super().reset(seed=seed, options=options)
 
-        self.orders = self.original_orders
-        self.resources = self.original_resources
+        self.orders = copy.deepcopy(self.original_orders)
+        self.resources = copy.deepcopy(self.original_resources)
         self.schedule_buffer = [-1 for _ in range(len(self.orders))]
         
         # for i in range(len(self.orders)):
@@ -247,14 +264,16 @@ class SchedulingEnv(gym.Env):
         pass
 
     def _possible_schedule_list(self, target_order = None):
-        buffer_index = 0
-
         # target_order은 매번 모든 Order를 보는 계산량을 줄이기 위해 설정할 변수
         # None은 최초의 호출에서, 또는 Reset이 이뤄질 경우를 위해 존재
         if target_order == None:
+            buffer_index = 0
+            
             for order in self.orders:
                 # Assume order['steps'] is a list of tasks for the current order
+                
                 selected_task_index = -1
+                
                 for i in range(len(order.task_queue)):
                     # 아직 스케줄링을 시작하지 않은 Task를 찾는다
                     if order.task_queue[i].finish is None:
@@ -275,25 +294,24 @@ class SchedulingEnv(gym.Env):
                 
         # Action으로 인해 봐야할 버퍼의 인덱스가 정해짐
 
-        else:
-            selected_task_index = -1
-            for i in range(len(self.orders[target_order].task_queue)):
-                # 아직 스케줄링을 시작하지 않은 Task를 찾는다
-                if order.task_queue[i].finish is None:
-                    selected_task_index = i
-                    break
-            if selected_task_index >= 0:
-                selected_task = order.task_queue[selected_task_index]
+        # else:
+        #     selected_task_index = -1
+        #     for i in range(len(self.orders[target_order].task_queue)):
+        #         # 아직 스케줄링을 시작하지 않은 Task를 찾는다
+        #         if order.task_queue[i].finish is None:
+        #             selected_task_index = i
+        #             break
+        #     if selected_task_index >= 0:
+        #         selected_task = order.task_queue[selected_task_index]
 
-                # 만약 초기 시작 제한이 없다면 
-                # 초기 시작 제한을 이전 Task의 Finish Time으로 걸어주고 버퍼에 등록한다.
-                if selected_task.earliest_start is None:
-                    if selected_task_index > 0:
-                        selected_task.earliest_start = order.task_queue[selected_task_index-1].finish
+        #         # 만약 초기 시작 제한이 없다면 
+        #         # 초기 시작 제한을 이전 Task의 Finish Time으로 걸어주고 버퍼에 등록한다.
+        #         if selected_task.earliest_start is None:
+        #             if selected_task_index > 0:
+        #                 selected_task.earliest_start = order.task_queue[selected_task_index-1].finish
             
-            self.schedule_buffer[target_order] = selected_task_index        
-        #print(self.schedule_buffer)
-
+        #     self.schedule_buffer[target_order] = selected_task_index        
+        
     def _schedule_task(self, action):
         # Implement the scheduling logic based on the action
         # You need to update the start and finish times of the tasks
