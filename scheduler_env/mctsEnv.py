@@ -8,8 +8,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
+import json
 
-class SchedulingEnv(gym.Env):
+
+class mctsEnv(gym.Env):
     """
     Custom Environment that follows gym interface.
     This is a simple env where the agent must learn to go always left.
@@ -18,8 +20,11 @@ class SchedulingEnv(gym.Env):
     # Because of google colab, we cannot implement the GUI ('human' render mode)
     metadata = {"render.modes": ["rgb_array"]}
 
-    def __init__(self, tasks, render_mode="rgb_array"):
-        super(SchedulingEnv, self).__init__()
+    def __init__(self, tasks_path="/Users/chiyeong/Documents/projects/winter-study-reinforcement/RL-Scheduler/orders/orders-default.json", render_mode="seaborn"):
+        super(mctsEnv, self).__init__()
+        self.render_mode = render_mode
+        print("Loading tasks from", tasks_path)
+        tasks = self._load_orders(tasks_path)
 
         # Find the maximum 'resource' and 'predecessor' values in the tasks list
         self.resources = set(task['resource'] for task in tasks)
@@ -78,11 +83,12 @@ class SchedulingEnv(gym.Env):
             reward = -1
 
         terminated = bool(self.num_scheduled_tasks == self.num_tasks)
-
         if terminated:
             reward = self._calculate_reward()
 
-        truncated = bool(self.num_steps == 1000)
+        truncated = bool(self.num_steps == 600)
+        if truncated:
+            reward = -3000
 
         # Optionally we can pass additional info, we are not using that for now
         info = {}
@@ -95,7 +101,7 @@ class SchedulingEnv(gym.Env):
             info,
         )
 
-    def render(self, mode="rgb_array"):
+    def render(self, mode="seaborn"):
         if mode == "console":
             # You can implement console rendering if needed
             pass
@@ -283,12 +289,67 @@ class SchedulingEnv(gym.Env):
         }
         return observation
 
+    def _load_orders(self, file):
+        # Just in case we are reloading tasks
+        tasks = []
+        orders = []
+        f = open(file)
 
+        # returns JSON object as  a dictionary
+        data = json.load(f)
+        f.close()
+        orders = data['orders']
+
+        # General order of index
+        stepIndex = 0
+
+        for order in orders:
+            # Initial index of steps within order
+            orderIndex = stepIndex
+            name = order['name']
+            color = order['color']
+            earliestStart = order['earliest_start']
+
+            for step in order['steps']:
+                stepIndex += 1
+                # orderStep = step['step']
+                resource = step['resource']
+                duration = step['duration']
+                predecessor = step['predecessor']
+
+                if not (predecessor is None):
+                    absPredecessor = predecessor + orderIndex
+
+                task = {}
+                # Sequence is the scheduling order, the series of which defines a State or Node.
+                task['sequence'] = None
+                task['index'] = stepIndex
+                task['order'] = name
+                task['color'] = color
+                task['resource'] = resource
+
+                if predecessor is None:
+                    task['predecessor'] = None
+                    task['earliest_start'] = earliestStart
+                else:
+                    task['predecessor'] = absPredecessor
+                    task['earliest_start'] = None
+
+                task['duration'] = duration
+                task['start'] = None
+                task['finish'] = None
+
+                tasks.append(task)
+        return tasks
+
+
+# 1. Check that the environment follows the interface
+# 2. Check that the environment is correctly rendered
 if __name__ == "__main__":
     from stable_baselines3.common.env_checker import check_env
-    from helpers import load_orders
 
-    env = SchedulingEnv(tasks=load_orders("./orders/orders-default.json"))
+    env = mctsEnv(tasks_path="../orders/orders-default.json",
+                  render_mode="seaborn")
     # If the environment don't follow the interface, an error will be thrown
     check_env(env, warn=True)
 
@@ -299,15 +360,19 @@ if __name__ == "__main__":
     print(env.action_space.sample())
 
     step = 0
+    epsiode_reward = 0
     while True:
         step += 1
         action = env.action_space.sample()
         obs, reward, terminated, truncated, info = env.step(action)
+
+        epsiode_reward += reward
         done = terminated or truncated
         # env.render()
         # print(action, reward, step)
         # print("obs=", obs, "reward=", reward, "done=", done)
         if done:
-            print("Goal reached!", "reward=", reward)
+            print("Goal reached!", "episode_reward=",
+                  epsiode_reward, "episode_steps=", step)
             env.render()
             break
