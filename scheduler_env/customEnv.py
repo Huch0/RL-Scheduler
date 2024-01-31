@@ -8,7 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from stable_baselines3.common.env_checker import check_env
-from helpers import load_resources, load_orders_new_version
+#from helpers import load_resources, load_orders_new_version
 
 
 class Resource():
@@ -144,7 +144,7 @@ class SchedulingEnv(gym.Env):
     def __init__(self, resources = "../resources/resources-default.json", orders = "../orders/orders-new-version.json", render_mode="seaborn"):
         super(SchedulingEnv, self).__init__()
 
-        resources = self.load_orders_new_version(resources)
+        resources = self.load_resources(resources)
         orders = self.load_orders_new_version(orders)
         # Find the maximum 'resource' and 'predecessor' values in the tasks list
         self.resources = [Resource(resource_info) for resource_info in resources]
@@ -289,10 +289,10 @@ class SchedulingEnv(gym.Env):
         # Create a bar plot using matplotlib directly
         fig, ax = plt.subplots(figsize=(12, 6))
         for i in range(len(self.resources)):
-            resource_tasks = scheduled_df[scheduled_df['resource'] == (i+1)]
+            resource_tasks = scheduled_df[scheduled_df['resource'] == i]
 
             # Discriminate rows by lines
-            line_offset = (i+1) - 0.9  # Adjust the line offset for better visibility
+            line_offset = i - 0.9  # Adjust the line offset for better visibility
 
             for index, task in resource_tasks.iterrows():
                 ax.bar(
@@ -468,10 +468,7 @@ class SchedulingEnv(gym.Env):
         return observation
 
 if __name__ == "__main__":
-    env = SchedulingEnv(
-        resources = load_resources("../resources/resources-default.json"),
-        orders = load_orders_new_version("../orders/orders-new-version.json")
-    )
+    env = SchedulingEnv()
     # If the environment don't follow the interface, an error will be thrown
     check_env(env, warn=True)
 
