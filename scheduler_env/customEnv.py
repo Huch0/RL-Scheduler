@@ -146,6 +146,7 @@ class SchedulingEnv(gym.Env):
         max_predecessor = 10 
         self.original_tasks = [order.task_queue for order in self.orders]
         self.num_tasks = sum([len(order.task_queue) for order in self.orders])
+        self.invalid_count = 0
         max_tasks = max([len(order.task_queue) for order in self.orders])
 
         self.action_space = spaces.MultiDiscrete([len_resource, len_orders])
@@ -153,17 +154,16 @@ class SchedulingEnv(gym.Env):
             'resource_reward': spaces.Box(low=0, high=5000, shape=(len_resource,), dtype=np.int32),
             'order_reward' : spaces.Box(low=0, high=5000, shape=(len_orders,), dtype=np.int32),
             'schedule_buffer' : spaces.Box(low=-1, high=max_tasks, shape=(len_orders,),dtype=np.int32),
-            'sequence': spaces.Box(low=-1, high=self.num_tasks, shape=(self.num_tasks,), dtype=np.int32),
-            'earliest_start': spaces.Box(low=-1, high=5000, shape=(self.num_tasks,), dtype=np.int32),
-            'duration': spaces.Box(low=0, high=5000, shape=(self.num_tasks,), dtype=np.int32),
-            'start': spaces.Box(low=-1, high=5000, shape=(self.num_tasks,), dtype=np.int32),
-            'finish': spaces.Box(low=-1, high=5000, shape=(self.num_tasks,), dtype=np.int32),
+            'duration': spaces.Box(low=0, high=5000, shape=(len_orders,), dtype=np.int32),
+            'start': spaces.Box(low=-1, high=5000, shape=(len_orders,), dtype=np.int32),
+            'finish': spaces.Box(low=-1, high=5000, shape=(len_orders,), dtype=np.int32),
         })
         
         self.current_task_info = copy.deepcopy([order.task_queue for order in self.orders])
         self.current_schedule = []
         self.num_scheduled_tasks = 0
         self.num_steps = 0
+        self.finish_time = 0
 
     def reset(self, seed=None, options=None):
         """
@@ -175,7 +175,8 @@ class SchedulingEnv(gym.Env):
         self.orders = copy.deepcopy(self.original_orders)
         self.resources = copy.deepcopy(self.original_resources)
         self.schedule_buffer = [-1 for _ in range(len(self.orders))]
-        
+        self.invalid_count = 0
+        self.finish_time = 0
         # for i in range(len(self.orders)):
         #     self.orders[i].task_queue = self.current_task_info[i]   
         #     self.orders[i].reward = 0
@@ -208,19 +209,24 @@ class SchedulingEnv(gym.Env):
         if not invalid_action:
             self._schedule_task(action)
             self._calculate_step_reward(action)
-            reward = 0
+            reward = 2
         else:
-            reward = -1
+            self.invalid_count += 1
+            reward = -5
 
         terminated = bool(self.schedule_buffer.count(-1) == len(self.orders))
 
         if terminated:
-            reward = self._calculate_reward()
+            self.finish_time = self._get_final_task_finish()
+            reward = self.finish_time
 
         truncated = bool(self.num_steps == 1000)
 
         # Optionally we can pass additional info, we are not using that for now
-        info = {}
+        info = {
+            'finish_time' : self.finish_time,
+            'invalid_count' : self.invalid_count
+               }
 
         return (
             self._get_observation(),
@@ -421,42 +427,40 @@ class SchedulingEnv(gym.Env):
         self.num_scheduled_tasks += 1
         return
 
-    def _calculate_reward(self):
+    def _get_final_task_finish(self):
         # Implement your reward function based on the current state.
         # You can use the start and finish times of tasks to calculate rewards.
         # Example: reward based on minimizing the makespan
         makespan = max(self.current_schedule,
                        key=lambda x: x.finish).finish
         
-        sum_of_orders_reward = sum([order.reward for order in self.orders])
-        sum_of_resources_reward = sum([resource.reward for resource in self.resources])
+        #sum_of_orders_reward = sum([order.reward for order in self.orders])
+        #sum_of_resources_reward = sum([resource.reward for resource in self.resources])
         
-        return -makespan + sum_of_orders_reward + sum_of_resources_reward # Negative makespan to convert it into a minimization problem
+        return -makespan # + sum_of_orders_reward + sum_of_resources_reward # Negative makespan to convert it into a minimization problem
 
     def _calculate_step_reward(self, action):
         # 이 부분의 Reward 체계화 필요
-        
-        self.resources[action[0]].reward += 1 * (0.9)**self.num_steps
-        self.orders[action[1]].reward += 1 * (0.9)**self.num_steps
-        
+        self.resources[action[0]].reward += np.log(self.resources[action[0]].reward + 10)
+        self.orders[action[1]].reward += np.log(self.orders[action[1]].reward + 10)
+
     def _get_observation(self):
         observation = {
             'resource_reward' : np.array([resource.reward for resource in self.resources], dtype=np.int32),
             'order_reward' : np.array([order.reward for order in self.orders], dtype=np.int32),
             'schedule_buffer' : np.array(self.schedule_buffer, dtype=np.int32),
-            'sequence': np.array([task.sequence if task.sequence is not None else -1 for order in self.orders for task in order.task_queue], dtype=np.int32),
-            'earliest_start': np.array([task.earliest_start if task.earliest_start is not None else -1 for order in self.orders for task in order.task_queue], dtype=np.int32),
-            'duration': np.array([task.duration for order in self.orders for task in order.task_queue], dtype=np.int32),
-            'start': np.array([task.start if task.start is not None else -1 for order in self.orders for task in order.task_queue], dtype=np.int32),
-            'finish': np.array([task.finish if task.finish is not None else -1 for order in self.orders for task in order.task_queue], dtype=np.int32),
+            'duration': np.array([self.orders[order_index].task_queue[task_index].duration if task_index >= 0 else 0 for order_index, task_index in enumerate(self.schedule_buffer)], dtype=np.int32),
+            'start': np.array([self.orders[order_index].task_queue[task_index].start if task_index >= 0 and self.orders[order_index].task_queue[task_index].start is not None else -1 for order_index, task_index in enumerate(self.schedule_buffer)], dtype=np.int32),
+            'finish': np.array([self.orders[order_index].task_queue[task_index].finish if task_index >= 0 and self.orders[order_index].task_queue[task_index].finish is not None else -1 for order_index, task_index in enumerate(self.schedule_buffer)], dtype=np.int32),
         }
         return observation
 
 if __name__ == "__main__":
     env = SchedulingEnv()
-    #check_env(env, warn=True)
-    obs, _ = env.reset()
+
     step = 0
+    obs, _ = env.reset()
+
     while True:
         step += 1
         action = env.action_space.sample()
