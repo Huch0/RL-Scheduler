@@ -2,25 +2,25 @@ import gymnasium as gym
 from gymnasium import spaces
 import json
 import copy
-
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from stable_baselines3.common.env_checker import check_env
-#from helpers import load_resources, load_orders_new_version
 
 
 class Resource():
     def __init__(self, resouces_dictionary):
         self.task_schedule = [] # (tasks)
         self.name = resouces_dictionary['name'] 
-        self.ability = resouces_dictionary['name'] # "A, B, C, ..."
+        self.ability = resouces_dictionary['ability'] # "A, B, C, ..."
         self.reward = 0
 
     def __str__(self):
-        str_to_tasks = [str(task) for task in self.task_schedule]
-        return f"{self.name} : {str_to_tasks}"  
+        # str_to_tasks = [str(task) for task in self.task_schedule]
+        # return f"{self.name} : {str_to_tasks}"
+        return f"{self.name}"
+
 
 class Order():
     def __init__(self, order_dictionary):
@@ -59,21 +59,6 @@ class Task():
         }
     def __str__(self):
         return f"order : {self.order}, step : {self.step} | ({self.start}, {self.finish})"
-    def to_dict(self):
-        return {
-            'sequence': self.sequence,
-            'step' : self.step,
-            'type' : self.type,
-            'predecessor' : self.predecessor,
-            'earliest_start' : self.earliest_start,
-            'duration' : self.duration,
-            'start': self.start,
-            'finish': self.finish,
-            'resource': self.resource,
-            'color' : self.color,
-            'order' : self.order
-        }
-    
 
 class SchedulingEnv(gym.Env):
     """
@@ -186,7 +171,7 @@ class SchedulingEnv(gym.Env):
         :return: (np.array)
         """
         super().reset(seed=seed, options=options)
-
+        self.current_schedule = []
         self.orders = copy.deepcopy(self.original_orders)
         self.resources = copy.deepcopy(self.original_resources)
         self.schedule_buffer = [-1 for _ in range(len(self.orders))]
@@ -469,24 +454,14 @@ class SchedulingEnv(gym.Env):
 
 if __name__ == "__main__":
     env = SchedulingEnv()
-    # If the environment don't follow the interface, an error will be thrown
-    check_env(env, warn=True)
-
+    #check_env(env, warn=True)
     obs, _ = env.reset()
-
-    print(env.observation_space)
-    print(env.action_space)
-    print(env.action_space.sample())
-
     step = 0
     while True:
         step += 1
         action = env.action_space.sample()
         obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
-        #env.render()
-        # print(action, reward, step)
-        # print("obs=", obs, "reward=", reward, "done=", done)
         if done:
             print("Goal reached!", "reward=", reward)
             env.render()
