@@ -580,3 +580,8 @@ Walker2d-v3:
   gae_lambda: 0.95
   max_grad_norm: 1
   vf_coef: 0.871923
+
+
+# For custom environments
+scheduler-customEnv:
+  policy: 'MultiInputPolicy'
