@@ -63,5 +63,8 @@ for env_id in MaskVelocityWrapper.velocity_indices.keys():
         entry_point=create_no_vel_env(env_id),  # type: ignore[arg-type]
     )
 
-# For my custom environment
+# For custom environments
 register(id="scheduler-mctsEnv", entry_point="scheduler_env.mctsEnv:mctsEnv")
+
+register(id="scheduler-customEnv",
+         entry_point="scheduler_env.customEnv:SchedulingEnv")
