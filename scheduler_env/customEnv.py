@@ -9,7 +9,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from stable_baselines3.common.env_checker import check_env
 
 def type_incoding(type):
-        type_code = {'A' : 0, 'B' : 1, 'C' : 2, 'D' : 3}
+        type_code = {'A' : 0, 'B' : 1, 'C' : 2, 'D' : 3, 'E': 4, 'F' : 5, 'G' : 6, 'H' : 7, 'I' : 8, 'J' : 9, 'K' : 10, 'L' : 11, 'M' : 12, 'N' : 13, 'O' : 14, 'P' : 15, 'Q' : 16, 'R' : 17, 'S' : 18, 'T' : 19, 'U' : 20, 'V' : 21, 'W' : 22, 'X' : 23, 'Y' : 24, 'Z' : 25}
         return type_code[type]
 
 class Resource():
@@ -126,7 +126,7 @@ class SchedulingEnv(gym.Env):
 
         return orders
 
-    def __init__(self, resources = "../resources/resources-10.json", orders = "../orders/converted_orders_default.json", render_mode="seaborn"):
+    def __init__(self, resources = "../resources/resources-10.json", orders = "../orders/converted_data.json", render_mode="seaborn"):
         super(SchedulingEnv, self).__init__()
 
         resources = self.load_resources(resources)
@@ -147,8 +147,7 @@ class SchedulingEnv(gym.Env):
         self.action_space = spaces.MultiDiscrete([len_resource, len_orders])
         self.observation_space = spaces.Dict({
             "action_mask": spaces.MultiBinary([len_resource, len_orders]),
-            "real_observation": spaces.Box(low=-10, high=5000, shape=(len_orders, 5), dtype=np.float64),
-            'resources_reward': spaces.Box(low=-10, high=500, shape=(len_resource,), dtype=np.float64)
+            "real_observation": spaces.Box(low=-10, high=5000, shape=(len_orders, 4), dtype=np.float64)
         })
         
         self.current_schedule = []
@@ -174,7 +173,7 @@ class SchedulingEnv(gym.Env):
         # 2. 다음으로 수행할 Task의 Type
         # 3. 다음으로 수행할 Task의 earliest_start
         # 4. 다음으로 수행할 Task의 duration
-        self.state = np.zeros((len(self.orders), 5), dtype=np.int32)
+        self.state = np.zeros((len(self.orders), 4), dtype=np.int32)
         self.legal_actions = np.ones((len(self.resources), len(self.orders)), dtype=bool)       
         self._update_schedule_buffer()
         self._update_state()
@@ -217,7 +216,7 @@ class SchedulingEnv(gym.Env):
             self._update_state()
             self.last_finish_time = self._get_final_task_finish()
             self._calculate_step_reward(action)
-            reward = self._calculate_total_reward() / self._get_final_task_finish()
+            reward = self._calculate_total_reward()
         else:
             self.invalid_count += 1
             
@@ -251,6 +250,9 @@ class SchedulingEnv(gym.Env):
             truncated,
             info,
         )
+    
+    def get_action_mask(self):
+        return self.legal_actions
 
     def _update_legal_actions(self):
         for order_index in range(len(self.orders)):
@@ -277,10 +279,10 @@ class SchedulingEnv(gym.Env):
         for i, order in enumerate(self.orders):
             task_index = self.schedule_buffer[i]
             if task_index < 0:
-                self.state[i] = np.zeros(5, dtype=np.int32)
+                self.state[i] = np.zeros(4, dtype=np.int32)
             else:
                 task = order.task_queue[task_index]
-                self.state[i] = [len(order.task_queue) - task_index, task.duration, task.earliest_start, task.type, order.reward]
+                self.state[i] = [len(order.task_queue) - task_index, task.duration, task.earliest_start, task.type]
 
     def _update_schedule_buffer(self, target_order = None):
         # target_order은 매번 모든 Order를 보는 계산량을 줄이기 위해 설정할 변수
@@ -435,16 +437,13 @@ class SchedulingEnv(gym.Env):
                 gap = performed_tasks[i].start - performed_tasks[i - 1].finish
                 hall_order += gap
         
-        # Hall 리워드를 적절히 조정하여 스케일링한 후 음수로 반환합니다.
-        # 리소스와 주문의 수에 따라 스케일링을 수행합니다.
         selected_resource.reward += (sum_duration - hall_resource)
         selected_order.reward += (sum_performed_duration - hall_order)
 
     def _get_observation(self):
         observation = {
             'action_mask': self.legal_actions,
-            'real_observation': self.state,
-            'resources_reward': np.array([resource.reward for resource in self.resources])
+            'real_observation': self.state
             }
 
         return observation
