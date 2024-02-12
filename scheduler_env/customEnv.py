@@ -20,6 +20,9 @@ class Resource():
         # str_to_tasks = [str(task) for task in self.task_schedule]
         # return f"{self.name} : {str_to_tasks}"
         return f"{self.name}"
+    
+    def can_process_task(self, task_type):
+        return task_type in self.ability
 
 class Order():
     def __init__(self, order_dictionary):
@@ -128,48 +131,44 @@ class SchedulingEnv(gym.Env):
     def __init__(self, resources = "../resources/resources-default.json", orders = "../orders/orders-new-version.json", render_mode="seaborn"):
         super(SchedulingEnv, self).__init__()
 
+        # 환경과 관련된 변수들
         resources = self.load_resources(resources)
         orders = self.load_orders_new_version(orders)
-        # Find the maximum 'resource' and 'predecessor' values in the tasks list
         self.resources = [Resource(resource_info) for resource_info in resources]
         self.orders = [Order(order_info) for order_info in orders]
         len_resource = len(self.resources)
         len_orders = len(self.orders)
-
         # Reset 할 때 DeepCopy를 위해 원본을 저장해둠
         self.original_orders = copy.deepcopy(self.orders)
         self.original_resources = copy.deepcopy(self.resources)
         self.original_tasks = copy.deepcopy([order.task_queue for order in self.orders])
-
-        # 총 Task의 수
         self.num_tasks = sum([len(order.task_queue) for order in self.orders])
         
-        # 각 오더의 번호와 매칭되는 버퍼, 추후 크기를 키울 예정
+        # 내부 동작을 위한 변수들
         self.schedule_buffer = [-1 for _ in range(len(self.orders))]
-        
-        # invalid_action을 수행한 횟수를 저장
-        self.invalid_count = 0
-        
+        self.state = None
+        self.legal_actions = None
         self.action_space = spaces.MultiDiscrete([len_resource, len_orders])
         self.observation_space = spaces.Dict({
-            'resource_reward': spaces.Box(low=0, high=5000, shape=(len_resource,), dtype=np.int32),
-            'order_reward' : spaces.Box(low=0, high=5000, shape=(len_orders,), dtype=np.int32),
-            'schedule_buffer' : spaces.Box(low=-1, high=max([len(order.task_queue) for order in self.orders]), shape=(len_orders,),dtype=np.int32),
-            'duration': spaces.Box(low=0, high=5000, shape=(len_orders,), dtype=np.int32),
-            'start': spaces.Box(low=-1, high=5000, shape=(len_orders,), dtype=np.int32),
-            'finish': spaces.Box(low=-1, high=5000, shape=(len_orders,), dtype=np.int32),
+            "action_mask": spaces.MultiBinary(len_orders),
+            "real_observation": spaces.Box(low=-1, high=5000, shape=(len_orders, 4), dtype=np.int32)
         })
-        # 현재까지 스케줄 된 Task들의 리스트
+        # self.observation_space = spaces.Dict({
+        #     'resource_reward': spaces.Box(low=0, high=5000, shape=(len_resource,), dtype=np.int32),
+        #     'order_reward' : spaces.Box(low=0, high=5000, shape=(len_orders,), dtype=np.int32),
+        #     'schedule_buffer' : spaces.Box(low=-1, high=max([len(order.task_queue) for order in self.orders]), shape=(len_orders,),dtype=np.int32),
+        #     'duration': spaces.Box(low=0, high=5000, shape=(len_orders,), dtype=np.int32),
+        #     'start': spaces.Box(low=-1, high=5000, shape=(len_orders,), dtype=np.int32),
+        #     'finish': spaces.Box(low=-1, high=5000, shape=(len_orders,), dtype=np.int32),
+        # })
+
+
+        # 기록을 위한 변수들
         self.current_schedule = []
-
-        # 현재까지 스케줄 된 Task들의 개수
         self.num_scheduled_tasks = 0
-
-        # 현재까지 수행한 step 넘버
         self.num_steps = 0
-
-        # 최종 finish time
-        self.finish_time = 0
+        self.invalid_count = 0
+        self.last_finish_time = 0
 
     def reset(self, seed=None, options=None):
         """
@@ -177,14 +176,28 @@ class SchedulingEnv(gym.Env):
         :return: (np.array)
         """
         super().reset(seed=seed, options=options)
-        self.current_schedule = []
+
+        # 환경과 관련된 변수들     
         self.orders = copy.deepcopy(self.original_orders)
-        self.resources = copy.deepcopy(self.original_resources)
-        self.schedule_buffer = [-1 for _ in range(len(self.orders))]
-        self.invalid_count = 0
-        self.finish_time = 0
+        self.resources = copy.deepcopy(self.original_resources)\
+        
+        # 내부 동작을 위한 변수들
+        # self.state에 관한 추가설명 / Order 하나 당 가지는 정보는 아래와 같다
+        # 1. 남은 task 수
+        # 2. 다음으로 수행할 Task의 Type
+        # 3. 다음으로 수행할 Task의 earliest_start
+        # 4. 다음으로 수행할 Task의 duration
+        self.state = np.zeros((len(self.orders), 4), dtype=np.int32)
+        self.legal_actions = np.ones((len(self.resources), len(self.orders)), dtype=bool)       
+        self._update_schedule_buffer()
+        self._update_state()
+
+        # 기록을 위한 변수들
+        self.current_schedule = []
         self.num_scheduled_tasks = 0
         self.num_steps = 0
+        self.invalid_count = 0
+        self.last_finish_time = 0
 
         return self._get_observation(), {}  # empty info dict
 
@@ -192,45 +205,33 @@ class SchedulingEnv(gym.Env):
         def is_error_action(act):
             return act[0] < 0 or act[1] < 0 or act[0] >= len(self.resources) or act[1] >= len(self.orders)
 
-        def is_invalid_action(act):
-            task_index = self.schedule_buffer[act[1]]
-            if task_index < 0:
-                return True
-            task = self.orders[act[1]].task_queue[task_index]
-            resource = self.resources[act[0]]
-            if task.type not in resource.abilty:
-                return True
-        
         if is_error_action(action):
             raise ValueError(
                 f"Received invalid action={action} which is not part of the action space"
             )
-        
-        # Schedule_buffer를 업데이트 한다
-        self._update_schedule_buffer()
 
         # error_action이 아니라면 step의 수를 증가시킨다
         self.num_steps += 1
 
-        # action이 invalid인지 아닌지에 대한 정보를 담을 플래그
-        invalid_action = False
+        # 현재 아래 업데이트의 문제점 : Resource와 Task의 타입이 맞지 않아 False 처리를 한 이후 다시 True로 바뀔 수 있어야하는데 구현 하지 못했음
+        self._update_legal_actions(action)
 
-        if self.schedule_buffer[action[1]] < 0:
-            invalid_action = True
+        self._schedule_task(action)
+        
+        self._update_schedule_buffer(action[1])
 
-        if not invalid_action:
-            self._schedule_task(action)
-            self._calculate_step_reward(action)
-            reward = 1
-        else:
-            self.invalid_count += 1
-            reward = -5
+        self._update_state()
 
-        # 모든 Order를 수행했는지를 체크하는 플래그
-        terminated = bool(self.schedule_buffer.count(-1) == len(self.orders))
+        # 고로 다시 아래처럼 초기화함
+        self.legal_actions = np.ones((len(self.resources), len(self.orders)), dtype=bool)
 
+        self.last_finish_time = self._get_final_task_finish()
+
+        # 모든 Order의 Task가 종료된 경우 Terminated를 True로 설정한다
+        # 또한 legal_actions가 전부 False인 경우도 Terminated를 True로 설정한다
+        terminated = all([order.task_queue[-1].finish is not None for order in self.orders]) or not np.any(self.legal_actions)
+        
         if terminated:
-            self.finish_time = self._get_final_task_finish()
             reward = self._calculate_total_reward()
 
         # 무한 루프를 방지하기 위한 조건
@@ -238,7 +239,7 @@ class SchedulingEnv(gym.Env):
 
         # Optionally we can pass additional info, we are not using that for now
         info = {
-            'finish_time' : self.finish_time,
+            'finish_time' : self.last_finish_time,
             'invalid_count' : self.invalid_count,
             'resources_reward' : [resource.reward for resource in self.resources],
             'orders_reward' : [order.reward for order in self.orders]
@@ -251,6 +252,36 @@ class SchedulingEnv(gym.Env):
             truncated,
             info,
         )
+
+    def _update_legal_actions(self, action):
+        resource_index, order_index = action
+        
+        # 1. 선택된 Order의 모든 Task가 이미 종료된 경우
+        if self.schedule_buffer[order_index] < 0:
+            self.legal_actions[:, order_index] = False
+            return
+        
+        # 2. 선택된 Resource가 선택된 Order의 Task의 Type을 처리할 수 없는 경우
+        resource = self.resources[resource_index]
+        order = self.orders[order_index]
+        task = order.task_queue[self.schedule_buffer[order_index]]
+        if not resource.can_process_task(task.type):
+            self.legal_actions[resource_index, order_index] = False
+
+    def _update_state(self):
+        # state는 order의 수 * 4의 행렬이다
+        # 각 열에는 해당 Order의 Task에 대한 정보가 담겨있다
+        # 남은 task 수
+        # 다음으로 수행할 Task의 Duration
+        # 다음으로 수행할 Task의 Earlist_start
+        # 다음으로 수행할 Task의 Type
+        for i, order in enumerate(self.orders):
+            task_index = self.schedule_buffer[i]
+            if task_index < 0:
+                self.state[i] = np.zeros(4, dtype=np.int32)
+            else:
+                task = order.task_queue[task_index]
+                self.state[i] = [len(order.task_queue) - task_index, task.duration, task.earliest_start, task.type]
 
     def render(self, mode="seaborn"):
         if mode == "console":
@@ -359,24 +390,21 @@ class SchedulingEnv(gym.Env):
                 buffer_index += 1
                 
         # Action으로 인해 봐야할 버퍼의 인덱스가 정해짐
-
-        # else:
-        #     selected_task_index = -1
-        #     for i in range(len(self.orders[target_order].task_queue)):
-        #         # 아직 스케줄링을 시작하지 않은 Task를 찾는다
-        #         if order.task_queue[i].finish is None:
-        #             selected_task_index = i
-        #             break
-        #     if selected_task_index >= 0:
-        #         selected_task = order.task_queue[selected_task_index]
-
-        #         # 만약 초기 시작 제한이 없다면 
-        #         # 초기 시작 제한을 이전 Task의 Finish Time으로 걸어주고 버퍼에 등록한다.
-        #         if selected_task.earliest_start is None:
-        #             if selected_task_index > 0:
-        #                 selected_task.earliest_start = order.task_queue[selected_task_index-1].finish
+        else:
+            selected_task_index = -1
+            order = self.orders[target_order]
+            for i in range(len(order.task_queue)):
+                # 아직 스케줄링을 시작하지 않은 Task를 찾는다
+                if order.task_queue[i].finish is None:
+                    selected_task_index = i
+                    break
+            if selected_task_index >= 0:
+                    selected_task = order.task_queue[selected_task_index]
+                    if selected_task.earliest_start is None:
+                        if selected_task_index > 0:
+                            selected_task.earliest_start = order.task_queue[selected_task_index-1].finish
             
-        #     self.schedule_buffer[target_order] = selected_task_index        
+            self.schedule_buffer[target_order] = selected_task_index
         
     def _schedule_task(self, action):
         # Implement the scheduling logic based on the action
@@ -476,14 +504,19 @@ class SchedulingEnv(gym.Env):
             selected_order.reward = -0.3 * (order_finish - order_start - sum_duration)
 
     def _get_observation(self):
+        # observation_ver1 = {
+        #     'resource_reward' : np.array([resource.reward for resource in self.resources], dtype=np.int32),
+        #     'order_reward' : np.array([order.reward for order in self.orders], dtype=np.int32),
+        #     'schedule_buffer' : np.array(self.schedule_buffer, dtype=np.int32),
+        #     'duration': np.array([self.orders[order_index].task_queue[task_index].duration if task_index >= 0 else 0 for order_index, task_index in enumerate(self.schedule_buffer)], dtype=np.int32),
+        #     'start': np.array([self.orders[order_index].task_queue[task_index].start if task_index >= 0 and self.orders[order_index].task_queue[task_index].start is not None else -1 for order_index, task_index in enumerate(self.schedule_buffer)], dtype=np.int32),
+        #     'finish': np.array([self.orders[order_index].task_queue[task_index].finish if task_index >= 0 and self.orders[order_index].task_queue[task_index].finish is not None else -1 for order_index, task_index in enumerate(self.schedule_buffer)], dtype=np.int32),
+        # }
         observation = {
-            'resource_reward' : np.array([resource.reward for resource in self.resources], dtype=np.int32),
-            'order_reward' : np.array([order.reward for order in self.orders], dtype=np.int32),
-            'schedule_buffer' : np.array(self.schedule_buffer, dtype=np.int32),
-            'duration': np.array([self.orders[order_index].task_queue[task_index].duration if task_index >= 0 else 0 for order_index, task_index in enumerate(self.schedule_buffer)], dtype=np.int32),
-            'start': np.array([self.orders[order_index].task_queue[task_index].start if task_index >= 0 and self.orders[order_index].task_queue[task_index].start is not None else -1 for order_index, task_index in enumerate(self.schedule_buffer)], dtype=np.int32),
-            'finish': np.array([self.orders[order_index].task_queue[task_index].finish if task_index >= 0 and self.orders[order_index].task_queue[task_index].finish is not None else -1 for order_index, task_index in enumerate(self.schedule_buffer)], dtype=np.int32),
-        }
+            'action_mask': self.legal_actions,
+            'real_observation': self.state       
+            }
+
         return observation
     
 if __name__ == "__main__":
