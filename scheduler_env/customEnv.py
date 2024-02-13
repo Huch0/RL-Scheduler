@@ -8,18 +8,23 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from stable_baselines3.common.env_checker import check_env
 
+def type_incoding(type):
+        type_code = {'A' : 0, 'B' : 1, 'C' : 2, 'D' : 3, 'E': 4, 'F' : 5, 'G' : 6, 'H' : 7, 'I' : 8, 'J' : 9, 'K' : 10, 'L' : 11, 'M' : 12, 'N' : 13, 'O' : 14, 'P' : 15, 'Q' : 16, 'R' : 17, 'S' : 18, 'T' : 19, 'U' : 20, 'V' : 21, 'W' : 22, 'X' : 23, 'Y' : 24, 'Z' : 25}
+        return type_code[type]
 
 class Resource():
     def __init__(self, resouces_dictionary):
         self.task_schedule = [] # (tasks)
         self.name = resouces_dictionary['name'] 
-        self.ability = resouces_dictionary['ability'] # "A, B, C, ..."
+        self.ability = self.ability_incoding(resouces_dictionary['ability']) # "A, B, C, ..."
         self.reward = 0
 
     def __str__(self):
         # str_to_tasks = [str(task) for task in self.task_schedule]
         # return f"{self.name} : {str_to_tasks}"
         return f"{self.name}"
+    def ability_incoding(self, ability):
+        return [type_incoding(type) for type in ability]
     
     def can_process_task(self, task_type):
         return task_type in self.ability
@@ -35,7 +40,7 @@ class Task():
     def __init__(self, task_dictionary):
         self.sequence = task_dictionary['sequence']
         self.index = task_dictionary['index']
-        self.type = task_dictionary['type']
+        self.type = type_incoding(task_dictionary['type'])
         self.predecessor = task_dictionary['predecessor']
         self.earliest_start = task_dictionary['earliest_start']
         self.duration = task_dictionary['duration']
@@ -63,10 +68,6 @@ class Task():
         return f"order : {self.order}, step : {self.index} | ({self.start}, {self.finish})"
 
 class SchedulingEnv(gym.Env):
-    """
-    Custom Environment that follows gym interface.
-    This is a simple env where the agent must learn to go always left.
-    """
     def load_resources(self, file_path):
         resources = []
 
@@ -125,13 +126,9 @@ class SchedulingEnv(gym.Env):
 
         return orders
 
-    # Because of google colab, we cannot implement the GUI ('human' render mode)
-    metadata = {"render.modes": ["seaborn"]}
-    #resources_json, orders_json,
-    def __init__(self, resources = "../resources/resources-default.json", orders = "../orders/orders-new-version.json", render_mode="seaborn"):
+    def __init__(self, resources = "../resources/resources-10.json", orders = "../orders/converted_data.json", render_mode="seaborn"):
         super(SchedulingEnv, self).__init__()
 
-        # 환경과 관련된 변수들
         resources = self.load_resources(resources)
         orders = self.load_orders_new_version(orders)
         self.resources = [Resource(resource_info) for resource_info in resources]
@@ -143,27 +140,16 @@ class SchedulingEnv(gym.Env):
         self.original_resources = copy.deepcopy(self.resources)
         self.original_tasks = copy.deepcopy([order.task_queue for order in self.orders])
         self.num_tasks = sum([len(order.task_queue) for order in self.orders])
-        
-        # 내부 동작을 위한 변수들
+
         self.schedule_buffer = [-1 for _ in range(len(self.orders))]
         self.state = None
         self.legal_actions = None
         self.action_space = spaces.MultiDiscrete([len_resource, len_orders])
         self.observation_space = spaces.Dict({
-            "action_mask": spaces.MultiBinary(len_orders),
-            "real_observation": spaces.Box(low=-1, high=5000, shape=(len_orders, 4), dtype=np.int32)
+            "action_mask": spaces.MultiBinary([len_resource, len_orders]),
+            "real_observation": spaces.Box(low=-10, high=5000, shape=(len_orders, 4), dtype=np.float64)
         })
-        # self.observation_space = spaces.Dict({
-        #     'resource_reward': spaces.Box(low=0, high=5000, shape=(len_resource,), dtype=np.int32),
-        #     'order_reward' : spaces.Box(low=0, high=5000, shape=(len_orders,), dtype=np.int32),
-        #     'schedule_buffer' : spaces.Box(low=-1, high=max([len(order.task_queue) for order in self.orders]), shape=(len_orders,),dtype=np.int32),
-        #     'duration': spaces.Box(low=0, high=5000, shape=(len_orders,), dtype=np.int32),
-        #     'start': spaces.Box(low=-1, high=5000, shape=(len_orders,), dtype=np.int32),
-        #     'finish': spaces.Box(low=-1, high=5000, shape=(len_orders,), dtype=np.int32),
-        # })
-
-
-        # 기록을 위한 변수들
+        
         self.current_schedule = []
         self.num_scheduled_tasks = 0
         self.num_steps = 0
@@ -199,7 +185,16 @@ class SchedulingEnv(gym.Env):
         self.invalid_count = 0
         self.last_finish_time = 0
 
-        return self._get_observation(), {}  # empty info dict
+        info = {
+            'finish_time' : self.last_finish_time,
+            'invalid_count' : self.invalid_count,
+            'resources_reward' : [resource.reward for resource in self.resources],
+            'orders_reward' : [order.reward for order in self.orders],
+            'schedule_buffer' : self.schedule_buffer,
+            'current_schedule' : self.current_schedule
+               }
+
+        return self._get_observation(), info  # empty info dict
 
     def step(self, action):
         def is_error_action(act):
@@ -212,37 +207,40 @@ class SchedulingEnv(gym.Env):
 
         # error_action이 아니라면 step의 수를 증가시킨다
         self.num_steps += 1
-
+        reward = -1
         # 현재 아래 업데이트의 문제점 : Resource와 Task의 타입이 맞지 않아 False 처리를 한 이후 다시 True로 바뀔 수 있어야하는데 구현 하지 못했음
-        self._update_legal_actions(action)
-
-        self._schedule_task(action)
-        
-        self._update_schedule_buffer(action[1])
-
-        self._update_state()
-
+        self._update_legal_actions()
+        if self.legal_actions[action[0]][action[1]]:
+            self._schedule_task(action)
+            self._update_schedule_buffer(action[1])
+            self._update_state()
+            self.last_finish_time = self._get_final_task_finish()
+            self._calculate_step_reward(action)
+            reward = self._calculate_total_reward()
+        else:
+            self.invalid_count += 1
+            
         # 고로 다시 아래처럼 초기화함
         self.legal_actions = np.ones((len(self.resources), len(self.orders)), dtype=bool)
-
-        self.last_finish_time = self._get_final_task_finish()
 
         # 모든 Order의 Task가 종료된 경우 Terminated를 True로 설정한다
         # 또한 legal_actions가 전부 False인 경우도 Terminated를 True로 설정한다
         terminated = all([order.task_queue[-1].finish is not None for order in self.orders]) or not np.any(self.legal_actions)
         
         if terminated:
-            reward = self._calculate_total_reward()
+            reward += 10000/self._get_final_task_finish()
 
         # 무한 루프를 방지하기 위한 조건
-        truncated = bool(self.num_steps == 1000)
+        truncated = bool(self.num_steps == 10000)
 
         # Optionally we can pass additional info, we are not using that for now
         info = {
             'finish_time' : self.last_finish_time,
             'invalid_count' : self.invalid_count,
             'resources_reward' : [resource.reward for resource in self.resources],
-            'orders_reward' : [order.reward for order in self.orders]
+            'orders_reward' : [order.reward for order in self.orders],
+            'schedule_buffer' : self.schedule_buffer,
+            'current_schedule' : self.current_schedule
                }
 
         return (
@@ -252,21 +250,24 @@ class SchedulingEnv(gym.Env):
             truncated,
             info,
         )
+    
+    def get_action_mask(self):
+        return self.legal_actions
 
-    def _update_legal_actions(self, action):
-        resource_index, order_index = action
-        
+    def _update_legal_actions(self):
+        for order_index in range(len(self.orders)):
         # 1. 선택된 Order의 모든 Task가 이미 종료된 경우
-        if self.schedule_buffer[order_index] < 0:
-            self.legal_actions[:, order_index] = False
-            return
+            if self.schedule_buffer[order_index] < 0:
+                self.legal_actions[:, order_index] = False
         
-        # 2. 선택된 Resource가 선택된 Order의 Task의 Type을 처리할 수 없는 경우
-        resource = self.resources[resource_index]
-        order = self.orders[order_index]
-        task = order.task_queue[self.schedule_buffer[order_index]]
-        if not resource.can_process_task(task.type):
-            self.legal_actions[resource_index, order_index] = False
+        for resource_index in range(len(self.resources)):
+            # 2. 선택된 Resource가 선택된 Order의 Task의 Type을 처리할 수 없는 경우
+            resource = self.resources[resource_index]
+            for order_index in range(len(self.orders)):
+                order = self.orders[order_index]
+                task = order.task_queue[self.schedule_buffer[order_index]]
+                if not resource.can_process_task(task.type):
+                    self.legal_actions[resource_index, order_index] = False
 
     def _update_state(self):
         # state는 order의 수 * 4의 행렬이다
@@ -282,83 +283,6 @@ class SchedulingEnv(gym.Env):
             else:
                 task = order.task_queue[task_index]
                 self.state[i] = [len(order.task_queue) - task_index, task.duration, task.earliest_start, task.type]
-
-    def render(self, mode="seaborn"):
-        if mode == "console":
-            # You can implement console rendering if needed
-            pass
-        elif mode == "seaborn":
-            return self._render_seaborn()
-        elif mode == "rgb_array":
-            return self._render_rgb_array()
-
-    def _render_seaborn(self):
-        fig = self._make_chart()
-        plt.show()
-
-    def _render_rgb_array(self):
-        # Render the figure as an image
-        fig = self._make_chart()
-        canvas = FigureCanvasAgg(plt.gcf())
-        canvas.draw()
-
-        # Convert the image to RGB array
-        buf = canvas.buffer_rgba()
-        width, height = canvas.get_width_height()
-        rgb_array = np.frombuffer(
-            buf, dtype=np.uint8).reshape((height, width, 4))
-
-        return rgb_array
-
-    def _make_chart(self):
-        # Create a DataFrame to store task scheduling information
-        current_schedule = [task.to_dict() for task in self.current_schedule]
-        
-        scheduled_df = list(
-            filter(lambda task: task['sequence'] is not None, current_schedule))
-        scheduled_df = pd.DataFrame(scheduled_df)
-
-        if scheduled_df.empty:
-            # Create an empty chart
-            plt.figure(figsize=(12, 6))
-            plt.title("Task Schedule Visualization")
-            return plt
-
-        # Create a bar plot using matplotlib directly
-        fig, ax = plt.subplots(figsize=(12, 6))
-        for i in range(len(self.resources)):
-            resource_tasks = scheduled_df[scheduled_df['resource'] == i]
-
-            # Discriminate rows by lines
-            line_offset = i - 0.9  # Adjust the line offset for better visibility
-
-            for index, task in resource_tasks.iterrows():
-                ax.bar(
-                    # Adjust 'x' to start from 'start'
-                    x=task["start"] + task["duration"] / 2,
-                    height=0.8,  # Height of the bar
-                    width=task["duration"],  # Width of the bar
-                    bottom=line_offset,  # Discriminate rows by lines
-                    color=task['color'],
-                    alpha=0.7,  # Transparency
-                    label=f'Task {int(task["index"])}',  # Label for the legend
-                )
-
-        # Set y-axis ticks to show every resource
-        ax.set_yticks(np.arange(0, len(self.resources)))
-        ax.set_yticklabels(self.resources)
-
-        ax.set(ylabel="Resource", xlabel="Time")
-        # Place the legend outside the plot area
-        ax.legend(loc='upper left', bbox_to_anchor=(1, 1))
-        plt.title("Task Schedule Visualization")
-        # 경고 무시 설정
-        plt.rcParams['figure.max_open_warning'] = 0
-
-        return fig
-
-    def close(self):
-        pass
 
     def _update_schedule_buffer(self, target_order = None):
         # target_order은 매번 모든 Order를 보는 계산량을 줄이기 위해 설정할 변수
@@ -472,52 +396,135 @@ class SchedulingEnv(gym.Env):
         return
 
     def _get_final_task_finish(self):
-        # Implement your reward function based on the current state.
-        # You can use the start and finish times of tasks to calculate rewards.
-        # Example: reward based on minimizing the makespan
-        makespan = max(self.current_schedule,
-                       key=lambda x: x.finish).finish
+        return max(self.current_schedule, key=lambda x: x.finish).finish
         
-        #sum_of_orders_reward = sum([order.reward for order in self.orders])
-        #sum_of_resources_reward = sum([resource.reward for resource in self.resources])
-        
-        return -makespan # + sum_of_orders_reward + sum_of_resources_reward # Negative makespan to convert it into a minimization problem
-
     def _calculate_total_reward(self):
-        return self._get_final_task_finish() + sum([order.reward for order in self.orders]) + sum([resource.reward for resource in self.resources])
+        scale_factor = 0
+        for task in self.current_schedule:
+            scale_factor += task.duration
+        # reward = reward / self._get_final_task_finish()
+        return sum([order.reward for order in self.orders])/scale_factor #+ sum([resource.reward for resource in self.resources])) / scale_factor
     
     def _calculate_step_reward(self, action):
-        # 이 부분의 Reward 체계화 필요
-        selected_order = self.orders[action[1]]
-        self.resources[action[0]].reward += np.log(self.resources[action[0]].reward + 100)
+        # Hall 리워드 초기화
+        hall_resource = 0
+        hall_order = 0
         
-        # 선택된 오더의 스케줄링이 끝난 경우
-        # 최종 점수를 메긴다
-        if selected_order.task_queue[-1].finish is not None and selected_order.reward == 0:
-            order_start = selected_order.task_queue[0].start
-            order_finish = selected_order.task_queue[-1].finish
-            sum_duration = 0
-            for task in selected_order.task_queue:
-                sum_duration += task.duration
+        # 선택된 리소스와 주문
+        selected_resource = self.resources[action[0]]
+        selected_order = self.orders[action[1]]
+    
+        # 선택된 리소스의 스케줄링된 Task들
+        scheduled_tasks = sorted(selected_resource.task_schedule, key=lambda task: task.start)
+        sum_duration = 0
+        for task in scheduled_tasks:
+            sum_duration += task.duration
+        
+        if len(scheduled_tasks) >= 2:
+            # 리소스의 스케줄링된 Task 사이의 간격을 계산하여 Hall 리워드에 더합니다.
+            for i in range(1, len(scheduled_tasks)):
+                gap = scheduled_tasks[i].start - scheduled_tasks[i - 1].finish
+                hall_resource += gap
 
-            #점수는 아래와 같은 공식이다.
-            selected_order.reward = -0.3 * (order_finish - order_start - sum_duration)
+        # 선택된 주문의 수행된 Task들
+        performed_tasks = [task for task in selected_order.task_queue if task.finish is not None]
+        sum_performed_duration = 0
+        for task in performed_tasks:
+            sum_performed_duration += task.duration
+        if len(performed_tasks) >= 2:
+            # 주문의 수행된 Task 사이의 간격을 계산하여 Hall 리워드에 더합니다.
+            for i in range(1, len(performed_tasks)):
+                gap = performed_tasks[i].start - performed_tasks[i - 1].finish
+                hall_order += gap
+        
+        selected_resource.reward += (sum_duration - hall_resource)
+        selected_order.reward += (sum_performed_duration - hall_order)
 
     def _get_observation(self):
-        # observation_ver1 = {
-        #     'resource_reward' : np.array([resource.reward for resource in self.resources], dtype=np.int32),
-        #     'order_reward' : np.array([order.reward for order in self.orders], dtype=np.int32),
-        #     'schedule_buffer' : np.array(self.schedule_buffer, dtype=np.int32),
-        #     'duration': np.array([self.orders[order_index].task_queue[task_index].duration if task_index >= 0 else 0 for order_index, task_index in enumerate(self.schedule_buffer)], dtype=np.int32),
-        #     'start': np.array([self.orders[order_index].task_queue[task_index].start if task_index >= 0 and self.orders[order_index].task_queue[task_index].start is not None else -1 for order_index, task_index in enumerate(self.schedule_buffer)], dtype=np.int32),
-        #     'finish': np.array([self.orders[order_index].task_queue[task_index].finish if task_index >= 0 and self.orders[order_index].task_queue[task_index].finish is not None else -1 for order_index, task_index in enumerate(self.schedule_buffer)], dtype=np.int32),
-        # }
         observation = {
             'action_mask': self.legal_actions,
-            'real_observation': self.state       
+            'real_observation': self.state
             }
 
         return observation
+
+    def render(self, mode="seaborn"):
+        if mode == "console":
+            # You can implement console rendering if needed
+            pass
+        elif mode == "seaborn":
+            return self._render_seaborn()
+        elif mode == "rgb_array":
+            return self._render_rgb_array()
+
+    def _render_seaborn(self):
+        fig = self._make_chart()
+        plt.show()
+
+    def _render_rgb_array(self):
+        # Render the figure as an image
+        fig = self._make_chart()
+        canvas = FigureCanvasAgg(plt.gcf())
+        canvas.draw()
+
+        # Convert the image to RGB array
+        buf = canvas.buffer_rgba()
+        width, height = canvas.get_width_height()
+        rgb_array = np.frombuffer(
+            buf, dtype=np.uint8).reshape((height, width, 4))
+
+        return rgb_array
+
+    def _make_chart(self):
+        # Create a DataFrame to store task scheduling information
+        current_schedule = [task.to_dict() for task in self.current_schedule]
+        
+        scheduled_df = list(
+            filter(lambda task: task['sequence'] is not None, current_schedule))
+        scheduled_df = pd.DataFrame(scheduled_df)
+
+        if scheduled_df.empty:
+            # Create an empty chart
+            plt.figure(figsize=(12, 6))
+            plt.title("Task Schedule Visualization")
+            return plt
+
+        # Create a bar plot using matplotlib directly
+        fig, ax = plt.subplots(figsize=(12, 6))
+        for i in range(len(self.resources)):
+            resource_tasks = scheduled_df[scheduled_df['resource'] == i]
+
+            # Discriminate rows by lines
+            line_offset = i - 0.9  # Adjust the line offset for better visibility
+
+            for index, task in resource_tasks.iterrows():
+                ax.bar(
+                    # Adjust 'x' to start from 'start'
+                    x=task["start"] + task["duration"] / 2,
+                    height=0.8,  # Height of the bar
+                    width=task["duration"],  # Width of the bar
+                    bottom=line_offset,  # Discriminate rows by lines
+                    color=task['color'],
+                    alpha=0.7,  # Transparency
+                    label=f'Task {int(task["index"])}',  # Label for the legend
+                )
+
+        # Set y-axis ticks to show every resource
+        ax.set_yticks(np.arange(0, len(self.resources)))
+        ax.set_yticklabels(self.resources)
+
+        ax.set(ylabel="Resource", xlabel="Time")
+        # Place the legend outside the plot area
+        ax.legend(loc='upper left', bbox_to_anchor=(1, 1))
+        plt.title("Task Schedule Visualization")
+        # 경고 무시 설정
+        plt.rcParams['figure.max_open_warning'] = 0
+
+        return fig
+
+    def close(self):
+        pass
+
     
 if __name__ == "__main__":
     env = SchedulingEnv()
