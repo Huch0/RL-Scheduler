@@ -126,14 +126,14 @@ class SchedulingEnv(gym.Env):
 
         return orders
 
-    def __init__(self, resources = "../resources/resources-10.json", orders = "../orders/converted_data.json", render_mode="seaborn"):
+    def __init__(self, resources = "../resources/v1-6.json", orders = "../orders/v1-8.json", render_mode="seaborn"):
         super(SchedulingEnv, self).__init__()
 
         resources = self.load_resources(resources)
         orders = self.load_orders_new_version(orders)
         self.resources = [Resource(resource_info) for resource_info in resources]
         self.orders = [Order(order_info) for order_info in orders]
-        len_resource = len(self.resources)
+        len_resources = len(self.resources)
         len_orders = len(self.orders)
         # Reset 할 때 DeepCopy를 위해 원본을 저장해둠
         self.original_orders = copy.deepcopy(self.orders)
@@ -144,10 +144,11 @@ class SchedulingEnv(gym.Env):
         self.schedule_buffer = [-1 for _ in range(len(self.orders))]
         self.state = None
         self.legal_actions = None
-        self.action_space = spaces.MultiDiscrete([len_resource, len_orders])
+        self.action_space = spaces.MultiDiscrete([len_resources, len_orders])
         self.observation_space = spaces.Dict({
-            "action_mask": spaces.MultiBinary([len_resource, len_orders]),
-            "real_observation": spaces.Box(low=-10, high=5000, shape=(len_orders, 4), dtype=np.float64)
+            "action_mask": spaces.MultiBinary([len_resources, len_orders]),
+            "real_observation": spaces.Box(low=-1, high=5000, shape=(len_orders, 4), dtype=np.int32),
+            'num_task_per_resource': spaces.Box(low=0, high=100, shape=(len_resources, ), dtype=np.int64)
         })
         
         self.current_schedule = []
@@ -207,7 +208,7 @@ class SchedulingEnv(gym.Env):
 
         # error_action이 아니라면 step의 수를 증가시킨다
         self.num_steps += 1
-        reward = -1
+        reward = -0.5
         # 현재 아래 업데이트의 문제점 : Resource와 Task의 타입이 맞지 않아 False 처리를 한 이후 다시 True로 바뀔 수 있어야하는데 구현 하지 못했음
         self._update_legal_actions()
         if self.legal_actions[action[0]][action[1]]:
@@ -228,7 +229,8 @@ class SchedulingEnv(gym.Env):
         terminated = all([order.task_queue[-1].finish is not None for order in self.orders]) or not np.any(self.legal_actions)
         
         if terminated:
-            reward += 10000/self._get_final_task_finish()
+            sum_of_all_task_duration = sum([task.duration for task in self.current_schedule])
+            reward += sum_of_all_task_duration / self._get_final_task_finish()
 
         # 무한 루프를 방지하기 위한 조건
         truncated = bool(self.num_steps == 10000)
@@ -403,29 +405,35 @@ class SchedulingEnv(gym.Env):
         for task in self.current_schedule:
             scale_factor += task.duration
         # reward = reward / self._get_final_task_finish()
-        return sum([order.reward for order in self.orders])/scale_factor #+ sum([resource.reward for resource in self.resources])) / scale_factor
+        return (sum([order.reward for order in self.orders])/len(self.orders) + sum([resource.reward for resource in self.resources])/len(self.resources))/2 #+ sum([resource.reward for resource in self.resources])) / scale_factor
     
     def _calculate_step_reward(self, action):
         # Hall 리워드 초기화
-        hall_resource = 0
         hall_order = 0
         
         # 선택된 리소스와 주문
-        selected_resource = self.resources[action[0]]
+        #selected_resource = self.resources[action[0]]
         selected_order = self.orders[action[1]]
-    
-        # 선택된 리소스의 스케줄링된 Task들
-        scheduled_tasks = sorted(selected_resource.task_schedule, key=lambda task: task.start)
-        sum_duration = 0
-        for task in scheduled_tasks:
-            sum_duration += task.duration
-        
-        if len(scheduled_tasks) >= 2:
-            # 리소스의 스케줄링된 Task 사이의 간격을 계산하여 Hall 리워드에 더합니다.
-            for i in range(1, len(scheduled_tasks)):
-                gap = scheduled_tasks[i].start - scheduled_tasks[i - 1].finish
-                hall_resource += gap
 
+        for resource in self.resources:
+            result = 0
+            # 선택된 리소스의 스케줄링된 Task들
+            if resource.task_schedule:
+                scheduled_tasks = sorted(resource.task_schedule, key=lambda task: task.start)
+                # resource의 hall은 현재까지 스케줄에서 가장 늦게 끝난 Task를 기준으로 설계를 한다.
+                # 현재까지 스케줄에서 가장 늦게 끝난 Task의 시간을 전체 길이로 보고
+                # 막대가 분배되지 않은 부분들을 전부 Hall로 보고 계산한다.
+                hall_resource = scheduled_tasks[0].start + (self._get_final_task_finish() - scheduled_tasks[-1].finish)
+                if len(scheduled_tasks) >= 2:
+                    # 리소스의 스케줄링된 Task 사이의 간격을 계산하여 Hall 리워드에 더합니다.
+                    for i in range(1, len(scheduled_tasks)):
+                        gap = scheduled_tasks[i].start - scheduled_tasks[i - 1].finish
+                        hall_resource += gap
+                result = (self._get_final_task_finish() - hall_resource) / self._get_final_task_finish()
+            else:
+                result = -1
+            resource.reward = result
+            
         # 선택된 주문의 수행된 Task들
         performed_tasks = [task for task in selected_order.task_queue if task.finish is not None]
         sum_performed_duration = 0
@@ -437,13 +445,13 @@ class SchedulingEnv(gym.Env):
                 gap = performed_tasks[i].start - performed_tasks[i - 1].finish
                 hall_order += gap
         
-        selected_resource.reward += (sum_duration - hall_resource)
-        selected_order.reward += (sum_performed_duration - hall_order)
+        selected_order.reward += (sum_performed_duration - hall_order)/sum_performed_duration
 
     def _get_observation(self):
         observation = {
             'action_mask': self.legal_actions,
-            'real_observation': self.state
+            'real_observation': self.state,
+            'num_task_per_resource': np.array([len(resource.task_schedule) for resource in self.resources])
             }
 
         return observation
@@ -524,7 +532,6 @@ class SchedulingEnv(gym.Env):
 
     def close(self):
         pass
-
     
 if __name__ == "__main__":
     env = SchedulingEnv()
