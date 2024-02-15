@@ -1,0 +1,310 @@
+{
+  "orders": [
+    {
+      "name": "Order 1",
+      "color": "#1f77b4",
+      "earliest_start": 0,
+      "tasks": [
+        {
+          "index": 1,
+          "type": "A",
+          "duration": 100,
+          "predecessor": null
+        },
+        {
+          "index": 2,
+          "type": "D",
+          "duration": 300,
+          "predecessor": 1
+        },
+        {
+          "index": 3,
+          "type": "C",
+          "duration": 100,
+          "predecessor": 2
+        },
+        {
+          "index": 4,
+          "type": "C",
+          "duration": 100,
+          "predecessor": 3
+        }
+      ]
+    },
+    {
+      "name": "Order 2",
+      "color": "#ff7f0e",
+      "earliest_start": 0,
+      "tasks": [
+        {
+          "index": 1,
+          "type": "B",
+          "duration": 100,
+          "predecessor": null
+        },
+        {
+          "index": 2,
+          "type": "B",
+          "duration": 200,
+          "predecessor": 1
+        },
+        {
+          "index": 3,
+          "type": "D",
+          "duration": 300,
+          "predecessor": 2
+        }
+      ]
+    },
+    {
+      "name": "Order 3",
+      "color": "#2ca02c",
+      "earliest_start": 0,
+      "tasks": [
+        {
+          "index": 1,
+          "type": "C",
+          "duration": 100,
+          "predecessor": null
+        },
+        {
+          "index": 2,
+          "type": "A",
+          "duration": 300,
+          "predecessor": 1
+        },
+        {
+          "index": 3,
+          "type": "D",
+          "duration": 300,
+          "predecessor": 2
+        }
+      ]
+    },
+    {
+      "name": "Order 4",
+      "color": "#d62728",
+      "earliest_start": 0,
+      "tasks": [
+        {
+          "index": 1,
+          "type": "A",
+          "duration": 100,
+          "predecessor": null
+        },
+        {
+          "index": 2,
+          "type": "B",
+          "duration": 100,
+          "predecessor": 1
+        },
+        {
+          "index": 3,
+          "type": "C",
+          "duration": 400,
+          "predecessor": 2
+        }
+      ]
+    },
+    {
+      "name": "Order 5",
+      "color": "#9467bd",
+      "earliest_start": 0,
+      "tasks": [
+        {
+          "index": 1,
+          "type": "B",
+          "duration": 300,
+          "predecessor": null
+        },
+        {
+          "index": 2,
+          "type": "D",
+          "duration": 200,
+          "predecessor": 1
+        },
+        {
+          "index": 3,
+          "type": "B",
+          "duration": 100,
+          "predecessor": 2
+        }
+      ]
+    },
+    {
+      "name": "Order 6",
+      "color": "#8c564b",
+      "earliest_start": 0,
+      "tasks": [
+        {
+          "index": 1,
+          "type": "B",
+          "duration": 200,
+          "predecessor": null
+        },
+        {
+          "index": 2,
+          "type": "C",
+          "duration": 100,
+          "predecessor": 1
+        },
+        {
+          "index": 3,
+          "type": "D",
+          "duration": 300,
+          "predecessor": 2
+        }
+      ]
+    },
+    {
+      "name": "Order 7",
+      "color": "#e377c2",
+      "earliest_start": 0,
+      "tasks": [
+        {
+          "index": 1,
+          "type": "C",
+          "duration": 400,
+          "predecessor": null
+        },
+        {
+          "index": 2,
+          "type": "B",
+          "duration": 200,
+          "predecessor": 1
+        },
+        {
+          "index": 3,
+          "type": "D",
+          "duration": 100,
+          "predecessor": 2
+        }
+      ]
+    },
+    {
+      "name": "Order 8",
+      "color": "#7f7f7f",
+      "earliest_start": 0,
+      "tasks": [
+        {
+          "index": 1,
+          "type": "D",
+          "duration": 500,
+          "predecessor": null
+        },
+        {
+          "index": 2,
+          "type": "A",
+          "duration": 400,
+          "predecessor": 1
+        },
+        {
+          "index": 3,
+          "type": "D",
+          "duration": 100,
+          "predecessor": 2
+        }
+      ]
+    },
+    {
+      "name": "Order 9",
+      "color": "#bcbd22",
+      "earliest_start": 0,
+      "tasks": [
+        {
+          "index": 1,
+          "type": "A",
+          "duration": 100,
+          "predecessor": null
+        },
+        {
+          "index": 2,
+          "type": "C",
+          "duration": 200,
+          "predecessor": 1
+        },
+        {
+          "index": 3,
+          "type": "B",
+          "duration": 200,
+          "predecessor": 2
+        }
+      ]
+    },
+    {
+      "name": "Order 10",
+      "color": "#17becf",
+      "earliest_start": 0,
+      "tasks": [
+        {
+          "index": 1,
+          "type": "B",
+          "duration": 200,
+          "predecessor": null
+        },
+        {
+          "index": 2,
+          "type": "D",
+          "duration": 200,
+          "predecessor": 1
+        },
+        {
+          "index": 3,
+          "type": "A",
+          "duration": 200,
+          "predecessor": 2
+        }
+      ]
+    },
+    {
+      "name": "Order 11",
+      "color": "#aec7e8",
+      "earliest_start": 0,
+      "tasks": [
+        {
+          "index": 1,
+          "type": "A",
+          "duration": 300,
+          "predecessor": null
+        },
+        {
+          "index": 2,
+          "type": "B",
+          "duration": 200,
+          "predecessor": 1
+        },
+        {
+          "index": 3,
+          "type": "C",
+          "duration": 200,
+          "predecessor": 2
+        }
+      ]
+    },
+    {
+      "name": "Order 12",
+      "color": "#ffbb78",
+      "earliest_start": 0,
+      "tasks": [
+        {
+          "index": 1,
+          "type": "D",
+          "duration": 100,
+          "predecessor": null
+        },
+        {
+          "index": 2,
+          "type": "C",
+          "duration": 200,
+          "predecessor": 1
+        },
+        {
+          "index": 3,
+          "type": "A",
+          "duration": 400,
+          "predecessor": 2
+        }
+      ]
+    }
+  ]
+}
