@@ -1,0 +1,36 @@
+{
+  "resources": [
+    {
+      "name": "resource 1",
+      "type": "A"
+    },
+    {
+      "name": "resource 2",
+      "type": "B"
+    },
+    {
+      "name": "resource 3",
+      "type": "A, C"
+    },
+    {
+      "name": "resource 4",
+      "type": "A, D"
+    },
+    {
+      "name": "resource 5",
+      "type": "B, C"
+    },
+    {
+      "name": "resource 6",
+      "type": "B, D"
+    },
+    {
+      "name": "resource 7",
+      "type": "C, D"
+    },
+    {
+      "name": "resource 8",
+      "type": "D"
+    }
+  ]
+}

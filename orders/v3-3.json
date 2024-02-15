@@ -1,0 +1,97 @@
+{
+  "orders": [
+    {
+      "name": "Order 1",
+      "color": "#d62728",
+      "earliest_start": 0,
+      "tasks": [
+        {
+          "index": 1,
+          "type": "A",
+          "duration": 300,
+          "predecessor": null
+        },
+        {
+          "index": 2,
+          "type": "B",
+          "duration": 100,
+          "predecessor": 1
+        },
+        {
+          "index": 3,
+          "type": "C",
+          "duration": 200,
+          "predecessor": 2
+        },
+        {
+          "index": 4,
+          "type": "D",
+          "duration": 200,
+          "predecessor": 3
+        }
+      ]
+    },
+    {
+      "name": "Order 2",
+      "color": "#2ca02c",
+      "earliest_start": 0,
+      "tasks": [
+        {
+          "index": 1,
+          "type": "B",
+          "duration": 200,
+          "predecessor": null
+        },
+        {
+          "index": 2,
+          "type": "A",
+          "duration": 100,
+          "predecessor": 1
+        },
+        {
+          "index": 3,
+          "type": "D",
+          "duration": 400,
+          "predecessor": 2
+        },
+        {
+          "index": 4,
+          "type": "C",
+          "duration": 100,
+          "predecessor": 3
+        }
+      ]
+    },
+    {
+      "name": "Order 3",
+      "color": "#aec7e8",
+      "earliest_start": 0,
+      "tasks": [
+        {
+          "index": 1,
+          "type": "D",
+          "duration": 300,
+          "predecessor": null
+        },
+        {
+          "index": 2,
+          "type": "A",
+          "duration": 100,
+          "predecessor": 1
+        },
+        {
+          "index": 3,
+          "type": "B",
+          "duration": 300,
+          "predecessor": 2
+        },
+        {
+          "index": 4,
+          "type": "A",
+          "duration": 100,
+          "predecessor": 3
+        }
+      ]
+    }
+  ]
+}
