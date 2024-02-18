@@ -155,7 +155,7 @@ class SchedulingEnv(gym.Env):
 
         self.schedule_buffer = [-1 for _ in range(len(self.orders))]
         self.order_state = None
-        self.resoure_types = None
+        self.resource_types = None
         self.operation_schedules = None
         self.legal_actions = None
         self.action_space = spaces.MultiDiscrete([len_resources, len_orders])
@@ -164,7 +164,7 @@ class SchedulingEnv(gym.Env):
             "order_observation": spaces.Box(low=-1, high=5000, shape=(len_orders, 4), dtype=np.int32),
             "num_task_per_resource": spaces.Box(low=0, high=100, shape=(len_resources, ), dtype=np.int64),
             "resource_types": spaces.Box(low=0, high=1, shape=(len_resources, 25), dtype=np.int8),
-            "operation_schedule": spaces.Box(low=0, high=1, shape=(len_resources, 50), dtype=np.int8)
+            "operation_schedules": spaces.Box(low=0, high=1, shape=(len_resources, 50), dtype=np.int8)
         })
 
         self.current_schedule = []
@@ -192,7 +192,8 @@ class SchedulingEnv(gym.Env):
         # 3. 다음으로 수행할 Task의 earliest_start
         # 4. 다음으로 수행할 Task의 duration
         self.order_state = np.zeros((len(self.orders), 4), dtype=np.int32)
-        self.resoure_types = np.zeros((len(self.resources), 25), dtype=np.int8)
+        self.resource_types = np.zeros(
+            (len(self.resources), 25), dtype=np.int8)
         self.operation_schedules = np.zeros(
             (len(self.resources), 50), dtype=np.int8)
 
@@ -345,13 +346,13 @@ class SchedulingEnv(gym.Env):
     def _update_resource_state(self, init=False):
         if init:
             for i, resource in enumerate(self.resources):
-                self.resources_type[i] = [
+                self.resource_types[i] = [
                     1 if i in resource.ability else 0 for i in range(25)]
             return
 
         for i, resource in enumerate(self.resources):
             operation_schedule = resource.task_schedule
-            self.operation_schedule[i] = self._schedule_to_array(
+            self.operation_schedules[i] = self._schedule_to_array(
                 operation_schedule)
 
         # Resource의 reward를 계산
@@ -387,7 +388,7 @@ class SchedulingEnv(gym.Env):
             for interval in idle_time:
                 if interval[0] <= time < interval[1]:
                     return True
-                return False
+            return False
 
         result = []
 
@@ -523,8 +524,8 @@ class SchedulingEnv(gym.Env):
             'action_mask': self.legal_actions,
             'order_observation': self.order_state,
             'num_task_per_resource': np.array([len(resource.task_schedule) for resource in self.resources]),
-            'resource_types': self.resoure_types,
-            'operation_schedule': self.operation_schedules
+            'resource_types': self.resource_types,
+            'operation_schedules': self.operation_schedules
         }
 
         return observation
