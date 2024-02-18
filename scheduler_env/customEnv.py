@@ -82,7 +82,7 @@ class SchedulingEnv(gym.Env):
 
         return resources
     
-    def load_orders_new_version(self, file):
+    def load_orders(self, file):
         # Just in case we are reloading tasks
         
         orders = [] # 리턴할 용도
@@ -126,11 +126,11 @@ class SchedulingEnv(gym.Env):
 
         return orders
 
-    def __init__(self, resources = "../resources/v1-6.json", orders = "../orders/v1-8.json", render_mode="seaborn"):
+    def __init__(self, resources = "../resources/v2-8.json", orders = "../orders/v2-12.json", render_mode="seaborn"):
         super(SchedulingEnv, self).__init__()
 
         resources = self.load_resources(resources)
-        orders = self.load_orders_new_version(orders)
+        orders = self.load_orders(orders)
         self.resources = [Resource(resource_info) for resource_info in resources]
         self.orders = [Order(order_info) for order_info in orders]
         len_resources = len(self.resources)
@@ -156,6 +156,7 @@ class SchedulingEnv(gym.Env):
         self.num_steps = 0
         self.invalid_count = 0
         self.last_finish_time = 0
+        self.valid_count = 0
 
     def reset(self, seed=None, options=None):
         """
@@ -177,7 +178,7 @@ class SchedulingEnv(gym.Env):
         self.state = np.zeros((len(self.orders), 4), dtype=np.int32)
         self.legal_actions = np.ones((len(self.resources), len(self.orders)), dtype=bool)       
         self._update_schedule_buffer()
-        self._update_state()
+        self._update_order_state()
 
         # 기록을 위한 변수들
         self.current_schedule = []
@@ -185,6 +186,7 @@ class SchedulingEnv(gym.Env):
         self.num_steps = 0
         self.invalid_count = 0
         self.last_finish_time = 0
+        self.valid_count = 0
 
         info = {
             'finish_time' : self.last_finish_time,
@@ -198,10 +200,7 @@ class SchedulingEnv(gym.Env):
         return self._get_observation(), info  # empty info dict
 
     def step(self, action):
-        def is_error_action(act):
-            return act[0] < 0 or act[1] < 0 or act[0] >= len(self.resources) or act[1] >= len(self.orders)
-
-        if is_error_action(action):
+        if action[0] < 0 or action[1] < 0 or action[0] >= len(self.resources) or action[1] >= len(self.orders):
             raise ValueError(
                 f"Received invalid action={action} which is not part of the action space"
             )
@@ -212,26 +211,23 @@ class SchedulingEnv(gym.Env):
         # 현재 아래 업데이트의 문제점 : Resource와 Task의 타입이 맞지 않아 False 처리를 한 이후 다시 True로 바뀔 수 있어야하는데 구현 하지 못했음
         self._update_legal_actions()
         if self.legal_actions[action[0]][action[1]]:
-            self._schedule_task(action)
-            self._update_schedule_buffer(action[1])
-            self._update_state()
-            self.last_finish_time = self._get_final_task_finish()
-            self._calculate_step_reward(action)
-            reward = self._calculate_total_reward()
+            self._update_state(action)
+            reward = self._calculate_step_reward()
         else:
             self.invalid_count += 1
             
         # 고로 다시 아래처럼 초기화함
         self.legal_actions = np.ones((len(self.resources), len(self.orders)), dtype=bool)
-
+        
         # 모든 Order의 Task가 종료된 경우 Terminated를 True로 설정한다
         # 또한 legal_actions가 전부 False인 경우도 Terminated를 True로 설정한다
         terminated = all([order.task_queue[-1].finish is not None for order in self.orders]) or not np.any(self.legal_actions)
         
         if terminated:
             sum_of_all_task_duration = sum([task.duration for task in self.current_schedule])
-            reward += sum_of_all_task_duration / self._get_final_task_finish()
-
+            reward += len(self.current_schedule) * sum_of_all_task_duration / self._get_final_task_finish()
+            
+        # reward += sum([task.duration for task in self.current_schedule]) / self._get_final_task_finish()
         # 무한 루프를 방지하기 위한 조건
         truncated = bool(self.num_steps == 10000)
 
@@ -271,7 +267,7 @@ class SchedulingEnv(gym.Env):
                 if not resource.can_process_task(task.type):
                     self.legal_actions[resource_index, order_index] = False
 
-    def _update_state(self):
+    def _update_order_state(self, action = None):
         # state는 order의 수 * 4의 행렬이다
         # 각 열에는 해당 Order의 Task에 대한 정보가 담겨있다
         # 남은 task 수
@@ -285,6 +281,54 @@ class SchedulingEnv(gym.Env):
             else:
                 task = order.task_queue[task_index]
                 self.state[i] = [len(order.task_queue) - task_index, task.duration, task.earliest_start, task.type]
+
+        if action is not None:
+            # Order별 점수를 업데이트
+            hole_order = 0
+            
+            selected_order = self.orders[action[1]]
+            performed_tasks = [task for task in selected_order.task_queue if task.finish is not None]
+            sum_performed_duration = 0
+            for task in performed_tasks:
+                sum_performed_duration += task.duration
+            if len(performed_tasks) >= 2:
+                # 주문의 수행된 Task 사이의 간격을 계산하여 Hall 리워드에 더합니다.
+                for i in range(1, len(performed_tasks)):
+                    gap = performed_tasks[i].start - performed_tasks[i - 1].finish
+                    hole_order += gap
+            
+            selected_order.reward += (sum_performed_duration - hole_order)/sum_performed_duration
+
+    def _update_resource_state(self, action):
+        
+        # Resource의 reward를 계산
+        for resource in self.resources:
+            result = 0
+            # 선택된 리소스의 스케줄링된 Task들
+            if resource.task_schedule:
+                scheduled_tasks = sorted(resource.task_schedule, key=lambda task: task.start)
+                # resource의 hall은 현재까지 스케줄에서 가장 늦게 끝난 Task를 기준으로 설계를 한다.
+                # 현재까지 스케줄에서 가장 늦게 끝난 Task의 시간을 전체 길이로 보고
+                # 막대가 분배되지 않은 부분들을 전부 Hall로 보고 계산한다.
+                hole_resource = scheduled_tasks[0].start + (self._get_final_task_finish() - scheduled_tasks[-1].finish)
+                if len(scheduled_tasks) >= 2:
+                    # 리소스의 스케줄링된 Task 사이의 간격을 계산하여 Hall 리워드에 더합니다.
+                    for i in range(1, len(scheduled_tasks)):
+                        gap = scheduled_tasks[i].start - scheduled_tasks[i - 1].finish
+                        hole_resource += gap
+                result = (self._get_final_task_finish() - hole_resource) / self._get_final_task_finish()
+                result *= len(resource.task_schedule)
+            else:
+                result = -5
+            resource.reward = result
+    
+    def _update_state(self, action):
+        self.valid_count += 1
+        self._schedule_task(action)
+        self._update_schedule_buffer(action[1])
+        self._update_order_state(action)
+        self.last_finish_time = self._get_final_task_finish()
+        self._update_resource_state(action)
 
     def _update_schedule_buffer(self, target_order = None):
         # target_order은 매번 모든 Order를 보는 계산량을 줄이기 위해 설정할 변수
@@ -400,53 +444,13 @@ class SchedulingEnv(gym.Env):
     def _get_final_task_finish(self):
         return max(self.current_schedule, key=lambda x: x.finish).finish
         
-    def _calculate_total_reward(self):
-        scale_factor = 0
-        for task in self.current_schedule:
-            scale_factor += task.duration
+    def _calculate_step_reward(self):
+        # scale_factor = 0
+        # for task in self.current_schedule:
+        #     scale_factor += task.duration
         # reward = reward / self._get_final_task_finish()
-        return (sum([order.reward for order in self.orders])/len(self.orders) + sum([resource.reward for resource in self.resources])/len(self.resources))/2 #+ sum([resource.reward for resource in self.resources])) / scale_factor
-    
-    def _calculate_step_reward(self, action):
-        # Hall 리워드 초기화
-        hall_order = 0
+        return (np.mean([order.reward for order in self.orders]) + np.mean([resource.reward for resource in self.resources]))/2
         
-        # 선택된 리소스와 주문
-        #selected_resource = self.resources[action[0]]
-        selected_order = self.orders[action[1]]
-
-        for resource in self.resources:
-            result = 0
-            # 선택된 리소스의 스케줄링된 Task들
-            if resource.task_schedule:
-                scheduled_tasks = sorted(resource.task_schedule, key=lambda task: task.start)
-                # resource의 hall은 현재까지 스케줄에서 가장 늦게 끝난 Task를 기준으로 설계를 한다.
-                # 현재까지 스케줄에서 가장 늦게 끝난 Task의 시간을 전체 길이로 보고
-                # 막대가 분배되지 않은 부분들을 전부 Hall로 보고 계산한다.
-                hall_resource = scheduled_tasks[0].start + (self._get_final_task_finish() - scheduled_tasks[-1].finish)
-                if len(scheduled_tasks) >= 2:
-                    # 리소스의 스케줄링된 Task 사이의 간격을 계산하여 Hall 리워드에 더합니다.
-                    for i in range(1, len(scheduled_tasks)):
-                        gap = scheduled_tasks[i].start - scheduled_tasks[i - 1].finish
-                        hall_resource += gap
-                result = (self._get_final_task_finish() - hall_resource) / self._get_final_task_finish()
-            else:
-                result = -1
-            resource.reward = result
-            
-        # 선택된 주문의 수행된 Task들
-        performed_tasks = [task for task in selected_order.task_queue if task.finish is not None]
-        sum_performed_duration = 0
-        for task in performed_tasks:
-            sum_performed_duration += task.duration
-        if len(performed_tasks) >= 2:
-            # 주문의 수행된 Task 사이의 간격을 계산하여 Hall 리워드에 더합니다.
-            for i in range(1, len(performed_tasks)):
-                gap = performed_tasks[i].start - performed_tasks[i - 1].finish
-                hall_order += gap
-        
-        selected_order.reward += (sum_performed_duration - hall_order)/sum_performed_duration
-
     def _get_observation(self):
         observation = {
             'action_mask': self.legal_actions,
@@ -531,8 +535,8 @@ class SchedulingEnv(gym.Env):
         return fig
 
     def close(self):
-        pass
-    
+        pass    
+
 if __name__ == "__main__":
     env = SchedulingEnv()
 
