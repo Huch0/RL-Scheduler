@@ -164,7 +164,8 @@ class SchedulingEnv(gym.Env):
             "order_observation": spaces.Box(low=-1, high=5000, shape=(len_orders, 4), dtype=np.int32),
             "num_task_per_resource": spaces.Box(low=0, high=100, shape=(len_resources, ), dtype=np.int64),
             "resource_types": spaces.Box(low=0, high=1, shape=(len_resources, 25), dtype=np.int8),
-            "operation_schedules": spaces.Box(low=0, high=1, shape=(len_resources, 50), dtype=np.int8)
+            "operation_schedules": spaces.Box(low=0, high=1, shape=(len_resources, 50), dtype=np.int8),
+            "resource_operation_rate" : spaces.Box(low=-1, high=1, shape=(len_resources, ), dtype=np.float64),
         })
 
         self.current_schedule = []
@@ -236,7 +237,7 @@ class SchedulingEnv(gym.Env):
             reward = self._calculate_step_reward()
         else:  # Illegal action
             self.invalid_count += 1
-            reward = -0.5
+            reward = -1
 
         # 모든 Order의 Task가 종료된 경우 Terminated를 True로 설정한다
         # 또한 legal_actions가 전부 False인 경우도 Terminated를 True로 설정한다
@@ -244,10 +245,11 @@ class SchedulingEnv(gym.Env):
                          ) or not np.any(self.legal_actions)
 
         if terminated:
-            sum_of_all_task_duration = sum(
-                [task.duration for task in self.current_schedule])
-            reward += len(self.current_schedule) * \
-                sum_of_all_task_duration / self._get_final_task_finish()
+            # sum_of_all_task_duration = sum(
+            #     [task.duration for task in self.current_schedule])
+            # reward += len(self.current_schedule) * \
+            #     sum_of_all_task_duration / self._get_final_task_finish()
+            reward += 100000 / self._get_final_task_finish()
 
         # reward += sum([task.duration for task in self.current_schedule]) / self._get_final_task_finish()
         # 무한 루프를 방지하기 위한 조건
@@ -277,8 +279,8 @@ class SchedulingEnv(gym.Env):
     def _update_state(self, action=None):
         if action is not None:
             self.valid_count += 1
-            self._update_schedule_buffer(action[1])
             self._schedule_task(action)
+            self._update_schedule_buffer(action[1])
             self._update_order_state(action)
             self._update_resource_state()
             self.last_finish_time = self._get_final_task_finish()
@@ -365,18 +367,15 @@ class SchedulingEnv(gym.Env):
                 # resource의 hall은 현재까지 스케줄에서 가장 늦게 끝난 Task를 기준으로 설계를 한다.
                 # 현재까지 스케줄에서 가장 늦게 끝난 Task의 시간을 전체 길이로 보고
                 # 막대가 분배되지 않은 부분들을 전부 Hall로 보고 계산한다.
-                idle_time = scheduled_tasks[0].start + (
-                    self._get_final_task_finish() - scheduled_tasks[-1].finish)
+                idle_time = scheduled_tasks[0].start + (self._get_final_task_finish() - scheduled_tasks[-1].finish)
                 if len(scheduled_tasks) >= 2:
                     # 리소스의 스케줄링된 Task 사이의 간격을 계산하여 Hall 리워드에 더합니다.
                     for i in range(1, len(scheduled_tasks)):
-                        gap = scheduled_tasks[i].start - \
-                            scheduled_tasks[i - 1].finish
+                        gap = scheduled_tasks[i].start - scheduled_tasks[i - 1].finish
                         idle_time += gap
-                result = (self._get_final_task_finish() -
-                          idle_time) / self._get_final_task_finish()
-
+                result = (self._get_final_task_finish() - idle_time) / self._get_final_task_finish()
             resource.operation_rate = result
+            
 
     def _schedule_to_array(self, operation_schedule):
         idle_time = []
@@ -512,12 +511,23 @@ class SchedulingEnv(gym.Env):
     def _get_final_task_finish(self):
         return max(self.current_schedule, key=lambda x: x.finish).finish
 
-    def _calculate_step_reward(self):
-        # scale_factor = 0
-        # for task in self.current_schedule:
-        #     scale_factor += task.duration
-        # reward = reward / self._get_final_task_finish()
-        return (np.mean([order.density for order in self.orders]) + np.mean([resource.operation_rate for resource in self.resources]))/2
+    def _calculate_step_reward(self, resources_weight = 1.0, orders_weight = 0):
+        def operation_rate_to_reward(operation_rates, target_rate=1.0, penalty_factor=2.0):
+            total_reward = 0
+            for rate in operation_rates:
+                # Operation rate가 목표에 가까울수록 보상을 증가시킴
+                reward = 2/(abs(rate - target_rate) - 2) + 2
+                # Operation rate의 차이에 따라 패널티를 부여함
+                penalty = penalty_factor * abs(rate - target_rate)
+                # 보상에서 패널티를 빼서 최종 보상을 계산함
+                total_reward += reward - penalty
+            return total_reward / len(self.resources)
+        #if all(rate > 0 for rate in [resource.operation_rate for resource in self.resources]):
+        step_reward_by_resources = operation_rate_to_reward([resource.operation_rate for resource in self.resources])
+        step_reward_by_orders = np.mean([order.density for order in self.orders])
+        
+        return resources_weight * step_reward_by_resources + orders_weight * step_reward_by_orders
+        #return ( + np.mean([resource.operation_rate for resource in self.resources]))/2
 
     def _get_observation(self):
         observation = {
@@ -525,7 +535,8 @@ class SchedulingEnv(gym.Env):
             'order_observation': self.order_state,
             'num_task_per_resource': np.array([len(resource.task_schedule) for resource in self.resources]),
             'resource_types': self.resource_types,
-            'operation_schedules': self.operation_schedules
+            'operation_schedules': self.operation_schedules,
+            'resource_operation_rate' : np.array([resource.operation_rate for resource in self.resources])
         }
 
         return observation
