@@ -585,6 +585,8 @@ class SchedulingEnv(gym.Env):
 
         # Create a bar plot using matplotlib directly
         fig, ax = plt.subplots(figsize=(12, 6))
+        legend_orders = set()  # Set to store orders already included in the legend
+
         for i in range(len(self.resources)):
             resource_tasks = scheduled_df[scheduled_df['resource'] == i]
 
@@ -592,6 +594,12 @@ class SchedulingEnv(gym.Env):
             line_offset = i - 0.9  # Adjust the line offset for better visibility
 
             for index, task in resource_tasks.iterrows():
+                order_label = f'Order {int(task["order"])}'
+                if order_label not in legend_orders:
+                    legend_orders.add(order_label)
+                else:
+                    order_label = None
+
                 ax.bar(
                     # Adjust 'x' to start from 'start'
                     x=task["start"] + task["duration"] / 2,
@@ -600,7 +608,7 @@ class SchedulingEnv(gym.Env):
                     bottom=line_offset,  # Discriminate rows by lines
                     color=task['color'],
                     alpha=0.7,  # Transparency
-                    label=f'Task {int(task["index"])}',  # Label for the legend
+                    label=order_label,  # Label for the legend
                 )
 
         # Set y-axis ticks to show every resource
