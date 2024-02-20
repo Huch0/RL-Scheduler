@@ -154,6 +154,17 @@ class SchedulingEnv(gym.Env):
         self.num_tasks = sum([len(order.task_queue) for order in self.orders])
 
         self.schedule_buffer = [-1 for _ in range(len(self.orders))]
+        # 4 : 각 리소스별 task 수 최댓값
+        self.original_order_details = np.ones(
+            (len_orders, 4, 2), dtype=np.int8) * -1
+        for o in range(len_orders):
+            for t in range(len(self.orders[o].task_queue)):
+                self.original_order_details[o][t][0] = int(
+                    self.orders[o].task_queue[t].duration // 100)
+                self.original_order_details[o][t][1] = int(
+                    self.orders[o].task_queue[t].type)
+        self.current_order_details = copy.deepcopy(self.original_order_details)
+
         self.order_state = None
         self.resource_types = None
         self.operation_schedules = None
@@ -166,7 +177,7 @@ class SchedulingEnv(gym.Env):
 
         self.observation_space = spaces.Dict({
             "action_mask": spaces.Box(low=0, high=1, shape=(len_resources * len_orders, ), dtype=np.int8),
-            "order_observation": spaces.Box(low=-1, high=5000, shape=(len_orders, 4), dtype=np.int32),
+            "order_observation": spaces.Box(low=-1, high=25, shape=(len_orders, 4, 2), dtype=np.int8),
             "num_task_per_resource": spaces.Box(low=0, high=100, shape=(len_resources, ), dtype=np.int64),
             "resource_types": spaces.Box(low=0, high=1, shape=(len_resources, 25), dtype=np.int8),
             "operation_schedules": spaces.Box(low=0, high=1, shape=(len_resources, 50), dtype=np.int8)
@@ -190,13 +201,15 @@ class SchedulingEnv(gym.Env):
         self.orders = copy.deepcopy(self.original_orders)
         self.resources = copy.deepcopy(self.original_resources)
 
+        self.current_order_details = copy.deepcopy(self.original_order_details)
+
         # 내부 동작을 위한 변수들
         # self.order_state 관한 추가설명 / Order 하나 당 가지는 정보는 아래와 같다
         # 1. 남은 task 수
         # 2. 다음으로 수행할 Task의 Type
         # 3. 다음으로 수행할 Task의 earliest_start
         # 4. 다음으로 수행할 Task의 duration
-        self.order_state = np.zeros((len(self.orders), 4), dtype=np.int32)
+        # self.order_state = np.zeros((len(self.orders), 4), dtype=np.int32)
         self.resource_types = np.zeros(
             (len(self.resources), 25), dtype=np.int8)
         self.operation_schedules = np.zeros(
@@ -274,6 +287,7 @@ class SchedulingEnv(gym.Env):
             'finish_time': self.last_finish_time,
             'legal_actions': self.legal_actions,
             'action_mask': self.action_mask,
+            'order_details': self.current_order_details,
             'invalid_count': self.invalid_count,
             'resources_operation_rate': [resource.operation_rate for resource in self.resources],
             'orders_density': [order.density for order in self.orders],
@@ -291,12 +305,13 @@ class SchedulingEnv(gym.Env):
             self.valid_count += 1
             self._schedule_task(action)
             self._update_schedule_buffer(action[1])
-            self._update_order_state(action)
+            # self._update_order_state(action)
+            self._update_order_details(action[1])
             self._update_resource_state()
             self.last_finish_time = self._get_final_task_finish()
         else:
             self._update_schedule_buffer(None)
-            self._update_order_state(None)
+            # self._update_order_state(None)
             self._update_resource_state(init=True)
 
     def _update_legal_actions(self):
@@ -318,21 +333,29 @@ class SchedulingEnv(gym.Env):
                 if not resource.can_process_task(task.type):
                     self.legal_actions[resource_index, order_index] = False
 
-    def _update_order_state(self, action=None):
-        # state는 order의 수 * 4의 행렬이다
-        # 각 열에는 해당 Order의 Task에 대한 정보가 담겨있다
-        # 남은 task 수
-        # 다음으로 수행할 Task의 Duration
-        # 다음으로 수행할 Task의 Earlist_start
-        # 다음으로 수행할 Task의 Type
-        for i, order in enumerate(self.orders):
-            task_index = self.schedule_buffer[i]
-            if task_index < 0:
-                self.order_state[i] = np.zeros(4, dtype=np.int32)
-            else:
-                task = order.task_queue[task_index]
-                self.order_state[i] = [len(order.task_queue) - task_index,
-                                       task.duration, task.earliest_start, task.type]
+    def _update_order_details(self, order_index):
+        order = self.orders[order_index]
+        for i in range(len(order.task_queue)):
+            task = order.task_queue[i]
+            if task.finish is not None:  # task is already scheduled
+                self.current_order_details[order_index][i][0] = -1
+                self.current_order_details[order_index][i][1] = -1
+
+    # def _update_order_state(self, action=None):
+    #     # state는 order의 수 * 4의 행렬이다
+    #     # 각 열에는 해당 Order의 Task에 대한 정보가 담겨있다
+    #     # 남은 task 수
+    #     # 다음으로 수행할 Task의 Duration
+    #     # 다음으로 수행할 Task의 Earlist_start
+    #     # 다음으로 수행할 Task의 Type
+    #     for i, order in enumerate(self.orders):
+    #         task_index = self.schedule_buffer[i]
+    #         if task_index < 0:
+    #             self.order_state[i] = np.zeros(4, dtype=np.int32)
+    #         else:
+    #             task = order.task_queue[task_index]
+    #             self.order_state[i] = [len(order.task_queue) - task_index,
+    #                                    task.duration, task.earliest_start, task.type]
 
         if action is not None:
             # Order별 점수를 업데이트
@@ -534,7 +557,7 @@ class SchedulingEnv(gym.Env):
     def _get_observation(self):
         observation = {
             'action_mask': self.get_action_mask(),
-            'order_observation': self.order_state,
+            'order_observation': self.current_order_details,
             'num_task_per_resource': np.array([len(resource.task_schedule) for resource in self.resources]),
             'resource_types': self.resource_types,
             'operation_schedules': self.operation_schedules
@@ -635,7 +658,9 @@ if __name__ == "__main__":
     check_env(env)
 
     step = 0
-    obs, _ = env.reset()
+    obs, info = env.reset()
+    print(info['finish_time'], info['action_mask'],
+          info['invalid_count'], info['order_details'])
 
     while True:
         step += 1
@@ -645,6 +670,6 @@ if __name__ == "__main__":
         if done:
             print("Goal reached!", "reward=", reward)
             print(info['finish_time'], info['action_mask'],
-                  info['invalid_count'])
+                  info['invalid_count'], info['order_details'])
             env.render()
             break
