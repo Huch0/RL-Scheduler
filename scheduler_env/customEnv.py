@@ -157,10 +157,15 @@ class SchedulingEnv(gym.Env):
         self.order_state = None
         self.resource_types = None
         self.operation_schedules = None
-        self.legal_actions = None
-        self.action_space = spaces.MultiDiscrete([len_resources, len_orders])
+        # self.action_space = spaces.MultiDiscrete([len_resources, len_orders])
+        self.action_space = spaces.Discrete(len_resources * len_orders)
+        self.action_mask = np.ones(
+            shape=(len(self.resources) * len(self.orders)), dtype=bool)
+        self.legal_actions = np.ones(
+            shape=(len(self.resources), len(self.orders)), dtype=bool)
+
         self.observation_space = spaces.Dict({
-            "action_mask": spaces.MultiBinary([len_resources, len_orders]),
+            "action_mask": spaces.Box(low=0, high=1, shape=(len_resources * len_orders, ), dtype=np.int8),
             "order_observation": spaces.Box(low=-1, high=5000, shape=(len_orders, 4), dtype=np.int32),
             "num_task_per_resource": spaces.Box(low=0, high=100, shape=(len_resources, ), dtype=np.int64),
             "resource_types": spaces.Box(low=0, high=1, shape=(len_resources, 25), dtype=np.int8),
@@ -199,6 +204,8 @@ class SchedulingEnv(gym.Env):
 
         self.legal_actions = np.ones(
             (len(self.resources), len(self.orders)), dtype=bool)
+        self.action_mask = np.ones(
+            (len(self.resources) * len(self.orders)), dtype=bool)
 
         self._update_state(None)
 
@@ -210,26 +217,27 @@ class SchedulingEnv(gym.Env):
         self.last_finish_time = 0
         self.valid_count = 0
 
-        info = {
-            'finish_time': self.last_finish_time,
-            'invalid_count': self.invalid_count,
-            'resources_operation_rate': [resource.operation_rate for resource in self.resources],
-            'orders_density': [order.density for order in self.orders],
-            'schedule_buffer': self.schedule_buffer,
-            'current_schedule': self.current_schedule
-        }
-
-        return self._get_observation(), info  # empty info dict
+        return self._get_observation(), self._get_info()  # empty info dict
 
     def step(self, action):
-        if action[0] < 0 or action[1] < 0 or action[0] >= len(self.resources) or action[1] >= len(self.orders):
+        # if action[0] < 0 or action[1] < 0 or action[0] >= len(self.resources) or action[1] >= len(self.orders):
+        #     raise ValueError(
+        #         f"Received invalid action={action} which is not part of the action space"
+        #     )
+        if action < 0 or action >= len(self.resources) * len(self.orders):
             raise ValueError(
                 f"Received invalid action={action} which is not part of the action space"
             )
 
+        # Map the action to the corresponding resource and order
+        selected_resource = action // len(self.orders)
+        selected_order = action % len(self.orders)
+        action = [selected_resource, selected_order]
+
         # error_action이 아니라면 step의 수를 증가시킨다
         self.num_steps += 1
         self._update_legal_actions()
+        reward = 0
 
         if self.legal_actions[action[0]][action[1]]:
             self._update_state(action)
@@ -253,9 +261,19 @@ class SchedulingEnv(gym.Env):
         # 무한 루프를 방지하기 위한 조건
         truncated = bool(self.num_steps == 10000)
 
-        # Optionally we can pass additional info, we are not using that for now
-        info = {
+        return (
+            self._get_observation(),
+            reward,
+            terminated,
+            truncated,
+            self._get_info(),
+        )
+
+    def _get_info(self):
+        return {
             'finish_time': self.last_finish_time,
+            'legal_actions': self.legal_actions,
+            'action_mask': self.action_mask,
             'invalid_count': self.invalid_count,
             'resources_operation_rate': [resource.operation_rate for resource in self.resources],
             'orders_density': [order.density for order in self.orders],
@@ -263,22 +281,16 @@ class SchedulingEnv(gym.Env):
             'current_schedule': self.current_schedule
         }
 
-        return (
-            self._get_observation(),
-            reward,
-            terminated,
-            truncated,
-            info,
-        )
-
     def get_action_mask(self):
-        return self.legal_actions
+        self._update_legal_actions()
+        self.action_mask = self.legal_actions.flatten()
+        return self.action_mask
 
     def _update_state(self, action=None):
         if action is not None:
             self.valid_count += 1
-            self._update_schedule_buffer(action[1])
             self._schedule_task(action)
+            self._update_schedule_buffer(action[1])
             self._update_order_state(action)
             self._update_resource_state()
             self.last_finish_time = self._get_final_task_finish()
@@ -339,8 +351,8 @@ class SchedulingEnv(gym.Env):
                         performed_tasks[i - 1].finish
                     order_gap += gap
 
-            selected_order.density += (sum_performed_duration -
-                                       order_gap)/sum_performed_duration
+            selected_order.density = (sum_performed_duration -
+                                      order_gap)/sum_performed_duration
 
     # change : action argument 안씀 제거
     def _update_resource_state(self, init=False):
@@ -521,7 +533,7 @@ class SchedulingEnv(gym.Env):
 
     def _get_observation(self):
         observation = {
-            'action_mask': self.legal_actions,
+            'action_mask': self.get_action_mask(),
             'order_observation': self.order_state,
             'num_task_per_resource': np.array([len(resource.task_schedule) for resource in self.resources]),
             'resource_types': self.resource_types,
@@ -624,5 +636,7 @@ if __name__ == "__main__":
         done = terminated or truncated
         if done:
             print("Goal reached!", "reward=", reward)
+            print(info['finish_time'], info['action_mask'],
+                  info['invalid_count'])
             env.render()
             break
