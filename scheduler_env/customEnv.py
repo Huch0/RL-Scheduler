@@ -177,7 +177,9 @@ class SchedulingEnv(gym.Env):
 
         self.observation_space = spaces.Dict({
             "action_mask": spaces.Box(low=0, high=1, shape=(len_resources * len_orders, ), dtype=np.int8),
-            "order_observation": spaces.Box(low=-1, high=25, shape=(len_orders, 4, 2), dtype=np.int8),
+            "order_details": spaces.Box(low=-1, high=25, shape=(len_orders, 4, 2), dtype=np.int8),
+            'order_density': spaces.Box(low=0, high=1, shape=(len_orders, ), dtype=np.float32),
+            'resource_operation_rate': spaces.Box(low=0, high=1, shape=(len_resources, ), dtype=np.float32),
             "num_task_per_resource": spaces.Box(low=0, high=100, shape=(len_resources, ), dtype=np.int64),
             "resource_types": spaces.Box(low=0, high=1, shape=(len_resources, 25), dtype=np.int8),
             "operation_schedules": spaces.Box(low=0, high=1, shape=(len_resources, 50), dtype=np.int8)
@@ -295,7 +297,7 @@ class SchedulingEnv(gym.Env):
             'current_schedule': self.current_schedule
         }
 
-    def get_action_mask(self):
+    def action_masks(self):
         self._update_legal_actions()
         self.action_mask = self.legal_actions.flatten()
         return self.action_mask
@@ -334,12 +336,21 @@ class SchedulingEnv(gym.Env):
                     self.legal_actions[resource_index, order_index] = False
 
     def _update_order_details(self, order_index):
-        order = self.orders[order_index]
-        for i in range(len(order.task_queue)):
-            task = order.task_queue[i]
+        selected_order = self.orders[order_index]
+
+        sum_operation_duration = 0
+        performed_tasks = []
+        for t, task in enumerate(selected_order.task_queue):
             if task.finish is not None:  # task is already scheduled
-                self.current_order_details[order_index][i][0] = -1
-                self.current_order_details[order_index][i][1] = -1
+                self.current_order_details[order_index][t][0] = -1
+                self.current_order_details[order_index][t][1] = -1
+                sum_operation_duration += task.duration
+                performed_tasks.append(task)
+
+        if len(performed_tasks) > 1:
+            order_duration = performed_tasks[-1].finish - \
+                performed_tasks[0].start
+            selected_order.density = sum_operation_duration / order_duration
 
     # def _update_order_state(self, action=None):
     #     # state는 order의 수 * 4의 행렬이다
@@ -357,27 +368,28 @@ class SchedulingEnv(gym.Env):
     #             self.order_state[i] = [len(order.task_queue) - task_index,
     #                                    task.duration, task.earliest_start, task.type]
 
-        if action is not None:
-            # Order별 점수를 업데이트
-            order_gap = 0
+        # if action is not None:
+        #     # Order별 점수를 업데이트
+            # order_gap = 0
 
-            selected_order = self.orders[action[1]]
-            performed_tasks = [
-                task for task in selected_order.task_queue if task.finish is not None]
-            sum_performed_duration = 0
-            for task in performed_tasks:
-                sum_performed_duration += task.duration
-            if len(performed_tasks) >= 2:
-                # 주문의 수행된 Task 사이의 간격을 계산하여 Hall 리워드에 더합니다.
-                for i in range(1, len(performed_tasks)):
-                    gap = performed_tasks[i].start - \
-                        performed_tasks[i - 1].finish
-                    order_gap += gap
+            # selected_order = self.orders[action[1]]
+            # performed_tasks = [
+            #     task for task in selected_order.task_queue if task.finish is not None]
+            # sum_performed_duration = 0
+            # for task in performed_tasks:
+            #     sum_performed_duration += task.duration
+            # if len(performed_tasks) >= 2:
+            #     # 주문의 수행된 Task 사이의 간격을 계산하여 Hall 리워드에 더합니다.
+            #     for i in range(1, len(performed_tasks)):
+            #         gap = performed_tasks[i].start - \
+            #             performed_tasks[i - 1].finish
+            #         order_gap += gap
 
-            selected_order.density = (sum_performed_duration -
-                                      order_gap)/sum_performed_duration
+            # selected_order.density = (sum_performed_duration -
+            #                           order_gap)/sum_performed_duration
 
     # change : action argument 안씀 제거
+
     def _update_resource_state(self, init=False):
         if init:
             for i, resource in enumerate(self.resources):
@@ -556,8 +568,10 @@ class SchedulingEnv(gym.Env):
 
     def _get_observation(self):
         observation = {
-            'action_mask': self.get_action_mask(),
-            'order_observation': self.current_order_details,
+            'action_mask': self.action_masks(),
+            'order_details': self.current_order_details,
+            'order_density': [order.density for order in self.orders],
+            'resource_operation_rate': [resource.operation_rate for resource in self.resources],
             'num_task_per_resource': np.array([len(resource.task_schedule) for resource in self.resources]),
             'resource_types': self.resource_types,
             'operation_schedules': self.operation_schedules
