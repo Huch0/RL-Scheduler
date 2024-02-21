@@ -192,6 +192,15 @@ class SchedulingEnv(gym.Env):
         self.last_finish_time = 0
         self.valid_count = 0
 
+        self.order_density = np.zeros(len(self.orders), dtype=np.float32)
+        self.resource_operation_rate = np.zeros(
+            len(self.resources), dtype=np.float32)
+
+        self.order_term = 0
+        self.resource_term = 0
+        self.o = 2
+        self.r = 3
+
     def reset(self, seed=None, options=None):
         """
         Important: the observation must be a numpy array
@@ -221,6 +230,10 @@ class SchedulingEnv(gym.Env):
             (len(self.resources), len(self.orders)), dtype=bool)
         self.action_mask = np.ones(
             (len(self.resources) * len(self.orders)), dtype=bool)
+
+        self.order_density = np.zeros(len(self.orders), dtype=np.float32)
+        self.resource_operation_rate = np.zeros(
+            len(self.resources), dtype=np.float32)
 
         self._update_state(None)
 
@@ -269,8 +282,18 @@ class SchedulingEnv(gym.Env):
         if terminated:
             sum_of_all_task_duration = sum(
                 [task.duration for task in self.current_schedule])
-            reward += len(self.current_schedule) * \
-                sum_of_all_task_duration / self._get_final_task_finish()
+            t_max = sum_of_all_task_duration / (len(self.resources) // 2)
+            t_min = sum_of_all_task_duration / len(self.resources)
+            # print(
+            #     f"sum_duration : {sum_of_all_task_duration}, t_max : {t_max}, t_min : {t_min}")
+
+            makespan_term = max(
+                0, (t_max - self._get_final_task_finish()) / (t_max - t_min))
+            # print(f"makespan_term : {makespan_term}")
+
+            reward = (reward + makespan_term) / 2
+            reward *= self.num_tasks
+            # print(f"reward : {reward}")
 
         # reward += sum([task.duration for task in self.current_schedule]) / self._get_final_task_finish()
         # 무한 루프를 방지하기 위한 조건
@@ -290,9 +313,11 @@ class SchedulingEnv(gym.Env):
             'legal_actions': self.legal_actions,
             'action_mask': self.action_mask,
             'order_details': self.current_order_details,
+            'order_score': self.order_term * self.o / (self.o + self.r),
+            'resource_score': self.resource_term * self.r / (self.o + self.r),
             'invalid_count': self.invalid_count,
-            'resources_operation_rate': [resource.operation_rate for resource in self.resources],
-            'orders_density': [order.density for order in self.orders],
+            'resource_operation_rate': [resource.operation_rate for resource in self.resources],
+            'order_density': [order.density for order in self.orders],
             'schedule_buffer': self.schedule_buffer,
             'current_schedule': self.current_schedule
         }
@@ -351,44 +376,7 @@ class SchedulingEnv(gym.Env):
             order_duration = performed_tasks[-1].finish - \
                 performed_tasks[0].start
             selected_order.density = sum_operation_duration / order_duration
-
-    # def _update_order_state(self, action=None):
-    #     # state는 order의 수 * 4의 행렬이다
-    #     # 각 열에는 해당 Order의 Task에 대한 정보가 담겨있다
-    #     # 남은 task 수
-    #     # 다음으로 수행할 Task의 Duration
-    #     # 다음으로 수행할 Task의 Earlist_start
-    #     # 다음으로 수행할 Task의 Type
-    #     for i, order in enumerate(self.orders):
-    #         task_index = self.schedule_buffer[i]
-    #         if task_index < 0:
-    #             self.order_state[i] = np.zeros(4, dtype=np.int32)
-    #         else:
-    #             task = order.task_queue[task_index]
-    #             self.order_state[i] = [len(order.task_queue) - task_index,
-    #                                    task.duration, task.earliest_start, task.type]
-
-        # if action is not None:
-        #     # Order별 점수를 업데이트
-            # order_gap = 0
-
-            # selected_order = self.orders[action[1]]
-            # performed_tasks = [
-            #     task for task in selected_order.task_queue if task.finish is not None]
-            # sum_performed_duration = 0
-            # for task in performed_tasks:
-            #     sum_performed_duration += task.duration
-            # if len(performed_tasks) >= 2:
-            #     # 주문의 수행된 Task 사이의 간격을 계산하여 Hall 리워드에 더합니다.
-            #     for i in range(1, len(performed_tasks)):
-            #         gap = performed_tasks[i].start - \
-            #             performed_tasks[i - 1].finish
-            #         order_gap += gap
-
-            # selected_order.density = (sum_performed_duration -
-            #                           order_gap)/sum_performed_duration
-
-    # change : action argument 안씀 제거
+            self.order_density[order_index] = selected_order.density
 
     def _update_resource_state(self, init=False):
         if init:
@@ -397,33 +385,18 @@ class SchedulingEnv(gym.Env):
                     1 if i in resource.ability else 0 for i in range(25)]
             return
 
-        for i, resource in enumerate(self.resources):
+        for r, resource in enumerate(self.resources):
             operation_schedule = resource.task_schedule
-            self.operation_schedules[i] = self._schedule_to_array(
+            self.operation_schedules[r] = self._schedule_to_array(
                 operation_schedule)
 
-        # Resource의 reward를 계산
-        for resource in self.resources:
-            result = 0
             # 선택된 리소스의 스케줄링된 Task들
             if resource.task_schedule:
-                scheduled_tasks = sorted(
-                    resource.task_schedule, key=lambda task: task.start)
-                # resource의 hall은 현재까지 스케줄에서 가장 늦게 끝난 Task를 기준으로 설계를 한다.
-                # 현재까지 스케줄에서 가장 늦게 끝난 Task의 시간을 전체 길이로 보고
-                # 막대가 분배되지 않은 부분들을 전부 Hall로 보고 계산한다.
-                idle_time = scheduled_tasks[0].start + (
-                    self._get_final_task_finish() - scheduled_tasks[-1].finish)
-                if len(scheduled_tasks) >= 2:
-                    # 리소스의 스케줄링된 Task 사이의 간격을 계산하여 Hall 리워드에 더합니다.
-                    for i in range(1, len(scheduled_tasks)):
-                        gap = scheduled_tasks[i].start - \
-                            scheduled_tasks[i - 1].finish
-                        idle_time += gap
-                result = (self._get_final_task_finish() -
-                          idle_time) / self._get_final_task_finish()
+                operation_time = sum(
+                    [task.duration for task in resource.task_schedule])
 
-            resource.operation_rate = result
+                resource.operation_rate = operation_time / self._get_final_task_finish()
+                self.resource_operation_rate[r] = resource.operation_rate
 
     def _schedule_to_array(self, operation_schedule):
         idle_time = []
@@ -560,18 +533,30 @@ class SchedulingEnv(gym.Env):
         return max(self.current_schedule, key=lambda x: x.finish).finish
 
     def _calculate_step_reward(self):
-        # scale_factor = 0
-        # for task in self.current_schedule:
-        #     scale_factor += task.duration
-        # reward = reward / self._get_final_task_finish()
-        return (np.mean([order.density for order in self.orders]) + np.mean([resource.operation_rate for resource in self.resources]))/2
+        self.order_term = 0
+        self.resource_term = 0
+        # check if all the elements are not 0
+        if np.any(self.order_density):
+            self.order_term = 1 - self._gini_coefficient(self.order_density)
+        if np.any(self.resource_operation_rate):
+            self.resource_term = 1 - \
+                self._gini_coefficient(self.resource_operation_rate)
+
+        return (self.o * self.order_term + self.r * self.resource_term) / (self.o + self.r)
+
+    @staticmethod
+    def _gini_coefficient(array):
+        array = np.sort(array)
+        index = np.arange(1, array.shape[0] + 1)
+        n = array.shape[0]
+        return ((np.sum((2 * index - n - 1) * array)) / (n * np.sum(array)))
 
     def _get_observation(self):
         observation = {
             'action_mask': self.action_masks(),
             'order_details': self.current_order_details,
-            'order_density': [order.density for order in self.orders],
-            'resource_operation_rate': [resource.operation_rate for resource in self.resources],
+            'order_density': self.order_density,
+            'resource_operation_rate': self.resource_operation_rate,
             'num_task_per_resource': np.array([len(resource.task_schedule) for resource in self.resources]),
             'resource_types': self.resource_types,
             'operation_schedules': self.operation_schedules
@@ -682,8 +667,12 @@ if __name__ == "__main__":
         obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
         if done:
-            print("Goal reached!", "reward=", reward)
-            print(info['finish_time'], info['action_mask'],
-                  info['invalid_count'], info['order_details'])
+            print("Goal reached!", "final score=", reward / 37 * 100)
+            print('finish_time', info['finish_time'])
+            print('order_density', info['order_density'])
+            print('order_score', info['order_score'])
+            print('resource_operation_rate', info['resource_operation_rate'])
+            print('resource_score', info['resource_score'])
+
             env.render()
             break
