@@ -8,6 +8,12 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from stable_baselines3.common.env_checker import check_env
 
+from stable_baselines3 import A2C, PPO, DQN
+from stable_baselines3.common.env_checker import check_env
+
+from sb3_contrib import MaskablePPO
+from sb3_contrib.common.wrappers import ActionMasker
+
 
 def type_encoding(type):
     type_code = {'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4, 'F': 5, 'G': 6, 'H': 7, 'I': 8, 'J': 9, 'K': 10, 'L': 11, 'M': 12,
@@ -42,6 +48,13 @@ class Order():
         self.task_queue = [Task(task_info)
                            for task_info in order_info['tasks']]
         self.density = 0
+
+        # changed : add deadline, time_exceeded
+        self.deadline = order_info['deadline']
+        self.time_exceeded = 0
+
+    def __str__(self):
+        return f"{self.name}, {self.time_exceeded}/{self.deadline}"
 
 
 class Task():
@@ -109,6 +122,8 @@ class SchedulingEnv(gym.Env):
             # Initial index of steps within order
             order_info['name'] = order['name']
             order_info['color'] = order['color']
+            # changed : add deadline
+            order_info['deadline'] = order['deadline']
             earliestStart = order['earliest_start']
 
             tasks = []
@@ -136,7 +151,7 @@ class SchedulingEnv(gym.Env):
 
         return orders
 
-    def __init__(self, resources="../resources/v2-8.json", orders="../orders/v2-12.json", render_mode="seaborn"):
+    def __init__(self, resources="../resources/v2-8.json", orders="../orders/v2-12-deadline.json", render_mode="seaborn"):
         super(SchedulingEnv, self).__init__()
 
         resources = self._load_resources(resources)
@@ -154,18 +169,35 @@ class SchedulingEnv(gym.Env):
         self.num_tasks = sum([len(order.task_queue) for order in self.orders])
 
         self.schedule_buffer = [-1 for _ in range(len(self.orders))]
+        # 4 : 각 리소스별 task 수 최댓값
+        self.original_order_details = np.ones(
+            (len_orders, 4, 2), dtype=np.int8) * -1
+        for o in range(len_orders):
+            for t in range(len(self.orders[o].task_queue)):
+                self.original_order_details[o][t][0] = int(
+                    self.orders[o].task_queue[t].duration // 100)
+                self.original_order_details[o][t][1] = int(
+                    self.orders[o].task_queue[t].type)
+        self.current_order_details = copy.deepcopy(self.original_order_details)
+
         self.order_state = None
         self.resource_types = None
         self.operation_schedules = None
-        self.legal_actions = None
-        self.action_space = spaces.MultiDiscrete([len_resources, len_orders])
+        # self.action_space = spaces.MultiDiscrete([len_resources, len_orders])
+        self.action_space = spaces.Discrete(len_resources * len_orders)
+        self.action_mask = np.ones(
+            shape=(len(self.resources) * len(self.orders)), dtype=bool)
+        self.legal_actions = np.ones(
+            shape=(len(self.resources), len(self.orders)), dtype=bool)
+
         self.observation_space = spaces.Dict({
-            "action_mask": spaces.MultiBinary([len_resources, len_orders]),
-            "order_observation": spaces.Box(low=-1, high=5000, shape=(len_orders, 4), dtype=np.int32),
+            "action_mask": spaces.Box(low=0, high=1, shape=(len_resources * len_orders, ), dtype=np.int8),
+            "order_details": spaces.Box(low=-1, high=25, shape=(len_orders, 4, 2), dtype=np.int8),
+            'order_density': spaces.Box(low=0, high=1, shape=(len_orders, ), dtype=np.float32),
+            'resource_operation_rate': spaces.Box(low=0, high=1, shape=(len_resources, ), dtype=np.float32),
             "num_task_per_resource": spaces.Box(low=0, high=100, shape=(len_resources, ), dtype=np.int64),
             "resource_types": spaces.Box(low=0, high=1, shape=(len_resources, 25), dtype=np.int8),
-            "operation_schedules": spaces.Box(low=0, high=1, shape=(len_resources, 50), dtype=np.int8),
-            "resource_operation_rate" : spaces.Box(low=-1, high=1, shape=(len_resources, ), dtype=np.float64),
+            "operation_schedules": spaces.Box(low=0, high=1, shape=(len_resources, 50), dtype=np.int8)
         })
 
         self.current_schedule = []
@@ -174,6 +206,15 @@ class SchedulingEnv(gym.Env):
         self.invalid_count = 0
         self.last_finish_time = 0
         self.valid_count = 0
+
+        self.order_density = np.zeros(len(self.orders), dtype=np.float32)
+        self.resource_operation_rate = np.zeros(
+            len(self.resources), dtype=np.float32)
+
+        self.order_term = 0
+        self.resource_term = 0
+        self.o = 2
+        self.r = 3
 
     def reset(self, seed=None, options=None):
         """
@@ -186,13 +227,15 @@ class SchedulingEnv(gym.Env):
         self.orders = copy.deepcopy(self.original_orders)
         self.resources = copy.deepcopy(self.original_resources)
 
+        self.current_order_details = copy.deepcopy(self.original_order_details)
+
         # 내부 동작을 위한 변수들
         # self.order_state 관한 추가설명 / Order 하나 당 가지는 정보는 아래와 같다
         # 1. 남은 task 수
         # 2. 다음으로 수행할 Task의 Type
         # 3. 다음으로 수행할 Task의 earliest_start
         # 4. 다음으로 수행할 Task의 duration
-        self.order_state = np.zeros((len(self.orders), 4), dtype=np.int32)
+        # self.order_state = np.zeros((len(self.orders), 4), dtype=np.int32)
         self.resource_types = np.zeros(
             (len(self.resources), 25), dtype=np.int8)
         self.operation_schedules = np.zeros(
@@ -200,6 +243,12 @@ class SchedulingEnv(gym.Env):
 
         self.legal_actions = np.ones(
             (len(self.resources), len(self.orders)), dtype=bool)
+        self.action_mask = np.ones(
+            (len(self.resources) * len(self.orders)), dtype=bool)
+
+        self.order_density = np.zeros(len(self.orders), dtype=np.float32)
+        self.resource_operation_rate = np.zeros(
+            len(self.resources), dtype=np.float32)
 
         self._update_state(None)
 
@@ -211,33 +260,34 @@ class SchedulingEnv(gym.Env):
         self.last_finish_time = 0
         self.valid_count = 0
 
-        info = {
-            'finish_time': self.last_finish_time,
-            'invalid_count': self.invalid_count,
-            'resources_operation_rate': [resource.operation_rate for resource in self.resources],
-            'orders_density': [order.density for order in self.orders],
-            'schedule_buffer': self.schedule_buffer,
-            'current_schedule': self.current_schedule
-        }
-
-        return self._get_observation(), info  # empty info dict
+        return self._get_observation(), self._get_info()  # empty info dict
 
     def step(self, action):
-        if action[0] < 0 or action[1] < 0 or action[0] >= len(self.resources) or action[1] >= len(self.orders):
+        # if action[0] < 0 or action[1] < 0 or action[0] >= len(self.resources) or action[1] >= len(self.orders):
+        #     raise ValueError(
+        #         f"Received invalid action={action} which is not part of the action space"
+        #     )
+        if action < 0 or action >= len(self.resources) * len(self.orders):
             raise ValueError(
                 f"Received invalid action={action} which is not part of the action space"
             )
 
+        # Map the action to the corresponding resource and order
+        selected_resource = action // len(self.orders)
+        selected_order = action % len(self.orders)
+        action = [selected_resource, selected_order]
+
         # error_action이 아니라면 step의 수를 증가시킨다
         self.num_steps += 1
         self._update_legal_actions()
+        reward = 0
 
         if self.legal_actions[action[0]][action[1]]:
             self._update_state(action)
             reward = self._calculate_step_reward()
         else:  # Illegal action
             self.invalid_count += 1
-            reward = -1
+            reward = -0.5
 
         # 모든 Order의 Task가 종료된 경우 Terminated를 True로 설정한다
         # 또한 legal_actions가 전부 False인 경우도 Terminated를 True로 설정한다
@@ -245,48 +295,55 @@ class SchedulingEnv(gym.Env):
                          ) or not np.any(self.legal_actions)
 
         if terminated:
-            # sum_of_all_task_duration = sum(
-            #     [task.duration for task in self.current_schedule])
-            # reward += len(self.current_schedule) * \
-            #     sum_of_all_task_duration / self._get_final_task_finish()
-            reward += 100000 / self._get_final_task_finish()
+            reward += self._calculate_final_reward()
+            # print(f"reward : {reward}")
 
         # reward += sum([task.duration for task in self.current_schedule]) / self._get_final_task_finish()
         # 무한 루프를 방지하기 위한 조건
         truncated = bool(self.num_steps == 10000)
-
-        # Optionally we can pass additional info, we are not using that for now
-        info = {
-            'finish_time': self.last_finish_time,
-            'invalid_count': self.invalid_count,
-            'resources_operation_rate': [resource.operation_rate for resource in self.resources],
-            'orders_density': [order.density for order in self.orders],
-            'schedule_buffer': self.schedule_buffer,
-            'current_schedule': self.current_schedule
-        }
 
         return (
             self._get_observation(),
             reward,
             terminated,
             truncated,
-            info,
+            self._get_info(),
         )
 
-    def get_action_mask(self):
-        return self.legal_actions
+    def _get_info(self):
+        return {
+            'finish_time': self.last_finish_time,
+            'legal_actions': self.legal_actions,
+            'action_mask': self.action_mask,
+            'order_details': self.current_order_details,
+            'order_score': self.order_term * self.o / (self.o + self.r),
+            'resource_score': self.resource_term,
+            'invalid_count': self.invalid_count,
+            'resource_operation_rate': [resource.operation_rate for resource in self.resources],
+            'order_density': [order.density for order in self.orders],
+            'schedule_buffer': self.schedule_buffer,
+            'current_schedule': self.current_schedule,
+            'order_deadline' : [order.deadline for order in self.orders],
+            'order_time_exceeded' : [order.time_exceeded for order in self.orders]
+        }
+
+    def action_masks(self):
+        self._update_legal_actions()
+        self.action_mask = self.legal_actions.flatten()
+        return self.action_mask
 
     def _update_state(self, action=None):
         if action is not None:
             self.valid_count += 1
             self._schedule_task(action)
             self._update_schedule_buffer(action[1])
-            self._update_order_state(action)
+            # self._update_order_state(action)
+            self._update_order_details(action[1])
             self._update_resource_state()
             self.last_finish_time = self._get_final_task_finish()
         else:
             self._update_schedule_buffer(None)
-            self._update_order_state(None)
+            # self._update_order_state(None)
             self._update_resource_state(init=True)
 
     def _update_legal_actions(self):
@@ -308,43 +365,28 @@ class SchedulingEnv(gym.Env):
                 if not resource.can_process_task(task.type):
                     self.legal_actions[resource_index, order_index] = False
 
-    def _update_order_state(self, action=None):
-        # state는 order의 수 * 4의 행렬이다
-        # 각 열에는 해당 Order의 Task에 대한 정보가 담겨있다
-        # 남은 task 수
-        # 다음으로 수행할 Task의 Duration
-        # 다음으로 수행할 Task의 Earlist_start
-        # 다음으로 수행할 Task의 Type
-        for i, order in enumerate(self.orders):
-            task_index = self.schedule_buffer[i]
-            if task_index < 0:
-                self.order_state[i] = np.zeros(4, dtype=np.int32)
-            else:
-                task = order.task_queue[task_index]
-                self.order_state[i] = [len(order.task_queue) - task_index,
-                                       task.duration, task.earliest_start, task.type]
+    def _update_order_details(self, order_index):
+        selected_order = self.orders[order_index]
 
-        if action is not None:
-            # Order별 점수를 업데이트
-            order_gap = 0
+        sum_operation_duration = 0
+        performed_tasks = []
+        for t, task in enumerate(selected_order.task_queue):
+            if task.finish is not None:  # task is already scheduled
+                self.current_order_details[order_index][t][0] = -1
+                self.current_order_details[order_index][t][1] = -1
+                sum_operation_duration += task.duration
+                performed_tasks.append(task)
 
-            selected_order = self.orders[action[1]]
-            performed_tasks = [
-                task for task in selected_order.task_queue if task.finish is not None]
-            sum_performed_duration = 0
-            for task in performed_tasks:
-                sum_performed_duration += task.duration
-            if len(performed_tasks) >= 2:
-                # 주문의 수행된 Task 사이의 간격을 계산하여 Hall 리워드에 더합니다.
-                for i in range(1, len(performed_tasks)):
-                    gap = performed_tasks[i].start - \
-                        performed_tasks[i - 1].finish
-                    order_gap += gap
+        if len(performed_tasks) > 1:
+            order_duration = performed_tasks[-1].finish - \
+                performed_tasks[0].start
+            selected_order.density = sum_operation_duration / order_duration
+            self.order_density[order_index] = selected_order.density
 
-            selected_order.density += (sum_performed_duration -
-                                       order_gap)/sum_performed_duration
+        if len(performed_tasks) == len(selected_order.task_queue):
+            if selected_order.deadline < selected_order.task_queue[-1].finish:
+                selected_order.time_exceeded = selected_order.task_queue[-1].finish - selected_order.deadline
 
-    # change : action argument 안씀 제거
     def _update_resource_state(self, init=False):
         if init:
             for i, resource in enumerate(self.resources):
@@ -352,30 +394,18 @@ class SchedulingEnv(gym.Env):
                     1 if i in resource.ability else 0 for i in range(25)]
             return
 
-        for i, resource in enumerate(self.resources):
+        for r, resource in enumerate(self.resources):
             operation_schedule = resource.task_schedule
-            self.operation_schedules[i] = self._schedule_to_array(
+            self.operation_schedules[r] = self._schedule_to_array(
                 operation_schedule)
 
-        # Resource의 reward를 계산
-        for resource in self.resources:
-            result = 0
             # 선택된 리소스의 스케줄링된 Task들
             if resource.task_schedule:
-                scheduled_tasks = sorted(
-                    resource.task_schedule, key=lambda task: task.start)
-                # resource의 hall은 현재까지 스케줄에서 가장 늦게 끝난 Task를 기준으로 설계를 한다.
-                # 현재까지 스케줄에서 가장 늦게 끝난 Task의 시간을 전체 길이로 보고
-                # 막대가 분배되지 않은 부분들을 전부 Hall로 보고 계산한다.
-                idle_time = scheduled_tasks[0].start + (self._get_final_task_finish() - scheduled_tasks[-1].finish)
-                if len(scheduled_tasks) >= 2:
-                    # 리소스의 스케줄링된 Task 사이의 간격을 계산하여 Hall 리워드에 더합니다.
-                    for i in range(1, len(scheduled_tasks)):
-                        gap = scheduled_tasks[i].start - scheduled_tasks[i - 1].finish
-                        idle_time += gap
-                result = (self._get_final_task_finish() - idle_time) / self._get_final_task_finish()
-            resource.operation_rate = result
-            
+                operation_time = sum(
+                    [task.duration for task in resource.task_schedule])
+
+                resource.operation_rate = operation_time / self._get_final_task_finish()
+                self.resource_operation_rate[r] = resource.operation_rate
 
     def _schedule_to_array(self, operation_schedule):
         idle_time = []
@@ -511,7 +541,13 @@ class SchedulingEnv(gym.Env):
     def _get_final_task_finish(self):
         return max(self.current_schedule, key=lambda x: x.finish).finish
 
-    def _calculate_step_reward(self, resources_weight = 1.0, orders_weight = 0):
+    def _calculate_final_reward(self, weight_final_time = 80, weight_op_rate = 0, weight_order_deadline = 20):
+        def final_time_to_reward(target_time):
+            if target_time >= self._get_final_task_finish():
+                return 1
+            # Final_time이 target_time에 비해 몇 퍼센트 초과되었는지를 바탕으로 100점 만점으로 환산하여 점수 계산
+            return max(0, 1 - (abs(target_time - self._get_final_task_finish()) / target_time))
+        
         def operation_rate_to_reward(operation_rates, target_rate=1.0, penalty_factor=2.0):
             total_reward = 0
             for rate in operation_rates:
@@ -521,22 +557,51 @@ class SchedulingEnv(gym.Env):
                 penalty = penalty_factor * abs(rate - target_rate)
                 # 보상에서 패널티를 빼서 최종 보상을 계산함
                 total_reward += reward - penalty
-            return total_reward / len(self.resources)
-        #if all(rate > 0 for rate in [resource.operation_rate for resource in self.resources]):
-        step_reward_by_resources = operation_rate_to_reward([resource.operation_rate for resource in self.resources])
-        step_reward_by_orders = np.mean([order.density for order in self.orders])
+            return max(0, total_reward / len(self.resources))
         
-        return resources_weight * step_reward_by_resources + orders_weight * step_reward_by_orders
-        #return ( + np.mean([resource.operation_rate for resource in self.resources]))/2
+        def order_deadline_to_reward():
+            sum_of_late_rate = 0
+            for order in self.orders:
+                if order.time_exceeded > 0:
+                    sum_of_late_rate += (order.time_exceeded / order.deadline)
+            return max(0, 1 - sum_of_late_rate)
+
+        final_reward_by_op_rate = weight_op_rate * operation_rate_to_reward([resource.operation_rate for resource in self.resources])
+        final_reward_by_final_time = weight_final_time * final_time_to_reward(1000) 
+        final_reward_by_order_deadline = weight_order_deadline * order_deadline_to_reward()
+
+        return final_reward_by_op_rate + final_reward_by_final_time + final_reward_by_order_deadline
+    
+    def _calculate_step_reward(self):
+        # self.order_term = 0
+        self.resource_term = 0
+        # check if all the elements are not 0
+        # if np.any(self.order_density):
+        #     self.order_term = 1 - self._gini_coefficient(self.order_density)
+        if np.any(self.resource_operation_rate):
+            # self.resource_term = 1 - \
+            #     self._gini_coefficient(self.resource_operation_rate)
+            self.resource_term = np.mean(self.resource_operation_rate)
+
+        # return (self.o * self.order_term + self.r * self.resource_term) / (self.o + self.r)
+        return self.resource_term
+
+    @staticmethod
+    def _gini_coefficient(array):
+        array = np.sort(array)
+        index = np.arange(1, array.shape[0] + 1)
+        n = array.shape[0]
+        return ((np.sum((2 * index - n - 1) * array)) / (n * np.sum(array)))
 
     def _get_observation(self):
         observation = {
-            'action_mask': self.legal_actions,
-            'order_observation': self.order_state,
+            'action_mask': self.action_masks(),
+            'order_details': self.current_order_details,
+            'order_density': self.order_density,
+            'resource_operation_rate': self.resource_operation_rate,
             'num_task_per_resource': np.array([len(resource.task_schedule) for resource in self.resources]),
             'resource_types': self.resource_types,
-            'operation_schedules': self.operation_schedules,
-            'resource_operation_rate' : np.array([resource.operation_rate for resource in self.resources])
+            'operation_schedules': self.operation_schedules
         }
 
         return observation
@@ -584,6 +649,8 @@ class SchedulingEnv(gym.Env):
 
         # Create a bar plot using matplotlib directly
         fig, ax = plt.subplots(figsize=(12, 6))
+        legend_orders = set()  # Set to store orders already included in the legend
+
         for i in range(len(self.resources)):
             resource_tasks = scheduled_df[scheduled_df['resource'] == i]
 
@@ -591,6 +658,12 @@ class SchedulingEnv(gym.Env):
             line_offset = i - 0.9  # Adjust the line offset for better visibility
 
             for index, task in resource_tasks.iterrows():
+                order_label = f'Order {int(task["order"]) + 1}'
+                if order_label not in legend_orders:
+                    legend_orders.add(order_label)
+                else:
+                    order_label = None
+
                 ax.bar(
                     # Adjust 'x' to start from 'start'
                     x=task["start"] + task["duration"] / 2,
@@ -599,7 +672,7 @@ class SchedulingEnv(gym.Env):
                     bottom=line_offset,  # Discriminate rows by lines
                     color=task['color'],
                     alpha=0.7,  # Transparency
-                    label=f'Task {int(task["index"])}',  # Label for the legend
+                    label=order_label,  # Label for the legend
                 )
 
         # Set y-axis ticks to show every resource
@@ -609,7 +682,7 @@ class SchedulingEnv(gym.Env):
         ax.set(ylabel="Resource", xlabel="Time")
         # Place the legend outside the plot area
         ax.legend(loc='upper left', bbox_to_anchor=(1, 1))
-        plt.title("Task Schedule Visualization")
+        plt.title(f'Task Schedule Visualization step {self.num_steps}')
         # 경고 무시 설정
         plt.rcParams['figure.max_open_warning'] = 0
 
@@ -618,10 +691,9 @@ class SchedulingEnv(gym.Env):
     def close(self):
         pass
 
-
 if __name__ == "__main__":
     env = SchedulingEnv(resources="../resources/v2-8.json",
-                        orders="../orders/v2-12.json")
+                        orders="../orders/v2-12-deadline.json")
 
     check_env(env)
 
