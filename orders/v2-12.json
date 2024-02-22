@@ -25,7 +25,7 @@
         },
         {
           "index": 4,
-          "type": "C",
+          "type": "A",
           "duration": 100,
           "predecessor": 3
         }
@@ -95,7 +95,7 @@
         {
           "index": 2,
           "type": "B",
-          "duration": 100,
+          "duration": 200,
           "predecessor": 1
         },
         {
