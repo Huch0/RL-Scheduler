@@ -8,6 +8,12 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from stable_baselines3.common.env_checker import check_env
 
+from stable_baselines3 import A2C, PPO, DQN
+from stable_baselines3.common.env_checker import check_env
+
+from sb3_contrib import MaskablePPO
+from sb3_contrib.common.wrappers import ActionMasker
+
 
 def type_encoding(type):
     type_code = {'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4, 'F': 5, 'G': 6, 'H': 7, 'I': 8, 'J': 9, 'K': 10, 'L': 11, 'M': 12,
@@ -42,6 +48,13 @@ class Order():
         self.task_queue = [Task(task_info)
                            for task_info in order_info['tasks']]
         self.density = 0
+
+        # changed : add deadline, time_exceeded
+        self.deadline = order_info['deadline']
+        self.time_exceeded = 0
+
+    def __str__(self):
+        return f"{self.name}, {self.time_exceeded}/{self.deadline}"
 
 
 class Task():
@@ -109,6 +122,8 @@ class SchedulingEnv(gym.Env):
             # Initial index of steps within order
             order_info['name'] = order['name']
             order_info['color'] = order['color']
+            # changed : add deadline
+            order_info['deadline'] = order['deadline']
             earliestStart = order['earliest_start']
 
             tasks = []
@@ -136,7 +151,7 @@ class SchedulingEnv(gym.Env):
 
         return orders
 
-    def __init__(self, resources="../resources/v2-8.json", orders="../orders/v2-12.json", render_mode="seaborn"):
+    def __init__(self, resources="../resources/v2-8.json", orders="../orders/v2-12-deadline.json", render_mode="seaborn"):
         super(SchedulingEnv, self).__init__()
 
         resources = self._load_resources(resources)
@@ -280,19 +295,7 @@ class SchedulingEnv(gym.Env):
                          ) or not np.any(self.legal_actions)
 
         if terminated:
-            sum_of_all_task_duration = sum(
-                [task.duration for task in self.current_schedule])
-            t_max = sum_of_all_task_duration / (len(self.resources) // 2)
-            t_min = sum_of_all_task_duration / len(self.resources)
-            # print(
-            #     f"sum_duration : {sum_of_all_task_duration}, t_max : {t_max}, t_min : {t_min}")
-
-            makespan_term = max(
-                0, (t_max - self._get_final_task_finish()) / (t_max - t_min))
-            # print(f"makespan_term : {makespan_term}")
-
-            reward = (reward + makespan_term) / 2
-            reward *= self.num_tasks
+            reward += self._calculate_final_reward()
             # print(f"reward : {reward}")
 
         # reward += sum([task.duration for task in self.current_schedule]) / self._get_final_task_finish()
@@ -319,7 +322,9 @@ class SchedulingEnv(gym.Env):
             'resource_operation_rate': [resource.operation_rate for resource in self.resources],
             'order_density': [order.density for order in self.orders],
             'schedule_buffer': self.schedule_buffer,
-            'current_schedule': self.current_schedule
+            'current_schedule': self.current_schedule,
+            'order_deadline' : [order.deadline for order in self.orders],
+            'order_time_exceeded' : [order.time_exceeded for order in self.orders]
         }
 
     def action_masks(self):
@@ -377,6 +382,10 @@ class SchedulingEnv(gym.Env):
                 performed_tasks[0].start
             selected_order.density = sum_operation_duration / order_duration
             self.order_density[order_index] = selected_order.density
+
+        if len(performed_tasks) == len(selected_order.task_queue):
+            if selected_order.deadline < selected_order.task_queue[-1].finish:
+                selected_order.time_exceeded = selected_order.task_queue[-1].finish - selected_order.deadline
 
     def _update_resource_state(self, init=False):
         if init:
@@ -532,6 +541,37 @@ class SchedulingEnv(gym.Env):
     def _get_final_task_finish(self):
         return max(self.current_schedule, key=lambda x: x.finish).finish
 
+    def _calculate_final_reward(self, weight_final_time = 80, weight_op_rate = 0, weight_order_deadline = 20):
+        def final_time_to_reward(target_time):
+            if target_time >= self._get_final_task_finish():
+                return 1
+            # Final_time이 target_time에 비해 몇 퍼센트 초과되었는지를 바탕으로 100점 만점으로 환산하여 점수 계산
+            return max(0, 1 - (abs(target_time - self._get_final_task_finish()) / target_time))
+        
+        def operation_rate_to_reward(operation_rates, target_rate=1.0, penalty_factor=2.0):
+            total_reward = 0
+            for rate in operation_rates:
+                # Operation rate가 목표에 가까울수록 보상을 증가시킴
+                reward = 2/(abs(rate - target_rate) - 2) + 2
+                # Operation rate의 차이에 따라 패널티를 부여함
+                penalty = penalty_factor * abs(rate - target_rate)
+                # 보상에서 패널티를 빼서 최종 보상을 계산함
+                total_reward += reward - penalty
+            return max(0, total_reward / len(self.resources))
+        
+        def order_deadline_to_reward():
+            sum_of_late_rate = 0
+            for order in self.orders:
+                if order.time_exceeded > 0:
+                    sum_of_late_rate += (order.time_exceeded / order.deadline)
+            return max(0, 1 - sum_of_late_rate)
+
+        final_reward_by_op_rate = weight_op_rate * operation_rate_to_reward([resource.operation_rate for resource in self.resources])
+        final_reward_by_final_time = weight_final_time * final_time_to_reward(1000) 
+        final_reward_by_order_deadline = weight_order_deadline * order_deadline_to_reward()
+
+        return final_reward_by_op_rate + final_reward_by_final_time + final_reward_by_order_deadline
+    
     def _calculate_step_reward(self):
         # self.order_term = 0
         self.resource_term = 0
@@ -651,17 +691,14 @@ class SchedulingEnv(gym.Env):
     def close(self):
         pass
 
-
 if __name__ == "__main__":
     env = SchedulingEnv(resources="../resources/v2-8.json",
-                        orders="../orders/v2-12.json")
+                        orders="../orders/v2-12-deadline.json")
 
     check_env(env)
 
     step = 0
-    obs, info = env.reset()
-    print(info['finish_time'], info['action_mask'],
-          info['invalid_count'], info['order_details'])
+    obs, _ = env.reset()
 
     while True:
         step += 1
@@ -669,12 +706,6 @@ if __name__ == "__main__":
         obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
         if done:
-            print("Goal reached!", "final score=", reward / 37 * 100)
-            print('finish_time', info['finish_time'])
-            print('order_density', info['order_density'])
-            print('order_score', info['order_score'])
-            print('resource_operation_rate', info['resource_operation_rate'])
-            print('resource_score', info['resource_score'])
-
+            print("Goal reached!", "reward=", reward)
             env.render()
             break
