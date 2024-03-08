@@ -314,7 +314,7 @@ class SchedulingEnv(gym.Env):
             'action_mask': self.action_mask,
             'order_details': self.current_order_details,
             'order_score': self.order_term * self.o / (self.o + self.r),
-            'resource_score': self.resource_term * self.r / (self.o + self.r),
+            'resource_score': self.resource_term,
             'invalid_count': self.invalid_count,
             'resource_operation_rate': [resource.operation_rate for resource in self.resources],
             'order_density': [order.density for order in self.orders],
@@ -533,16 +533,18 @@ class SchedulingEnv(gym.Env):
         return max(self.current_schedule, key=lambda x: x.finish).finish
 
     def _calculate_step_reward(self):
-        self.order_term = 0
+        # self.order_term = 0
         self.resource_term = 0
         # check if all the elements are not 0
-        if np.any(self.order_density):
-            self.order_term = 1 - self._gini_coefficient(self.order_density)
+        # if np.any(self.order_density):
+        #     self.order_term = 1 - self._gini_coefficient(self.order_density)
         if np.any(self.resource_operation_rate):
-            self.resource_term = 1 - \
-                self._gini_coefficient(self.resource_operation_rate)
+            # self.resource_term = 1 - \
+            #     self._gini_coefficient(self.resource_operation_rate)
+            self.resource_term = np.mean(self.resource_operation_rate)
 
-        return (self.o * self.order_term + self.r * self.resource_term) / (self.o + self.r)
+        # return (self.o * self.order_term + self.r * self.resource_term) / (self.o + self.r)
+        return self.resource_term
 
     @staticmethod
     def _gini_coefficient(array):
@@ -616,7 +618,7 @@ class SchedulingEnv(gym.Env):
             line_offset = i - 0.9  # Adjust the line offset for better visibility
 
             for index, task in resource_tasks.iterrows():
-                order_label = f'Order {int(task["order"])}'
+                order_label = f'Order {int(task["order"]) + 1}'
                 if order_label not in legend_orders:
                     legend_orders.add(order_label)
                 else:
@@ -640,7 +642,7 @@ class SchedulingEnv(gym.Env):
         ax.set(ylabel="Resource", xlabel="Time")
         # Place the legend outside the plot area
         ax.legend(loc='upper left', bbox_to_anchor=(1, 1))
-        plt.title("Task Schedule Visualization")
+        plt.title(f'Task Schedule Visualization step {self.num_steps}')
         # 경고 무시 설정
         plt.rcParams['figure.max_open_warning'] = 0
 
