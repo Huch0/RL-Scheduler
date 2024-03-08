@@ -585,3 +585,4 @@ Walker2d-v3:
 # For custom environments
 scheduler-customEnv:
   policy: 'MultiInputPolicy'
+  n_timesteps: !!float 1e6

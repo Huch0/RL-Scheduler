@@ -97,3 +97,7 @@ scheduler-mctsEnv:
   learning_starts: 5000
   target_update_interval: 250
 
+# for custom envs
+scheduler-customEnv:
+  policy: 'MultiInputPolicy'
+  n_timesteps: 1000000
