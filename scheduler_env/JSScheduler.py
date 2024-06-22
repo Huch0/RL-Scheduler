@@ -287,11 +287,17 @@ class JSScheduler():
     def get_info(self):
         return {
             'repetition': self.job_repetition,
-            'makespan': self.global_last_time,
+            'makespan': self.get_make_span(),
             'utilization': [machine.utilization for machine in self.machines],
             'scheduled_ops': [machine.scheduled_ops for machine in self.machines],
             'job_infos': self.job_infos,
         }
+
+    def get_mean_machine_utilization(self):
+        return np.mean([machine.utilization for machine in self.machines])
+
+    def get_make_span(self):
+        return self.global_last_time
 
     def show_gantt_chart(self):
         if self.global_last_time == 0:

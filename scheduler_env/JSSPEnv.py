@@ -64,7 +64,13 @@ class JSSPEnv(gym.Env):
             # print(e)
             reward -= 100
 
+        reward = self._get_step_reward()
+
         terminated = self.JSScheduler.is_done()
+
+        if terminated:
+            reward += self._get_final_reward()
+
         truncated = bool(self.num_steps >= 10000)
 
         return (
@@ -74,6 +80,17 @@ class JSSPEnv(gym.Env):
             truncated,
             self._get_info()
         )
+
+    def _get_step_reward(self):
+        mean_utilization = self.JSScheduler.get_mean_machine_utilization()
+
+        return mean_utilization
+
+    def _get_final_reward(self):
+        makespan = self.JSScheduler.get_make_span()
+
+        # Normalize the makespan
+        return 1 / makespan
 
     def render(self, mode='human'):
         self.JSScheduler.show_gantt_chart()
