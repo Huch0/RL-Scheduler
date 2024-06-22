@@ -3,52 +3,77 @@ import numpy as np
 import copy
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+from itertools import cycle
 
 
 class Job():
     max_n_operations = 3
+    color_generator = None
+
+    def _color_generator(self):
+        # Define a list of colors that are distinct and visually appealing on a Gantt chart
+        colors = [
+            '#1f77b4',  # Muted blue
+            '#ff7f0e',  # Safety orange
+            '#2ca02c',  # Cooked asparagus green
+            '#d62728',  # Brick red
+            '#9467bd',  # Muted purple
+            '#8c564b',  # Chestnut brown
+            '#e377c2',  # Raspberry yogurt pink
+            '#7f7f7f',  # Middle gray
+            '#bcbd22',  # Curry yellow-green
+            '#17becf'   # Blue-teal
+        ]
+        for color in cycle(colors):
+            yield color
 
     def __init__(self, job_info):
-        self.id = job_info['id']
-        self.color = '#' + ''.join(random.choices('0123456789ABCDEF', k=6))
+        if Job.color_generator is None:
+            Job.color_generator = self._color_generator()
 
-        self.operation_queue = [Operation(op_info) for op_info in job_info['operation_queue']]
+        self.id = job_info['id']
+        self.color = next(Job.color_generator)
+
+        self.operation_queue = [Operation(op_info, self.id) for op_info in job_info['operation_queue']]
         # Fill the operation queue with dummy operations
         if len(self.operation_queue) < self.max_n_operations:
-            self.operation_queue += [Operation({'id': -1, 'type': -1, 'processing_time': -1, 'predecessor': -1})] * (
+            self.operation_queue += [Operation({'id': -1, 'type': -1, 'processing_time': -1, 'predecessor': -1}, self.id)] * (
                 self.max_n_operations - len(self.operation_queue))
 
         # self.deadline = job_info['deadline']
 
-    def __str__(self):
+    def __repr__(self):
         return f"Job {self.id}"
 
     def encode(self):
         encoded_op_queue = np.array([op.encode() for op in self.operation_queue])
         if len(self.operation_queue) < self.max_n_operations:
             encoded_op_queue = np.concatenate((encoded_op_queue, np.full(
-                (self.max_n_operations - len(self.operation_queue), 4), -1)))
+                (self.max_n_operations - len(self.operation_queue), 6), -1)))
 
         return encoded_op_queue
 
 
 class Operation():
-    def __init__(self, op_info):
+    def __init__(self, op_info, job_id):
         self.id = op_info['id']
         self.type = op_info['type']
         self.processing_time = op_info['processing_time']
         self.predecessor = op_info['predecessor']
+        if self.predecessor == None:
+            self.predecessor = -1
+        self.job_id = job_id
 
         # Informations for runtime
-        self.start_time = None
-        self.end_time = None
-        self.machine = None
+        self.start_time = -1
+        self.end_time = -1
+        self.machine = -1
 
-    def __str__(self):
-        return f"Operation {self.id}, type: {self.type}, processing_time: {self.processing_time}"
+    def __repr__(self):
+        return f"OP{self.id} - Job{self.job_id}, {self.type}, {self.processing_time}, {self.start_time}, {self.end_time}"
 
     def encode(self):
-        return np.array([self.id, self.type, self.processing_time, self.predecessor])
+        return np.array([self.id, self.type, self.processing_time, self.predecessor, self.start_time, self.end_time])
 
 
 class Machine():
@@ -59,14 +84,14 @@ class Machine():
         self.ability = machine_info['ability']
 
         # Informations for runtime
-        self.utilization = 0
+        self.utilization = float(0)
         self.last_time = 0
         self.up_time = 0
 
         # for human visualization
-        self.scheduled_ops = [] * self.n_machines
+        self.scheduled_ops = []
 
-    def __str__(self):
+    def __repr__(self):
         return f"Machine {self.id}, ability: {self.ability}"
 
     def encode(self):
@@ -96,29 +121,35 @@ class JSScheduler():
 
         self.seed = seed
         # Job buffer is a 4D array that stores remaining operations of each job
-        self.job_buffer = np.full((self.n_jobs, self.max_job_repetition, Job.max_n_operations, 4), -1)
+        self.job_buffer = np.full((self.n_jobs, self.max_job_repetition, Job.max_n_operations, 6), -1, dtype=np.int16)
         self.job_cursors = [0] * self.n_jobs
         self.op_cursors = [0] * self.n_jobs
         self.job_infos = [] * self.n_jobs  # for human readability
+        self.job_repetition = []
         self._fill_job_buffer_job_infos()
 
         # Schedule table is a 3D array that stores scheduled operations
-        self.schedule_table = np.full((self.n_machines, self.total_ops * self.max_job_repetition, 6), -1)
+        self.schedule_table = np.full((self.n_machines, self.total_ops *
+                                      self.max_job_repetition, 6), -1, dtype=np.int16)
         self.schedule_table_indices = np.zeros((self.n_machines), dtype=int)
         self.global_last_time = 0
 
-        self.machine_info = np.array([machine.encode() for machine in self.machines])
+        self.machine_info = np.array([machine.encode() for machine in self.machines], dtype=np.float32)
 
         self.valid_actions = self._get_valid_actions()
 
     def reset(self):
+        # Reset PRNG
+        np.random.seed(self.seed)
+
         self.machines = copy.deepcopy(self.original_machine_list)
-        self._fill_job_buffer()
+        self._fill_job_buffer_job_infos()
         self.job_cursors = [0] * self.n_jobs
         self.op_cursors = [0] * self.n_jobs
-        self.schedule_table = np.full((self.n_machines, self.total_ops * self.max_job_repetition, 6), -1)
+        self.schedule_table = np.full((self.n_machines, self.total_ops *
+                                      self.max_job_repetition, 6), -1, dtype=np.int16)
         self.schedule_table_indices = np.zeros((self.n_machines), dtype=int)
-        self.machine_info = np.array([machine.encode() for machine in self.machines])
+        self.machine_info = np.array([machine.encode() for machine in self.machines], dtype=np.float32)
         self.valid_actions = self._get_valid_actions()
 
         # reset machine
@@ -126,17 +157,17 @@ class JSScheduler():
     def _fill_job_buffer_job_infos(self):
         # (# of jobs) x (max # of job repetition) x (max # of operations per job) x (operation info)
         # Repeat each jobs randomly
-        np.random.seed(0)
-        job_repetition = np.random.randint(
+        np.random.seed(self.seed)
+        self.job_repetition = np.random.randint(
             1, self.max_job_repetition + 1, self.n_jobs)
 
         # Initialize the job buffer with dummy operations
-        self.job_buffer = np.full((self.n_jobs, self.max_job_repetition, Job.max_n_operations, 4), -1)
+        self.job_buffer = np.full((self.n_jobs, self.max_job_repetition, Job.max_n_operations, 6), -1, dtype=np.int16)
 
-        self.job_infos = [] * self.n_jobs
+        self.job_infos = [[] for _ in range(self.n_jobs)]
 
         for i in range(self.n_jobs):
-            for j in range(job_repetition[i]):
+            for j in range(self.job_repetition[i]):
                 self.job_buffer[i, j] = self.jobs[i].encode()
 
                 self.job_infos[i].append(copy.deepcopy(self.jobs[i]))
@@ -207,6 +238,8 @@ class JSScheduler():
                 selected_machine.scheduled_ops, key=lambda x: x.start_time)
         else:
             # Push the operation to the end of the schedule
+            selected_op.start_time = selected_machine.last_time
+            selected_op.end_time = selected_op.start_time + selected_op.processing_time
             selected_machine.last_time = selected_op.end_time
 
         # Add the operation to the schedule table
@@ -216,10 +249,12 @@ class JSScheduler():
         # Update all machines' utilization
         self.global_last_time = max(self.global_last_time, selected_machine.last_time)
         for machine in self.machines:
-            machine.utilization = machine.up_time / self.global_last_time
+            if self.global_last_time == 0:
+                print(window_found, selected_op.start_time, selected_op.end_time, selected_machine.scheduled_ops)
+            machine.utilization = float(machine.up_time / self.global_last_time)
 
         # Update machine info
-        self.machine_info = np.array([machine.encode() for machine in self.machines])
+        self.machine_info = np.array([machine.encode() for machine in self.machines], dtype=np.float32)
 
         # Remove the operation from the job buffer
         self.job_buffer[job_id, self.job_cursors[job_id], self.op_cursors[job_id]].fill(-1)
@@ -236,7 +271,12 @@ class JSScheduler():
         # Update valid actions
         self.valid_actions = self._get_valid_actions()
 
-    def get_info(self):
+    def is_done(self):
+        # All jobs are finished
+        # or there is no valid action
+        return np.all(self.job_cursors == -1) or not np.any(self.valid_actions)
+
+    def get_state(self):
         return {
             'schedule_table': self.schedule_table,
             'job_buffer': self.job_buffer,
@@ -244,12 +284,47 @@ class JSScheduler():
             'valid_actions': self.valid_actions
         }
 
-    def show_gantt_chart(self):
-        fig, ax = plt.subplots()
-        for machine in self.machines:
-            for op in machine.scheduled_ops:
-                ax.add_patch(mpatches.Rectangle((op.start_time, machine.id - 0.5), op.processing_time,
-                                                1, color=self.jobs[op.id].color))
+    def get_info(self):
+        return {
+            'repetition': self.job_repetition,
+            'makespan': self.global_last_time,
+            'utilization': [machine.utilization for machine in self.machines],
+            'scheduled_ops': [machine.scheduled_ops for machine in self.machines],
+            'job_infos': self.job_infos,
+        }
 
-        plt.yticks(range(self.n_machines), [str(machine) for machine in self.machines])
+    def show_gantt_chart(self):
+        if self.global_last_time == 0:
+            # show an empty chart
+            fig, ax = plt.subplots()
+            ax.set_yticks([0])
+            ax.set_yticklabels(['Machine'])
+            ax.set_xticks([0])
+            ax.set_xticklabels(['Time'])
+            ax.set_xlim(0, 10)
+            ax.set_ylim(0, 10)
+            plt.show()
+            return
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.set_title('Gantt Chart of the Schedule')
+        ax.set_yticks(range(self.n_machines))
+        ax.set_yticklabels([f'Machine {i}\n ability:{self.machines[i].ability}' for i in range(self.n_machines)])
+        ax.set_xticks(range(0, self.global_last_time + 1, 10))
+        ax.set_xticklabels(range(0, self.global_last_time + 1, 10))
+        ax.set_xlim(0, self.global_last_time)
+        ax.set_ylim(-1, self.n_machines)
+
+        for machine_id in range(self.n_machines):
+            for op in self.machines[machine_id].scheduled_ops:
+                op_block = mpatches.Rectangle(
+                    (op.start_time, machine_id - 0.5), op.end_time - op.start_time, 1, facecolor=self.jobs[op.job_id].color, edgecolor='black', linewidth=1)
+                ax.add_patch(op_block)
+
+        # Add legend for job repetition
+        legend_patches = []
+        for i in range(self.n_jobs):
+            legend_patches.append(mpatches.Patch(color=self.jobs[i].color, label=f'Job {i} x {self.job_repetition[i]}'))
+        ax.legend(handles=legend_patches)
+
         plt.show()
