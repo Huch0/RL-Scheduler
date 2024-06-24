@@ -552,25 +552,27 @@ class SchedulingEnv(gym.Env):
             # Final_time이 target_time에 비해 몇 퍼센트 초과되었는지를 바탕으로 100점 만점으로 환산하여 점수 계산
             return max(0, 1 - (abs(target_time - self._get_final_operation_finish()) / target_time))
         
-        def operation_rate_to_reward(operation_rates, target_rate=1.0, penalty_factor=2.0):
-            total_reward = 0
-            for rate in operation_rates:
-                # operation rate가 목표에 가까울수록 보상을 증가시킴
-                reward = 2/(abs(rate - target_rate) - 2) + 2
-                # operation rate의 차이에 따라 패널티를 부여함
-                penalty = penalty_factor * abs(rate - target_rate)
-                # 보상에서 패널티를 빼서 최종 보상을 계산함
-                total_reward += reward - penalty
-            return max(0, total_reward / len(self.machines))
+        #def operation_rate_to_reward(operation_rates, target_rate=1.0, penalty_factor=2.0):
+            #total_reward = 0
+            # for rate in operation_rates:
+            #     # operation rate가 목표에 가까울수록 보상을 증가시킴
+            #     reward = 2/(abs(rate - target_rate) - 2) + 2
+            #     # operation rate의 차이에 따라 패널티를 부여함
+            #     penalty = penalty_factor * abs(rate - target_rate)
+            #     # 보상에서 패널티를 빼서 최종 보상을 계산함
+            #     total_reward += reward - penalty
+        def operation_rate_to_reward():
+            return min([machine.operation_rate for machine in self.machines])
         
         def job_deadline_to_reward():
             sum_of_late_rate = 0
             for job in self.jobs:
                 if job.time_exceeded > 0:
                     sum_of_late_rate += (job.time_exceeded / job.deadline)
+            #sum_of_late_rate /= len(self.jobs)
             return max(0, 1 - sum_of_late_rate)
 
-        final_reward_by_op_rate = weight_op_rate * operation_rate_to_reward([machine.operation_rate for machine in self.machines])
+        final_reward_by_op_rate = weight_op_rate * operation_rate_to_reward()
         final_reward_by_final_time = weight_final_time * final_time_to_reward(1000) 
         final_reward_by_job_deadline = weight_job_deadline * job_deadline_to_reward()
 
