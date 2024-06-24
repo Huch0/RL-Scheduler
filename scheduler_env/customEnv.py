@@ -56,8 +56,8 @@ class Job():
 
 class Operation():
     def __init__(self, operation_info):
-        # self.sequence = operation_info['sequence']
-        # self.index = operation_info['index']
+        self.sequence = operation_info['sequence']
+        self.index = operation_info['index']
         # Informations for rendering
         self.color = ""
         # Informations for runtime
