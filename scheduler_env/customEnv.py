@@ -151,9 +151,12 @@ class SchedulingEnv(gym.Env):
 
         return orders
 
-    def __init__(self, resources="../resources/v2-8.json", orders="../orders/v2-12-deadline.json", render_mode="seaborn"):
+    def __init__(self, resources="../resources/v2-8.json", orders="../orders/v2-12-deadline.json", render_mode="seaborn", weight_final_time=80, weight_order_deadline=20, weight_op_rate=0):
         super(SchedulingEnv, self).__init__()
 
+        self.weight_final_time = weight_final_time
+        self.weight_order_deadline = weight_order_deadline
+        self.weight_op_rate = weight_op_rate
         resources = self._load_resources(resources)
         orders = self._load_orders(orders)
         self.resources = [Resource(resource_info)
@@ -295,12 +298,14 @@ class SchedulingEnv(gym.Env):
                          ) or not np.any(self.legal_actions)
 
         if terminated:
-            reward += self._calculate_final_reward()
+            reward += self._calculate_final_reward(self.weight_final_time, self.weight_order_deadline, self.weight_op_rate)
             # print(f"reward : {reward}")
 
         # reward += sum([task.duration for task in self.current_schedule]) / self._get_final_task_finish()
         # 무한 루프를 방지하기 위한 조건
         truncated = bool(self.num_steps == 10000)
+        if truncated:
+            reward = -100
 
         return (
             self._get_observation(),
@@ -541,7 +546,7 @@ class SchedulingEnv(gym.Env):
     def _get_final_task_finish(self):
         return max(self.current_schedule, key=lambda x: x.finish).finish
 
-    def _calculate_final_reward(self, weight_final_time = 80, weight_op_rate = 0, weight_order_deadline = 20):
+    def _calculate_final_reward(self, weight_final_time = 80, weight_order_deadline = 20, weight_op_rate = 0):
         def final_time_to_reward(target_time):
             if target_time >= self._get_final_task_finish():
                 return 1
