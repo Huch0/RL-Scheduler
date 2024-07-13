@@ -1,10 +1,10 @@
 {
-    "orders": [
+    "jobs": [
         {
-            "name": "Order 1",
+            "name": "Job 1",
             "color": "#1f77b4",
             "earliest_start": 0,
-            "tasks": [
+            "operations": [
                 {
                     "index": 1,
                     "type": "A",
@@ -33,10 +33,10 @@
             "deadline": 900
         },
         {
-            "name": "Order 2",
+            "name": "Job 2",
             "color": "#ff7f0e",
             "earliest_start": 0,
-            "tasks": [
+            "operations": [
                 {
                     "index": 1,
                     "type": "B",
@@ -59,10 +59,10 @@
             "deadline": 900
         },
         {
-            "name": "Order 3",
+            "name": "Job 3",
             "color": "#2ca02c",
             "earliest_start": 0,
-            "tasks": [
+            "operations": [
                 {
                     "index": 1,
                     "type": "C",
@@ -85,10 +85,10 @@
             "deadline": 1050
         },
         {
-            "name": "Order 4",
+            "name": "Job 4",
             "color": "#d62728",
             "earliest_start": 0,
-            "tasks": [
+            "operations": [
                 {
                     "index": 1,
                     "type": "A",
@@ -111,10 +111,10 @@
             "deadline": 1050
         },
         {
-            "name": "Order 5",
+            "name": "Job 5",
             "color": "#9467bd",
             "earliest_start": 0,
-            "tasks": [
+            "operations": [
                 {
                     "index": 1,
                     "type": "B",
@@ -137,10 +137,10 @@
             "deadline": 900
         },
         {
-            "name": "Order 6",
+            "name": "Job 6",
             "color": "#8c564b",
             "earliest_start": 0,
-            "tasks": [
+            "operations": [
                 {
                     "index": 1,
                     "type": "B",
@@ -163,10 +163,10 @@
             "deadline": 900
         },
         {
-            "name": "Order 7",
+            "name": "Job 7",
             "color": "#e377c2",
             "earliest_start": 0,
-            "tasks": [
+            "operations": [
                 {
                     "index": 1,
                     "type": "C",
@@ -189,10 +189,10 @@
             "deadline": 1050
         },
         {
-            "name": "Order 8",
+            "name": "Job 8",
             "color": "#7f7f7f",
             "earliest_start": 0,
-            "tasks": [
+            "operations": [
                 {
                     "index": 1,
                     "type": "D",
@@ -215,10 +215,10 @@
             "deadline": 1500
         },
         {
-            "name": "Order 9",
+            "name": "Job 9",
             "color": "#bcbd22",
             "earliest_start": 0,
-            "tasks": [
+            "operations": [
                 {
                     "index": 1,
                     "type": "A",
@@ -241,10 +241,10 @@
             "deadline": 750
         },
         {
-            "name": "Order 10",
+            "name": "Job 10",
             "color": "#17becf",
             "earliest_start": 0,
-            "tasks": [
+            "operations": [
                 {
                     "index": 1,
                     "type": "B",
@@ -267,10 +267,10 @@
             "deadline": 900
         },
         {
-            "name": "Order 11",
+            "name": "Job 11",
             "color": "#aec7e8",
             "earliest_start": 0,
-            "tasks": [
+            "operations": [
                 {
                     "index": 1,
                     "type": "A",
@@ -293,10 +293,10 @@
             "deadline": 1050
         },
         {
-            "name": "Order 12",
+            "name": "Job 12",
             "color": "#ffbb78",
             "earliest_start": 0,
-            "tasks": [
+            "operations": [
                 {
                     "index": 1,
                     "type": "D",
