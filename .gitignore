@@ -1,3 +1,5 @@
 *_pycache_*
 .DS_Store
 rl_zoo3/logs/test*
+.venv*
+.ipynb_checkpoints
