@@ -31,9 +31,9 @@ class JSSPEnv(gym.Env):
         self.action_space = spaces.Discrete(self.n_machines * self.n_jobs)
         self.observation_space = spaces.Dict({
             'action_mask': spaces.Box(low=0, high=1, shape=(self.n_machines * self.n_jobs,), dtype=np.int8),
-            'schedule_table': spaces.Box(low=-1, high=500, shape=(self.n_machines, self.total_ops * self.max_job_repetition, 6), dtype=np.int16),
-            'job_buffer': spaces.Box(low=-1, high=500, shape=(self.n_jobs, self.max_job_repetition, self.max_n_operations, 6), dtype=np.int16),
-            'machine_info': spaces.Box(low=-1, high=500, shape=(self.n_machines, 6), dtype=np.float32)
+            'schedule_table': spaces.Box(low=-1, high=500, shape=(self.n_machines * self.total_ops * self.max_job_repetition * 6,), dtype=np.int16),
+            'job_buffer': spaces.Box(low=-1, high=500, shape=(self.n_jobs * self.max_job_repetition * self.max_n_operations * 6,), dtype=np.int16),
+            'machine_info': spaces.Box(low=-1, high=500, shape=(self.n_machines * 6,), dtype=np.float32)
         })
 
     def reset(self, seed=0, options=None):
@@ -88,6 +88,8 @@ class JSSPEnv(gym.Env):
 
     def _get_final_reward(self):
         makespan = self.JSScheduler.get_make_span()
+        if makespan == 0:
+            return 0
 
         # Normalize the makespan
         return 1 / makespan
@@ -98,9 +100,9 @@ class JSSPEnv(gym.Env):
     def _get_observation(self):
         return {
             'action_mask': np.logical_not(self.scheduler_state['valid_actions']).flatten(),
-            'schedule_table': self.scheduler_state['schedule_table'],
-            'job_buffer': self.scheduler_state['job_buffer'],
-            'machine_info': self.scheduler_state['machine_info']
+            'schedule_table': self.scheduler_state['schedule_table'].flatten(),
+            'job_buffer': self.scheduler_state['job_buffer'].flatten(),
+            'machine_info': self.scheduler_state['machine_info'].flatten()
         }
 
     def _get_info(self):
@@ -123,10 +125,11 @@ if __name__ == "__main__":
         action = env.action_space.sample()
         obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
+        env.render()
 
         if done:
             print("Goal reached!")
-            print(info)
+            print(step, info)
             env.render()
 
     env.close()
