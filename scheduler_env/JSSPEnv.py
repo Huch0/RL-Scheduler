@@ -59,12 +59,11 @@ class JSSPEnv(gym.Env):
 
         try:
             self.JSScheduler.schedule_selected_job(machine_id, job_id)
+            reward = self._get_step_reward()
         except Exception as e:
             # Invalid action
             # print(e)
             reward -= 100
-
-        reward = self._get_step_reward()
 
         terminated = self.JSScheduler.is_done()
 
@@ -119,17 +118,19 @@ if __name__ == "__main__":
     step = 0
     obs, _ = env.reset()
     done = False
+    total_reward = 0
 
     while not done:
         step += 1
         action = env.action_space.sample()
         obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
-        env.render()
+        total_reward += reward
+        # env.render()
 
         if done:
             print("Goal reached!")
-            print(step, info)
+            print(step, info, total_reward)
             env.render()
 
     env.close()
