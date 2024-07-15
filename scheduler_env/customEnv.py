@@ -116,23 +116,23 @@ class SchedulingEnv(gym.Env):
 
         # error_action이 아니라면 step의 수를 증가시킨다
         self.num_steps += 1
-        reward = 0
+        reward = 0.0
 
         self._update_legal_actions()
 
         if self._is_legal(action):
             self._update_state(action)
-            reward = self._calculate_step_reward()
+            reward += self._calculate_step_reward()
         else:  # Illegal action
             reward = -0.5
 
         terminated = self._is_done()
         if terminated:
-            reward += self._calculate_final_reward()
+            reward = self._calculate_final_reward()
             
         truncated = bool(self.num_steps == 10000)
         if truncated:
-            reward = -100
+            reward = -100.0
 
         return (
             self._get_observation(),
