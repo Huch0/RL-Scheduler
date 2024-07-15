@@ -507,7 +507,7 @@ class customScheduler():
         return max(self.current_schedule, key=lambda x: x.finish).finish
 
     def calculate_step_reward(self):
-        self.machine_term = 0
+        self.machine_term = 0.0
         if np.any(self.machine_operation_rate):
             self.machine_term = np.mean(self.machine_operation_rate)
         return self.machine_term
