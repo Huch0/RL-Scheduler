@@ -7,16 +7,16 @@
             "earliest_start": 0,
             "operations": [
                 {
-                    "index": 1,
+                    "index": 0,
                     "type": "A",
                     "duration": 100,
                     "predecessor": null
                 },
                 {
-                    "index": 2,
+                    "index": 1,
                     "type": "B",
                     "duration": 200,
-                    "predecessor": 1
+                    "predecessor": 0
                 }
             ],
             "deadline": 450
@@ -27,16 +27,16 @@
             "earliest_start": 0,
             "operations": [
                 {
-                    "index": 1,
+                    "index": 2,
                     "type": "B",
                     "duration": 100,
                     "predecessor": null
                 },
                 {
-                    "index": 2,
+                    "index": 3,
                     "type": "A",
                     "duration": 200,
-                    "predecessor": 1
+                    "predecessor": 2
                 }
             ],
             "deadline": 500
@@ -47,22 +47,22 @@
             "earliest_start": 0,
             "operations": [
                 {
-                    "index": 1,
+                    "index": 4,
                     "type": "A",
                     "duration": 100,
                     "predecessor": null
                 },
                 {
-                    "index": 2,
+                    "index": 5,
                     "type": "B",
                     "duration": 100,
-                    "predecessor": 1
+                    "predecessor": 4
                 },
                 {
-                    "index": 3,
+                    "index": 6,
                     "type": "A",
                     "duration": 100,
-                    "predecessor": 2
+                    "predecessor": 5
                 }
             ],
             "deadline": 400

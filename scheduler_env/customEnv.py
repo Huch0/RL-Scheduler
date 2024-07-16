@@ -86,6 +86,9 @@ class SchedulingEnv(gym.Env):
 
         self.num_steps = 0
 
+        self.max_edges = 100
+        
+        self.node_space = spaces.Box(low=0, high=10000, shape=(self.custom_scheduler.num_operations + 2, 2), dtype=np.float32)        
         self.action_space = spaces.Discrete(self.len_machines * self.len_jobs)
         self.observation_space = spaces.Dict({
             "action_mask": spaces.Box(low=0, high=1, shape=(self.len_machines * self.len_jobs, ), dtype=np.int8),
@@ -94,7 +97,9 @@ class SchedulingEnv(gym.Env):
             'machine_operation_rate': spaces.Box(low=0, high=1, shape=(self.len_machines, ), dtype=np.float32),
             "num_operation_per_machine": spaces.Box(low=0, high=100, shape=(self.len_machines, ), dtype=np.int64),
             "machine_types": spaces.Box(low=0, high=1, shape=(self.len_machines, 25), dtype=np.int8),
-            "operation_schedules": spaces.Box(low=0, high=1, shape=(self.len_machines, 50), dtype=np.int8)
+            "operation_schedules": spaces.Box(low=0, high=1, shape=(self.len_machines, 50), dtype=np.int8),
+            "node_space": self.node_space,
+            "edge_index": spaces.Box(low=0, high=self.max_edges, shape=(2, self.max_edges), dtype=np.int64)
         })
 
     def reset(self, seed=None, options=None):
@@ -170,6 +175,9 @@ class SchedulingEnv(gym.Env):
 
     def render(self, mode="seaborn"):
         self.custom_scheduler.render(mode = mode, num_steps = self.num_steps)
+
+    def visualize_graph(self):
+        self.custom_scheduler.visualize_graph()
 
 if __name__ == "__main__":
     env = SchedulingEnv(machines="instances/Machines/v0-8.json",

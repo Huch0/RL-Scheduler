@@ -1,4 +1,7 @@
-import json
+import torch
+from torch_geometric.data import Data
+from torch_geometric.utils import to_networkx
+import networkx as nx
 import copy
 import pandas as pd
 import numpy as np
@@ -34,35 +37,31 @@ class Machine():
         return operation_type in self.ability
 
 class Job():
-    def __init__(self, job_info):
+    def __init__(self, job_info, job_id):
         self.name = job_info['name']
         self.color = job_info['color']
-        self.operation_queue = [Operation(operation_info)
-                           for operation_info in job_info['operations']]
-        self.density = 0
-
-        # changed : add deadline, time_exceeded
         self.deadline = job_info['deadline']
         self.time_exceeded = 0
+        self.density = 0
+        self.operation_queue = [Operation(operation_info, job_id, self.color) for operation_info in job_info['operations']]
 
     def __str__(self):
         return f"{self.name}, {self.time_exceeded}/{self.deadline}"
 
 class Operation():
-    def __init__(self, operation_info):
-        self.sequence = operation_info['sequence']
+    def __init__(self, operation_info, job_id, color):
+        self.sequence = None  # 초기화 시점에는 설정되지 않음
         self.index = operation_info['index']
-        # Informations for rendering
-        self.color = ""
-        # Informations for runtime
-        self.start = operation_info['start']
-        self.finish = operation_info['finish']
-        self.machine = -1
-        self.job = -1
         self.type = type_encoding(operation_info['type'])
+        self.duration = operation_info['duration']
         self.predecessor = operation_info['predecessor']
         self.earliest_start = operation_info['earliest_start']
-        self.duration = operation_info['duration']
+        self.start = None  # 초기화 시점에는 설정되지 않음
+        self.finish = None  # 초기화 시점에는 설정되지 않음
+        self.machine = -1
+        self.job = job_id
+        self.color = color
+        self.completion_time_lower_bound = 0
 
     def to_dict(self):
         return {
@@ -80,23 +79,27 @@ class Operation():
         }
 
     def __str__(self):
-        return f"job : {self.job}, step : {self.index} | ({self.start}, {self.finish})"
+        return f"job : {self.job}, index : {self.index} | ({self.start}, {self.finish})"
     
 class customScheduler():
     def __init__(self, jobs, machines) -> None:
         self.machines = [Machine(machine_info)
                           for machine_info in machines]
-        self.jobs = [Job(job_info) for job_info in jobs]
+        self.jobs = [Job(job_info, job_id) for job_id, job_info in enumerate(jobs)]
+        self.operations = [operation for job in self.jobs for operation in job.operation_queue]
+        
         len_machines = len(self.machines)
         len_jobs = len(self.jobs)
         # Reset 할 때 DeepCopy를 위해 원본을 저장해둠
         self.original_jobs = copy.deepcopy(self.jobs)
         self.original_machines = copy.deepcopy(self.machines)
         self.original_operations = copy.deepcopy(
-            [job.operation_queue for job in self.jobs])
+            [operation for job in self.jobs for operation in job.operation_queue])
         self.num_operations = sum([len(job.operation_queue) for job in self.jobs])
 
         self.schedule_buffer = [-1 for _ in range(len(self.jobs))]
+        self.current_operation_index = -1  
+
         # 4 : 각 리소스별 operation 수 최댓값
         self.original_job_details = np.ones(
             (len_jobs, 4, 2), dtype=np.int8) * -1
@@ -130,7 +133,68 @@ class customScheduler():
 
         self.job_term = 0
         self.machine_term = 0
+
+        self.graph = self.build_graph()
+
+    def build_graph(self):
+        # 노드 특징: (is_scheduled, completion_time_lower_bound)
+        node_features = torch.zeros((self.num_operations + 2, 2), dtype=torch.float32)
+        edge_index = []
+
+        # 더미 노드 추가
+        node_features[0] = torch.tensor([1, 0], dtype=torch.float32)  # 시작 노드
+        node_features[1] = torch.tensor([0, 0], dtype=torch.float32)  # 종료 노드
+
+        # 작업 간의 순서를 정의하는 엣지 추가
+        for job in self.jobs:
+            Clb = 0
+            for op in job.operation_queue:
+                op_id = op.index + 2  # 노드 인덱스는 2부터 시작
+                Clb += op.duration
+                op.completion_time_lower_bound = Clb
+                node_features[op_id] = torch.tensor([0, Clb], dtype=torch.float32)
+                # 작업 간의 순서 엣지 추가
+                if op.predecessor is not None:
+                    edge_index.append((op.predecessor + 2, op_id))
+                else:
+                    edge_index.append((0, op_id))  # 시작 노드에서 첫 작업으로
+
+            edge_index.append((job.operation_queue[-1].index + 2, 1))  # 마지막 작업에서 종료 노드로
+
+        edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
+        graph = Data(x=node_features, edge_index=edge_index)
+
+        return graph
     
+    def update_graph(self, action):
+        selected_operation = self.operations[self.current_operation_index]
+        
+        # 노드 특징 업데이트
+        node_id = self.current_operation_index + 2
+        self.graph.x[node_id][0] = 1  # is_scheduled
+
+        # None 값을 0 또는 다른 기본 값으로 대체
+        finish_time = selected_operation.finish if selected_operation.finish is not None else 0
+        self.graph.x[node_id][1] = finish_time  # completion_time_lower_bound
+
+        # 엣지 추가: 이전 작업과 다음 작업 간의 순서 엣지 추가
+        if selected_operation.predecessor is not None:
+            self.graph.edge_index = torch.cat([self.graph.edge_index, torch.tensor([[node_id-1], [node_id]])], dim=1)
+
+        # 다음 작업이 존재하는가? 그렇다면 아래 내용 수행
+        if self.current_operation_index + 1 < len(self.operations) and self.operations[self.current_operation_index+1].predecessor:
+            self.graph.edge_index = torch.cat([self.graph.edge_index, torch.tensor([[node_id], [node_id+1]])], dim=1)
+
+    def visualize_graph(self):
+        G = to_networkx(self.graph, node_attrs=['x'])
+        pos = nx.spring_layout(G)
+
+        plt.figure(figsize=(10, 10))
+        nx.draw(G, pos, with_labels=True, node_size=500, node_color='lightblue', font_size=10, font_weight='bold')
+        node_labels = {i: f"{i}\n({self.graph.x[i][0].item()}, {self.graph.x[i][1].item()})" for i in G.nodes()}
+        nx.draw_networkx_labels(G, pos, labels=node_labels, font_size=8)
+        plt.show()
+
     def reset(self, seed=None, options=None):
         """
         Important: the observation must be a numpy array
@@ -139,7 +203,7 @@ class customScheduler():
         # 환경과 관련된 변수들
         self.jobs = copy.deepcopy(self.original_jobs)
         self.machines = copy.deepcopy(self.original_machines)
-
+        self.operations = copy.deepcopy(self.original_operations)
         self.current_job_details = copy.deepcopy(self.original_job_details)
 
         # 내부 동작을 위한 변수들
@@ -172,6 +236,8 @@ class customScheduler():
         self.last_finish_time = 0
         self.valid_count = 0
 
+        self.current_operation_index = -1
+
         return self.get_observation(), self.get_info() 
     
     def action_masks(self):
@@ -183,15 +249,20 @@ class customScheduler():
         if action is not None:
             self.valid_count += 1
             self._schedule_operation(action)
+            
+            self.current_operation_index = self.jobs[action[1]].operation_queue[self.schedule_buffer[action[1]]].index  # 현재 작업의 index 업데이트
+
             self._update_schedule_buffer(action[1])
             # self._update_job_state(action)
             self._update_job_details(action[1])
             self._update_machine_state()
             self.last_finish_time = self._get_final_operation_finish()
+            self.update_graph(action)           
         else:
             self._update_schedule_buffer(None)
             # self._update_job_state(None)
             self._update_machine_state(init=True)
+            self.graph = self.build_graph()
 
     def update_legal_actions(self):
         # Initialize legal_actions
@@ -386,6 +457,11 @@ class customScheduler():
         return
 
     def get_observation(self):
+        max_edges = 100
+        padded_edge_index = torch.zeros((2, max_edges), dtype=torch.long)
+        num_edges = min(self.graph.edge_index.shape[1], max_edges)
+        padded_edge_index[:, :num_edges] = self.graph.edge_index[:, :num_edges]
+
         observation = {
             'action_mask': self.action_masks(),
             'job_details': self.current_job_details,
@@ -393,7 +469,9 @@ class customScheduler():
             'machine_operation_rate': self.machine_operation_rate,
             'num_operation_per_machine': np.array([len(machine.operation_schedule) for machine in self.machines]),
             'machine_types': self.machine_types,
-            'operation_schedules': self.operation_schedules
+            'operation_schedules': self.operation_schedules,
+            'node_space': self.graph.x.numpy(),
+            'edge_index': padded_edge_index.numpy()
         }
 
         return observation
