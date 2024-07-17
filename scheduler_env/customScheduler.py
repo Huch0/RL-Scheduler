@@ -28,7 +28,7 @@ class Machine():
     def __str__(self):
         # str_to_operations = [str(operation) for operation in self.operation_schedule]
         # return f"{self.name} : {str_to_operations}"
-        return f"{self.name}"
+        return f"name : {self.name}, ability : {self.ability}"
 
     def ability_encoding(self, ability):
         return [type_encoding(type) for type in ability]
@@ -61,7 +61,8 @@ class Operation():
         self.machine = -1
         self.job = job_id
         self.color = color
-        self.completion_time_lower_bound = 0
+        self.expected_start = 0
+        self.estimated_tardiness = 0
 
     def to_dict(self):
         return {
@@ -134,7 +135,7 @@ class customScheduler():
         self.job_term = 0
         self.machine_term = 0
 
-        self.graph = self.build_graph()
+        self.graph = None
 
     def build_graph(self):
         # 노드 특징: (is_scheduled, completion_time_lower_bound)
@@ -142,17 +143,23 @@ class customScheduler():
         edge_index = []
 
         # 더미 노드 추가
-        node_features[0] = torch.tensor([1, 0], dtype=torch.float32)  # 시작 노드
-        node_features[1] = torch.tensor([0, 0], dtype=torch.float32)  # 종료 노드
+        node_features[0] = torch.tensor([-1, 0], dtype=torch.float32)  # 시작 노드
+        node_features[1] = torch.tensor([-1, 0], dtype=torch.float32)  # 종료 노드
 
         # 작업 간의 순서를 정의하는 엣지 추가
         for job in self.jobs:
-            Clb = 0
+            #Clb = 0
+            expected_tardiness = 0
             for op in job.operation_queue:
                 op_id = op.index + 2  # 노드 인덱스는 2부터 시작
-                Clb += op.duration
-                op.completion_time_lower_bound = Clb
-                node_features[op_id] = torch.tensor([0, Clb], dtype=torch.float32)
+                            
+                if op.predecessor:
+                    op.expected_start = self.operations[op.predecessor].expected_start + self.operations[op.predecessor].duration
+                else:
+                    op.expected_start = int(op.earliest_start) if op.earliest_start else 0
+                    expected_tardiness = (op.expected_start + sum([op.duration for op in job.operation_queue]) - job.deadline) / job.deadline
+
+                node_features[op_id] = torch.tensor([-1, expected_tardiness], dtype=torch.float32)  # [할당된 머신, 추정 Tardiness]
                 # 작업 간의 순서 엣지 추가
                 if op.predecessor is not None:
                     edge_index.append((op.predecessor + 2, op_id))
@@ -167,15 +174,34 @@ class customScheduler():
         return graph
     
     def update_graph(self, action):
+        selected_machine_id = action[0]
+        selected_machine = self.machines[selected_machine_id]
         selected_operation = self.operations[self.current_operation_index]
         
         # 노드 특징 업데이트
         node_id = self.current_operation_index + 2
-        self.graph.x[node_id][0] = 1  # is_scheduled
+        self.graph.x[node_id][0] = selected_machine_id  # 할당된 머신
+ 
+        for job_index, op_index in enumerate(self.schedule_buffer):
+            if op_index < 0:
+                continue  # 작업이 남아 있지 않으면 건너뜀
 
-        # None 값을 0 또는 다른 기본 값으로 대체
-        finish_time = selected_operation.finish if selected_operation.finish is not None else 0
-        self.graph.x[node_id][1] = finish_time  # completion_time_lower_bound
+            job = self.jobs[job_index]
+            op = job.operation_queue[op_index]
+
+            earliest_machine_end_time = min(
+                [machine.operation_schedule[-1].finish if machine.operation_schedule else 0 for machine in self.machines if op.type in machine.ability]
+            )
+            
+            early_start = 0
+            if op.earliest_start:
+                early_start = op.earliest_start
+            op.expected_start = max(earliest_machine_end_time, early_start)
+            estimated_finish_time = op.expected_start + op.duration
+            remaining_durations_after_op = [remaining_op.duration for remaining_op in job.operation_queue[op_index+1:] if remaining_op.finish is None]
+            expected_tardiness = (estimated_finish_time + sum(remaining_durations_after_op) - job.deadline) / job.deadline
+            op_id = op.index + 2
+            self.graph.x[op_id][1] = expected_tardiness  # 추정 Tardiness 업데이트
 
         # 엣지 추가: 이전 작업과 다음 작업 간의 순서 엣지 추가
         if selected_operation.predecessor is not None:
