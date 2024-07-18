@@ -26,7 +26,7 @@ class GraphJSSPEnv(gym.Env):
 
         self.graph = DisjunctiveGraph(instance_config)
 
-        self.node_space = spaces.Box(low=0, high=10000, shape=(2,), dtype=np.int16)
+        self.node_space = spaces.Box(low=0, high=10000, shape=(2,), dtype=np.int32)
         self.observation_space = spaces.Dict({
             'valid_actions': spaces.MultiBinary(self.graph.num_jobs),
             'graph': spaces.Graph(node_space=self.node_space, edge_space=None)
@@ -35,7 +35,8 @@ class GraphJSSPEnv(gym.Env):
 
         self.num_steps = 0
         self.max_steps = 10_000
-        self.valid_actions = []
+        self.candidate_job_indices = []
+        self.candidate_op_indices = []
         self.max_Clb_t = 0
 
     def reset(self, seed=0):
@@ -58,7 +59,7 @@ class GraphJSSPEnv(gym.Env):
 
         reward = 0
 
-        if action not in self.valid_actions:
+        if action not in self.candidate_op_indices:
             reward = -10
         else:
             self.graph.schedule_selected_op(action)
@@ -132,9 +133,11 @@ class GraphJSSPEnv(gym.Env):
         plt.show()
 
     def _get_observation(self):
-        self.valid_actions = self.graph.get_valid_job_ids()
+        self.candidate_job_indices = self.graph.get_valid_job_ids()
+        self.candidate_op_indices = self.graph.get_valid_op_ids()
         return {
-            'valid_actions': self.valid_actions,
+            'candidate_job_indices': self.candidate_job_indices,
+            'candidate_op_indices': self.candidate_op_indices,
             'graph': self.graph
         }
 
@@ -224,7 +227,7 @@ class DisjunctiveGraph:
         edge_index.extend([(job.operation_queue[-1], 1) for job in self.jobs])
 
         # Convert edge_index list of tuples to a PyTorch tensor of shape [2, num_edges]
-        edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
+        edge_index = torch.tensor(edge_index, dtype=torch.int64).t().contiguous()
 
         # Create PyG graph with corrected edge_index
         graph = Data(x=node_features, edge_index=edge_index)
@@ -257,15 +260,15 @@ class DisjunctiveGraph:
                     valid_op_ids.append(op_id)
                     break
 
-        return valid_op_ids
+        return torch.tensor(valid_op_ids, dtype=torch.int64)
 
-    def schedule_selected_op(self, job_id):
+    def schedule_selected_op(self, op_id):
         # Select the first operation of the selected job that is not scheduled
-        op_id = -1
-        for oi in self.jobs[job_id].operation_queue:
-            if self.operations[oi].machine == -1:
-                op_id = oi
-                break
+        # op_id = -1
+        # for oi in self.jobs[job_id].operation_queue:
+        #     if self.operations[oi].machine == -1:
+        #         op_id = oi
+        #         break
         selected_machine = self.machines[self.operations[op_id].machine_id]
         selected_op = self.operations[op_id]
 
@@ -359,13 +362,14 @@ class DisjunctiveGraph:
     def is_terminated(self):
         return all([op.is_scheduled for op in self.operations[2:]])
 
-
     def visualize_graph(self):
         G = to_networkx(self.data)
         # Plot the graph
         plt.figure(figsize=(8, 6))
         nx.draw(G, with_labels=True, node_size=700, node_color="lightblue", font_weight="bold")
         plt.show()
+
+
 class Job():
     def __init__(self, job_id):
         self.id = job_id
@@ -435,10 +439,10 @@ if __name__ == "__main__":
         done = terminated or truncated
         total_reward += reward
 
-        if reward != -10:
-            print(action, reward, done, obs['valid_actions'])
-            # obs['graph'].visualize_graph()
-            # env.render()
+        # if reward != -10:
+        #     print(action, reward, done, obs['valid_actions'])
+        # obs['graph'].visualize_graph()
+        # env.render()
         # env.render()
 
         if done:

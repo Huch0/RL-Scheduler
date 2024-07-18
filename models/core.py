@@ -1,8 +1,11 @@
+import numpy as np
+import scipy.signal
+
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.data import Data, Batch
-from torch_geometric.nn import GINConv, Sequential, global_mean_pool
+from torch_geometric.nn import GINConv, global_mean_pool
 
 
 class GPPO(nn.Module):
@@ -10,13 +13,14 @@ class GPPO(nn.Module):
                  # GNN parameters
                  gnn_type='GIN',
                  gnn_kwargs=dict(),
+                 input_feature_dim=2,
                  # Actor-Critic parameters
                  actor_hidden_sizes=(64, 64),
                  actor_activation=nn.Tanh,
                  critic_hidden_sizes=(64, 64),
                  critic_activation=nn.Tanh,
                  # shared parameters
-                 node_feature_space=(2,),
+                 output_feature_dim=64,
                  device='cpu'
                  ):
 
@@ -24,83 +28,117 @@ class GPPO(nn.Module):
 
         self.feature_extractor = None
         if gnn_type == 'GIN':
-            self.feature_extractor = GIN(node_feature_space=node_feature_space, **gnn_kwargs).to(device)
+            self.feature_extractor = GIN(input_feature_dim=input_feature_dim, hidden_dim=output_feature_dim).to(device)
         else:
             raise NotImplementedError(f'GNN type {gnn_type} not implemented')
 
-        self.pi = Actor(node_feature_space=self.feature_extractor.node_feature_space,
-                           actor_hidden_sizes=actor_hidden_sizes, actor_activation=actor_activation).to(device)
-        self.v = Critic(node_feature_space=self.feature_extractor.node_feature_space,
-                             critic_hidden_sizes=critic_hidden_sizes, critic_activation=critic_activation).to(device)
+        self.pi = Actor(output_feature_dim=output_feature_dim,
+                        hidden_sizes=actor_hidden_sizes, activation=actor_activation).to(device)
+        self.v = Critic(output_feature_dim=output_feature_dim,
+                        hidden_sizes=critic_hidden_sizes, activation=critic_activation).to(device)
 
     def step(self,
-             graph_batch: Batch,
+             graph: Data,
              candidate_node_indices: th.Tensor,
              ):
-        
-        """_summary_
-            graph_batch: a batch of graphs (torch_geometric.data.Batch) (batch_size,)
-            candidate_node_indices: the indices of the candidate nodes for each graph in the batch (torch.Tensor) (batch_size, num_candidates)
-        """
 
         with th.no_grad():
             # get the node embeddings for each graph in the batch
-            h_nodes, h_graph = self.feature_extractor(graph_batch.x, graph_batch.edge_index)
+            h_nodes, h_graph = self.feature_extractor(graph.x, graph.edge_index)
 
             # get the candidate node embeddings
-            candidate_node_embeddings = h_nodes[candidate_node_indices] # h_nodes가 batch라면, candidate_node_indices는 (batch_size, num_candidates)이므로, 이렇게 indexing하면 (batch_size, num_candidates, node_feature_space)가 됨
+            candidate_node_embeddings = h_nodes[candidate_node_indices]
 
             # get the action distribution
-            pi = self.actor._distribution(h_graph, candidate_node_embeddings)
-            a = pi.sample()
-            logp_a = self.actor._log_prob_from_distribution(pi, a)
-            v = self.critic(h_graph, candidate_node_embeddings)
+            pi = self.pi._distribution(h_graph, candidate_node_embeddings)
+            a_index = pi.sample()
+            a = candidate_node_indices[a_index]
+            logp_a = self.pi._log_prob_from_distribution(pi, a_index)
+            v = self.v(h_graph)
 
         return a, v, logp_a
 
-    def act(self, graph_batch: Batch, candidate_node_indices: th.Tensor):
-        return self.step(graph_batch, candidate_node_indices)[0]
+    def act(self, graph: Data, candidate_node_indices: th.Tensor):
+        return self.step(graph, candidate_node_indices)[0]
+
+    def forward(self, graph: Batch, candidate_node_indices: th.Tensor, action: th.Tensor):
+        # get the node embeddings for each graph in the batch
+        h_nodes, h_graph = self.feature_extractor(graph.x, graph.edge_index, graph.batch)
+
+        pis = []
+        logp_as = []
+        for i, can in enumerate(candidate_node_indices):
+            # get the candidate node embeddings
+            candidate_node_embeddings = h_nodes[can]
+
+            # get the action distribution
+            pi = self.pi._distribution(h_graph[i], candidate_node_embeddings)
+            a_index = th.where(candidate_node_indices[i] == action[i])[0]
+            logp_a = self.pi._log_prob_from_distribution(pi, a_index)
+
+            pis.append(pi)
+            logp_as.append(logp_a)
+
+        # Convert to 1d tensor
+        logp_as = th.stack(logp_as).flatten()
+
+        return pis, logp_as
+    
+    def compute_v(self, graph: Batch):
+        h_nodes, h_graph = self.feature_extractor(graph.x, graph.edge_index, graph.batch)
+        return self.v(h_graph)
+
 
 
 class GIN(nn.Module):
-    def __init__(self, node_feature_space, num_layers=2, hidden_dim=64):
+    def __init__(self, input_feature_dim, num_layers=2, hidden_dim=64):
         super(GIN, self).__init__()
         self.num_layers = num_layers
         self.convs = nn.ModuleList()
-        for i in range(num_layers):
-            mlp = Sequential('x, edge_index', [
-                (nn.Linear(hidden_dim if i > 0 else node_feature_space, hidden_dim), 'x -> x'),
-                nn.ReLU(),
-                nn.Linear(hidden_dim, hidden_dim),
-            ])
+        self.convs.append(
+            GINConv(
+                nn.Sequential(nn.Linear(input_feature_dim, hidden_dim),
+                              th.nn.BatchNorm1d(hidden_dim),
+                              nn.ReLU(),
+                              nn.Linear(hidden_dim, hidden_dim)
+                              )
+            )
+        )
 
-            self.convs.append(GINConv(mlp))
+        for _ in range(num_layers - 1):
+            self.convs.append(
+                GINConv(
+                    nn.Sequential(nn.Linear(hidden_dim, hidden_dim),
+                                  th.nn.BatchNorm1d(hidden_dim),
+                                  nn.ReLU(),
+                                  nn.Linear(hidden_dim, hidden_dim)
+                                  )
+                )
+            )
 
-        # Optional: Batch normalization
-        self.batch_norms = nn.ModuleList([nn.BatchNorm1d(hidden_dim) for _ in range(num_layers)])
-
-    def forward(self, x, edge_index, batch=None):
-        for i, conv in enumerate(self.convs):
-            x = conv(x, edge_index)
-            x = self.batch_norms[i](x) if self.batch_norms else x
-            x = F.relu(x)
+    def forward(self, x, edge_index, batch = None):
+        h = self.convs[0](x, edge_index)
+        for conv in self.convs[1:]:
+            h = conv(h, edge_index)
         # average pooling
-        h_graph = global_mean_pool(x, batch)
-        return x, h_graph
+            h_graph = global_mean_pool(h, batch)
 
+        return h, h_graph
 
 class Actor(nn.Module):
     def __init__(self,
-                 node_feature_space: tuple,
+                 output_feature_dim: int,
                  hidden_sizes: tuple,
                  activation: nn.Module,
                  ):
         super(Actor, self).__init__()
 
-        self.logits_net = mlp([sum(node_feature_space) * 2] + list(hidden_sizes) + [1], activation)
+        self.logits_net = mlp([output_feature_dim * 2] + list(hidden_sizes) + [1], activation)
 
     def _distribution(self, h_graph, candidate_node_embeddings):
+        h_graph = h_graph.repeat(candidate_node_embeddings.shape[0], 1)
         logits = self.logits_net(th.cat([h_graph, candidate_node_embeddings], dim=-1))
+        logits = logits.flatten()
         return th.distributions.Categorical(logits=logits)
 
     def _log_prob_from_distribution(self, pi, act):
@@ -109,16 +147,16 @@ class Actor(nn.Module):
 
 class Critic(nn.Module):
     def __init__(self,
-                 node_feature_space: tuple,
+                 output_feature_dim: int,
                  hidden_sizes: tuple,
                  activation: nn.Module,
                  ):
         super(Critic, self).__init__()
 
-        self.v_net = mlp([sum(node_feature_space) * 2] + list(hidden_sizes) + [1], activation)
+        self.v_net = mlp([output_feature_dim] + list(hidden_sizes) + [1], activation)
 
-    def forward(self, h_graph, candidate_node_embeddings):
-        return self.v_net(th.cat([h_graph, candidate_node_embeddings], dim=-1))
+    def forward(self, h_graph):
+        return self.v_net(h_graph)
 
 
 def mlp(sizes, activation, output_activation=nn.Identity):
@@ -127,3 +165,25 @@ def mlp(sizes, activation, output_activation=nn.Identity):
         act = activation if j < len(sizes) - 2 else output_activation
         layers += [nn.Linear(sizes[j], sizes[j + 1]), act()]
     return nn.Sequential(*layers)
+
+
+def count_vars(module):
+    return sum([np.prod(p.shape) for p in module.parameters()])
+
+
+def discount_cumsum(x, discount):
+    """
+    magic from rllab for computing discounted cumulative sums of vectors.
+
+    input: 
+        vector x, 
+        [x0, 
+         x1, 
+         x2]
+
+    output:
+        [x0 + discount * x1 + discount^2 * x2,  
+         x1 + discount * x2,
+         x2]
+    """
+    return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
