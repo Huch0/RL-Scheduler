@@ -496,8 +496,8 @@ class customScheduler():
             'num_operation_per_machine': np.array([len(machine.operation_schedule) for machine in self.machines]),
             'machine_types': self.machine_types,
             'operation_schedules': self.operation_schedules,
-            'node_space': self.graph.x.numpy(),
-            'edge_index': padded_edge_index.numpy()
+            # 'node_space': self.graph.x.numpy(),
+            # 'edge_index': padded_edge_index.numpy()
         }
 
         return observation
