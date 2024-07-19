@@ -25,21 +25,23 @@ class GPPO(nn.Module):
                  ):
 
         super(GPPO, self).__init__()
+        self.device = device
 
         self.feature_extractor = None
         if gnn_type == 'GIN':
-            self.feature_extractor = GIN(input_feature_dim=input_feature_dim, hidden_dim=output_feature_dim).to(device)
+            self.feature_extractor = GIN(input_feature_dim=input_feature_dim,
+                                         hidden_dim=output_feature_dim, device=device)
         else:
             raise NotImplementedError(f'GNN type {gnn_type} not implemented')
 
         self.pi = Actor(output_feature_dim=output_feature_dim,
-                        hidden_sizes=actor_hidden_sizes, activation=actor_activation).to(device)
+                        hidden_sizes=actor_hidden_sizes, activation=actor_activation, device=device)
         self.v = Critic(output_feature_dim=output_feature_dim,
-                        hidden_sizes=critic_hidden_sizes, activation=critic_activation).to(device)
+                        hidden_sizes=critic_hidden_sizes, activation=critic_activation, device=device)
 
     def step(self,
              graph: Data,
-             candidate_node_indices: th.Tensor,
+             candidate_node_indices: th.Tensor
              ):
 
         with th.no_grad():
@@ -83,16 +85,16 @@ class GPPO(nn.Module):
         logp_as = th.stack(logp_as).flatten()
 
         return pis, logp_as
-    
+
     def compute_v(self, graph: Batch):
         h_nodes, h_graph = self.feature_extractor(graph.x, graph.edge_index, graph.batch)
         return self.v(h_graph)
 
 
-
 class GIN(nn.Module):
-    def __init__(self, input_feature_dim, num_layers=2, hidden_dim=64):
+    def __init__(self, input_feature_dim, num_layers=2, hidden_dim=64, device='cpu'):
         super(GIN, self).__init__()
+        self.device = device
         self.num_layers = num_layers
         self.convs = nn.ModuleList()
         self.convs.append(
@@ -102,7 +104,7 @@ class GIN(nn.Module):
                               nn.ReLU(),
                               nn.Linear(hidden_dim, hidden_dim)
                               )
-            )
+            ).to(device)
         )
 
         for _ in range(num_layers - 1):
@@ -113,35 +115,44 @@ class GIN(nn.Module):
                                   nn.ReLU(),
                                   nn.Linear(hidden_dim, hidden_dim)
                                   )
-                )
+                ).to(device)
             )
 
-    def forward(self, x, edge_index, batch = None):
+    def forward(self, x, edge_index, batch=None):
+        x = x.to(self.device)
+        edge_index = edge_index.to(self.device)
         h = self.convs[0](x, edge_index)
         for conv in self.convs[1:]:
             h = conv(h, edge_index)
+        
+        if batch is not None:
+            batch = batch.to(self.device)
         # average pooling
-            h_graph = global_mean_pool(h, batch)
+        h_graph = global_mean_pool(h, batch)
 
         return h, h_graph
+
 
 class Actor(nn.Module):
     def __init__(self,
                  output_feature_dim: int,
                  hidden_sizes: tuple,
                  activation: nn.Module,
+                 device='cpu'
                  ):
         super(Actor, self).__init__()
+        self.device = device
 
-        self.logits_net = mlp([output_feature_dim * 2] + list(hidden_sizes) + [1], activation)
+        self.logits_net = mlp([output_feature_dim * 2] + list(hidden_sizes) + [1], activation).to(device)
 
     def _distribution(self, h_graph, candidate_node_embeddings):
         h_graph = h_graph.repeat(candidate_node_embeddings.shape[0], 1)
-        logits = self.logits_net(th.cat([h_graph, candidate_node_embeddings], dim=-1))
+        logits = self.logits_net(th.cat([h_graph, candidate_node_embeddings], dim=-1).to(self.device))
         logits = logits.flatten()
         return th.distributions.Categorical(logits=logits)
 
     def _log_prob_from_distribution(self, pi, act):
+        act = act.to(self.device)
         return pi.log_prob(act)
 
 
@@ -150,12 +161,15 @@ class Critic(nn.Module):
                  output_feature_dim: int,
                  hidden_sizes: tuple,
                  activation: nn.Module,
+                 device='cpu'
                  ):
         super(Critic, self).__init__()
+        self.device = device
 
-        self.v_net = mlp([output_feature_dim] + list(hidden_sizes) + [1], activation)
+        self.v_net = mlp([output_feature_dim] + list(hidden_sizes) + [1], activation).to(device)
 
     def forward(self, h_graph):
+        h_graph = h_graph.to(self.device)
         return self.v_net(h_graph)
 
 

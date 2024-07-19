@@ -71,6 +71,7 @@ class PPOBuffer:
         """
 
         # Select the part of the buffers that belong to the current trajectory
+        last_val = last_val.cpu() if isinstance(last_val, th.Tensor) else last_val
         path_slice = slice(self.path_start_idx, self.ptr)
         rews = np.append(self.rew_buf[path_slice], last_val)
         vals = np.append(self.val_buf[path_slice], last_val)
@@ -255,8 +256,8 @@ def train(
     def compute_loss_pi(data):
         obs, can, act, adv, logp_old = data['obs'], data['can'], data['act'], data['adv'], data['logp']
         # Convert to tensor
-        adv = th.as_tensor(adv, dtype=th.float32)
-        logp_old = th.as_tensor(logp_old, dtype=th.float32)
+        adv = th.as_tensor(adv, dtype=th.float32).to(ac.device)
+        logp_old = th.as_tensor(logp_old, dtype=th.float32).to(ac.device)
 
         # Policy loss
         pis, logp = ac(obs, can, act)
@@ -269,7 +270,7 @@ def train(
         approx_kl = (logp_old - logp).mean().item()
         ent = th.mean(th.stack([pi.entropy() for pi in pis])).item()
         clipped = ratio.gt(1+clip_ratio) | ratio.lt(1-clip_ratio)
-        clipfrac = th.as_tensor(clipped, dtype=th.float32).mean().item()
+        clipfrac = th.as_tensor(clipped, dtype=th.float32).to(ac.device).mean().item()
         pi_info = dict(kl=approx_kl, ent=ent, cf=clipfrac)
 
         return loss_pi, pi_info
@@ -278,7 +279,7 @@ def train(
     def compute_loss_v(data):
         obs, ret = data['obs'], data['ret']
         # Convert to tensor
-        ret = th.as_tensor(ret, dtype=th.float32)
+        ret = th.as_tensor(ret, dtype=th.float32).to(ac.device)
         v = ac.compute_v(obs)
         return ((v - ret)**2).mean()
 
@@ -342,6 +343,7 @@ def train(
                 ep_len[i] += 1
 
                 # save and log
+                a, v, logp = a.cpu(), v.cpu(), logp.cpu()
                 buf.store(graph, can, a, r, v, logp)
                 logger.store(VVals=v)
 
@@ -459,15 +461,15 @@ if __name__ == "__main__":
 
     device = 'cpu'
     if th.cuda.is_available():
-        th.set_default_tensor_type(th.cuda.FloatTensor)
         device = 'cuda'
-    elif th.mps.is_available():
-        th.set_default_tensor_type(th.mps.FloatTensor)
+    elif th.backends.mps.is_available():
         device = 'mps'
+    print(f'Using {device} device')
 
     gppo = core.GPPO(device=device)
     best_model = train(actor_critic=gppo,
-                       instance_configs=instance_configs)
+                       instance_configs=instance_configs,
+                       steps_per_epoch=10)
 
     # Save best model
     th.save(best_model, 'best_model.pth')
