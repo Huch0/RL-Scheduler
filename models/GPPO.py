@@ -74,7 +74,6 @@ class PPOBuffer:
         rews = th.cat((self.rew_buf[path_slice], th.tensor([last_val])))
         vals = th.cat((self.val_buf[path_slice], th.tensor([last_val])))
 
-
         # the next two lines implement GAE-Lambda advantage calculation
         deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
         self.adv_buf[path_slice] = core.discount_cumsum(deltas, self.gamma * self.lam)
@@ -365,7 +364,7 @@ def train(
                     buf.finish_path(v)
                     if terminal:
                         # only save EpRet / EpLen if trajectory finished
-                        logger.store(EpRet=ep_ret, EpLen=ep_len)
+                        logger.store(EpRet=ep_ret[i], EpLen=ep_len[i])
                     o[i], ep_ret[i], ep_len[i] = env.reset()[0], 0, 0
 
                 t += 1
@@ -444,18 +443,27 @@ if __name__ == "__main__":
         'test': []
     }
 
-    for i in range(1, 11):
-        config = {
-            'type': 'standard',
-            'path': os.path.join(dir_path, f'standard/ta{str(i).zfill(2)}'),
-            'repeat': [1] * 15
-        }
-        if i < 7:
-            instance_configs['train'].append(config)
-        elif i < 9:
-            instance_configs['val'].append(config)
-        else:
-            instance_configs['test'].append(config)
+    config = {
+        'type': 'standard',
+        'path': os.path.join(dir_path, f'standard/ta01'),
+        'repeat': [1] * 15
+    }
+    instance_configs['train'].append(config)
+    instance_configs['val'].append(config)
+    instance_configs['test'].append(config)
+
+    # for i in range(1, 11):
+    #     config = {
+    #         'type': 'standard',
+    #         'path': os.path.join(dir_path, f'standard/ta{str(i).zfill(2)}'),
+    #         'repeat': [1] * 15
+    #     }
+    #     if i < 7:
+    #         instance_configs['train'].append(config)
+    #     elif i < 9:
+    #         instance_configs['val'].append(config)
+    #     else:
+    #         instance_configs['test'].append(config)
 
     device = 'cpu'
     # if th.cuda.is_available():
@@ -467,7 +475,7 @@ if __name__ == "__main__":
     gppo = core.GPPO(device=device)
     best_model = train(actor_critic=gppo,
                        instance_configs=instance_configs,
-                       steps_per_epoch=10,
+                       steps_per_epoch=2250,
                        epochs=10)
 
     # Save best model
