@@ -22,15 +22,15 @@ class PPOBuffer:
     for calculating the advantages of state-action pairs.
     """
 
-    def __init__(self, size, gamma=0.99, lam=0.95):
+    def __init__(self, size, gamma=0.99, lam=0.95, device='cpu'):
         self.obs_buf = None
         self.can_buf = [[] for _ in range(size)]
-        self.act_buf = np.zeros(size, dtype=np.float32)
-        self.adv_buf = np.zeros(size, dtype=np.float32)
-        self.rew_buf = np.zeros(size, dtype=np.float32)
-        self.ret_buf = np.zeros(size, dtype=np.float32)
-        self.val_buf = np.zeros(size, dtype=np.float32)
-        self.logp_buf = np.zeros(size, dtype=np.float32)
+        self.act_buf = th.zeros(size, dtype=th.int64).to(device)
+        self.adv_buf = th.zeros(size, dtype=th.float32).to(device)
+        self.rew_buf = th.zeros(size, dtype=th.float32).to(device)
+        self.ret_buf = th.zeros(size, dtype=th.float32).to(device)
+        self.val_buf = th.zeros(size, dtype=th.float32).to(device)
+        self.logp_buf = th.zeros(size, dtype=th.float32).to(device)
 
         self.gamma, self.lam = gamma, lam
         self.ptr, self.path_start_idx, self.max_size = 0, 0, size
@@ -46,7 +46,6 @@ class PPOBuffer:
         else:
             self.obs_buf = Batch.from_data_list([*self.obs_buf.to_data_list(), obs])
 
-        self.obs_buf[self.ptr] = obs
         self.can_buf[self.ptr] = can
         self.act_buf[self.ptr] = act
         self.rew_buf[self.ptr] = rew
@@ -71,10 +70,10 @@ class PPOBuffer:
         """
 
         # Select the part of the buffers that belong to the current trajectory
-        last_val = last_val.cpu() if isinstance(last_val, th.Tensor) else last_val
         path_slice = slice(self.path_start_idx, self.ptr)
-        rews = np.append(self.rew_buf[path_slice], last_val)
-        vals = np.append(self.val_buf[path_slice], last_val)
+        rews = th.cat((self.rew_buf[path_slice], th.tensor([last_val])))
+        vals = th.cat((self.val_buf[path_slice], th.tensor([last_val])))
+
 
         # the next two lines implement GAE-Lambda advantage calculation
         deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
@@ -94,7 +93,7 @@ class PPOBuffer:
         assert self.ptr == self.max_size    # buffer has to be full before you can get
         self.ptr, self.path_start_idx = 0, 0
         # the next two lines implement the advantage normalization trick
-        adv_mean, adv_std = np.mean(self.adv_buf), np.std(self.adv_buf)
+        adv_mean, adv_std = self.adv_buf.mean(), self.adv_buf.std()
         self.adv_buf = (self.adv_buf - adv_mean) / adv_std
         data = dict(obs=self.obs_buf, can=self.can_buf, act=self.act_buf, ret=self.ret_buf,
                     adv=self.adv_buf, logp=self.logp_buf)
@@ -255,9 +254,6 @@ def train(
     # Set up function for computing PPO policy loss
     def compute_loss_pi(data):
         obs, can, act, adv, logp_old = data['obs'], data['can'], data['act'], data['adv'], data['logp']
-        # Convert to tensor
-        adv = th.as_tensor(adv, dtype=th.float32).to(ac.device)
-        logp_old = th.as_tensor(logp_old, dtype=th.float32).to(ac.device)
 
         # Policy loss
         pis, logp = ac(obs, can, act)
@@ -278,8 +274,6 @@ def train(
     # Set up function for computing value loss
     def compute_loss_v(data):
         obs, ret = data['obs'], data['ret']
-        # Convert to tensor
-        ret = th.as_tensor(ret, dtype=th.float32).to(ac.device)
         v = ac.compute_v(obs)
         return ((v - ret)**2).mean()
 
@@ -326,6 +320,7 @@ def train(
     start_time = time.time()
     best_model = None
     best_val_ret = -np.inf
+    i, num_envs = 0, len(train_envs)
     # Main loop: collect experience in env and update/log each epoch
     for epoch in range(epochs):
         # Prepare for interaction with environment
@@ -334,13 +329,16 @@ def train(
         ep_len = [0 for _ in train_envs]
         t = 0
         while t < local_steps_per_epoch:
-            for i, env in enumerate(train_envs):
+            env = train_envs[i]
+            done = False
+            while not done:
                 graph, can = o[i]['graph'].data, o[i]['candidate_op_indices']
                 a, v, logp = ac.step(graph, can)
 
                 next_o, r, tr, te, _ = env.step(a)
                 ep_ret[i] += r
                 ep_len[i] += 1
+                # env.render() # For debugging
 
                 # save and log
                 a, v, logp = a.cpu(), v.cpu(), logp.cpu()
@@ -370,11 +368,11 @@ def train(
                         logger.store(EpRet=ep_ret, EpLen=ep_len)
                     o[i], ep_ret[i], ep_len[i] = env.reset()[0], 0, 0
 
+                t += 1
                 if epoch_ended:
-                    t += 1
                     break
 
-                t += 1
+            i = (i + 1) % num_envs
 
         # Perform PPO update!
         update()
@@ -460,16 +458,17 @@ if __name__ == "__main__":
             instance_configs['test'].append(config)
 
     device = 'cpu'
-    if th.cuda.is_available():
-        device = 'cuda'
-    elif th.backends.mps.is_available():
-        device = 'mps'
+    # if th.cuda.is_available():
+    #     device = 'cuda'
+    # elif th.backends.mps.is_available():
+    #     device = 'mps'
     print(f'Using {device} device')
 
     gppo = core.GPPO(device=device)
     best_model = train(actor_critic=gppo,
                        instance_configs=instance_configs,
-                       steps_per_epoch=10)
+                       steps_per_epoch=10,
+                       epochs=10)
 
     # Save best model
     th.save(best_model, 'best_model.pth')

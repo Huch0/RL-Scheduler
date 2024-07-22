@@ -25,6 +25,8 @@ class GraphJSSPEnv(gym.Env):
     def __init__(self, instance_config=None):
 
         self.graph = DisjunctiveGraph(instance_config)
+        
+        self.instance_name = self.graph.instance_config['path'].split('/')[-1]
 
         self.node_space = spaces.Box(low=0, high=10000, shape=(2,), dtype=np.int32)
         self.observation_space = spaces.Dict({
@@ -102,7 +104,7 @@ class GraphJSSPEnv(gym.Env):
             return
 
         fig, ax = plt.subplots(figsize=(12, 6))
-        ax.set_title('Gantt Chart of the Schedule')
+        ax.set_title(f'instance : {self.instance_name} | steps = {self.num_steps}')
         ax.set_yticks(range(self.graph.num_machines))
         ax.set_yticklabels([f'Machine {i}' for i in range(self.graph.num_machines)])
 
@@ -154,7 +156,7 @@ class DisjunctiveGraph:
             dir_path = os.path.join(os.path.dirname(__file__), '../instances')
             instance_config = {
                 'type': 'standard',
-                'path': os.path.join(dir_path, 'standard/ft06.txt'),
+                'path': os.path.join(dir_path, 'standard/ta10'),
                 'repeat': [1] * 15
             }
 
@@ -434,7 +436,8 @@ if __name__ == "__main__":
     while not done:
         step += 1
 
-        action = env.action_space.sample()
+        # Assuming obs['candidate_op_indices'] is a tensor of indices
+        action = obs['candidate_op_indices'][torch.randint(0, obs['candidate_op_indices'].size(0), (1,))].item()
         obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
         total_reward += reward

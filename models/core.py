@@ -119,14 +119,10 @@ class GIN(nn.Module):
             )
 
     def forward(self, x, edge_index, batch=None):
-        x = x.to(self.device)
-        edge_index = edge_index.to(self.device)
         h = self.convs[0](x, edge_index)
         for conv in self.convs[1:]:
             h = conv(h, edge_index)
-        
-        if batch is not None:
-            batch = batch.to(self.device)
+
         # average pooling
         h_graph = global_mean_pool(h, batch)
 
@@ -152,7 +148,6 @@ class Actor(nn.Module):
         return th.distributions.Categorical(logits=logits)
 
     def _log_prob_from_distribution(self, pi, act):
-        act = act.to(self.device)
         return pi.log_prob(act)
 
 
@@ -164,12 +159,10 @@ class Critic(nn.Module):
                  device='cpu'
                  ):
         super(Critic, self).__init__()
-        self.device = device
 
         self.v_net = mlp([output_feature_dim] + list(hidden_sizes) + [1], activation).to(device)
 
     def forward(self, h_graph):
-        h_graph = h_graph.to(self.device)
         return self.v_net(h_graph)
 
 
@@ -200,4 +193,4 @@ def discount_cumsum(x, discount):
          x1 + discount * x2,
          x2]
     """
-    return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
+    return th.flip(th.cumsum(th.flip(x * discount, dims=[0]), dim=0), dims=[0])
