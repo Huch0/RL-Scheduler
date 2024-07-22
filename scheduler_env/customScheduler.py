@@ -36,17 +36,23 @@ class Machine():
     def can_process_operation(self, operation_type):
         return operation_type in self.ability
 
-class Job():
-    def __init__(self, job_info, job_id):
-        self.name = job_info['name']
-        self.color = job_info['color']
-        self.deadline = job_info['deadline']
+class JobInfo:
+    def __init__(self, name, color, operations):
+        self.name = name
+        self.color = color
+        self.operations = [Operation(op_info) for op_info in operations]
+
+class Job(JobInfo):
+    def __init__(self, job_info, index, deadline):
+        super().__init__(job_info['name'], job_info['color'], job_info['operations'])
+        self.index = index
+        self.deadline = deadline
+        self.estimated_tardiness = 0
         self.time_exceeded = 0
         self.density = 0
-        self.operation_queue = [Operation(operation_info, job_id, self.color) for operation_info in job_info['operations']]
-
-    def __str__(self):
-        return f"{self.name}, {self.time_exceeded}/{self.deadline}"
+    
+    def __str__(self) -> str:
+        pass
 
 class Operation():
     def __init__(self, operation_info, job_id, color):
@@ -279,16 +285,16 @@ class customScheduler():
             self.current_operation_index = self.jobs[action[1]].operation_queue[self.schedule_buffer[action[1]]].index  # 현재 작업의 index 업데이트
 
             self._update_schedule_buffer(action[1])
-            # self._update_job_state(action)
             self._update_job_details(action[1])
             self._update_machine_state()
+            self._update_job_state()
             self.last_finish_time = self._get_final_operation_finish()
-            self.update_graph(action)           
+            #self.update_graph(action)           
         else:
             self._update_schedule_buffer(None)
-            # self._update_job_state(None)
             self._update_machine_state(init=True)
-            self.graph = self.build_graph()
+            self._update_job_state(init=True)
+            #self.graph = self.build_graph()
 
     def update_legal_actions(self):
         # Initialize legal_actions
@@ -330,6 +336,34 @@ class customScheduler():
         if len(performed_operations) == len(selected_job.operation_queue):
             if selected_job.deadline < selected_job.operation_queue[-1].finish:
                 selected_job.time_exceeded = selected_job.operation_queue[-1].finish - selected_job.deadline
+
+    def _update_job_state(self, init=False):
+        if init:
+            return
+
+        for job in self.jobs:
+            remaining_operations = [op for op in job.operation_queue if op.finish is None]
+            
+            if not remaining_operations:
+                job.estimated_tardiness = 0
+                continue
+            
+            earliest_operation = remaining_operations[0]
+            earliest_machine_end_times = [
+                machine.operation_schedule[-1].finish if machine.operation_schedule else 0
+                for machine in self.machines if earliest_operation.type in machine.ability
+            ]
+            
+            if earliest_machine_end_times:
+                earliest_machine_end_time = min(earliest_machine_end_times)
+            else:
+                earliest_machine_end_time = 0
+
+            estimated_finish_time = earliest_machine_end_time + earliest_operation.duration
+            remaining_durations = [op.duration for op in remaining_operations]
+            estimated_total_duration = sum(remaining_durations)
+            
+            job.estimated_tardiness = max(0, estimated_finish_time + estimated_total_duration - job.deadline)
 
     def _update_machine_state(self, init=False):
         if init:

@@ -6,7 +6,7 @@ from stable_baselines3.common.env_checker import check_env
 # from stable_baselines3 import A2C, PPO, DQN
 # from sb3_contrib import MaskablePPO
 # from sb3_contrib.common.wrappers import ActionMasker
-from scheduler_env.customScheduler import customScheduler
+from scheduler_env.customScheduler import customScheduler, Job, JobInfo
 
 class SchedulingEnv(gym.Env):
     def _load_machines(self, file_path):
@@ -66,6 +66,27 @@ class SchedulingEnv(gym.Env):
 
             job_info['operations'] = operations
             jobs.append(job_info)
+
+        return jobs
+    
+    def _load_jobs_repeat(self, file):
+        jobs = []  # 리턴할 용도
+        f = open(file)
+
+        # returns JSON object as a dictionary
+        data = json.load(f)
+        f.close()
+        jobs_new_version = data['jobs']
+
+        for job_index, job in enumerate(jobs_new_version):
+            job_info = {
+                'name': job['name'],
+                'color': job['color'],
+                'operations': job['operations']
+            }
+            
+            for deadline_index, deadline in enumerate(job['deadline']):
+                jobs.append(Job(job_info, index=deadline_index, deadline=deadline))
 
         return jobs
 
