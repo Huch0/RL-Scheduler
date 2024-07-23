@@ -454,38 +454,28 @@ class customRepeatableScheduler():
         return rgb_array
 
     def _make_chart(self, num_steps):
-        # Create a DataFrame to store operation scheduling information
         current_schedule = [operation.to_dict() for operation in self.current_schedule]
 
         scheduled_df = list(filter(lambda operation: operation['sequence'] is not None, current_schedule))
         scheduled_df = pd.DataFrame(scheduled_df)
 
         if scheduled_df.empty:
-            # Create an empty chart
             plt.figure(figsize=(12, 6))
             plt.title("Operation Schedule Visualization")
             return plt
 
-        # Define color palette
-        base_colors = sns.color_palette("tab10", len(self.job_infos))
-        job_colors = {job_info.name: mcolors.to_rgba(color) for job_info, color in zip(self.job_infos, base_colors)}
-
-        # Create a bar plot using matplotlib directly
         fig, ax = plt.subplots(figsize=(12, 6))
-        legend_jobs = set()  # Set to store jobs already included in the legend
+        legend_jobs = set()
 
         for i in range(len(self.machines)):
             machine_operations = scheduled_df[scheduled_df['machine'] == i]
-
-            # Discriminate rows by lines
-            line_offset = i - 0.9  # Adjust the line offset for better visibility
+            line_offset = i - 0.9
 
             for index, operation in machine_operations.iterrows():
-                job_name = next(job.name for job in self.job_infos if str(int(job.name[4:])-1) == operation["job"])
-                base_color = job_colors[job_name]
+                base_color = mcolors.to_rgba(operation['color'])
                 job_index = operation["job_index"]
-                shade_factor = (job_index + 1) / len(self.jobs[0])  # Job의 index를 이용한 shade factor 계산
-                shaded_color = tuple([shade * shade_factor if idx < 3 else shade for idx, shade in enumerate(base_color)])
+                shade_factor = (job_index + 1) / (len(self.jobs[0]) + 1)
+                shaded_color = tuple([min(max(shade * shade_factor, 0), 1) if idx < 3 else shade for idx, shade in enumerate(base_color)])
 
                 job_label = f'Job {int(operation["job"]) + 1} - Repeat {job_index + 1}'
                 if job_label not in legend_jobs:
@@ -494,25 +484,21 @@ class customRepeatableScheduler():
                     job_label = None
 
                 ax.bar(
-                    # Adjust 'x' to start from 'start'
                     x=operation["start"] + operation["duration"] / 2,
-                    height=0.8,  # Height of the bar
-                    width=operation["duration"],  # Width of the bar
-                    bottom=line_offset,  # Discriminate rows by lines
+                    height=0.8,
+                    width=operation["duration"],
+                    bottom=line_offset,
                     color=shaded_color,
-                    alpha=0.7,  # Transparency
-                    label=job_label,  # Label for the legend
+                    alpha=0.7,
+                    label=job_label,
                 )
 
-        # Set y-axis ticks to show every machine
         ax.set_yticks(np.arange(0, len(self.machines)))
         ax.set_yticklabels([machine.name for machine in self.machines])
 
         ax.set(ylabel="Machine", xlabel="Time")
-        # Place the legend outside the plot area
         ax.legend(loc='upper left', bbox_to_anchor=(1, 1))
         plt.title(f'Operation Schedule Visualization step {num_steps}')
-        # 경고 무시 설정
         plt.rcParams['figure.max_open_warning'] = 0
 
         return fig
@@ -539,7 +525,7 @@ class customRepeatableScheduler():
             if target_time >= self._get_final_operation_finish():
                 return 1
             # Final_time이 target_time에 비해 몇 퍼센트 초과되었는지를 바탕으로 100점 만점으로 환산하여 점수 계산
-            return max(0, 1 - (abs(target_time - self._get_final_operation_finish()) / target_time))
+            return max(0, 1 - ((self._get_final_operation_finish() - target_time) / target_time))
         
         #def operation_rate_to_reward(operation_rates, target_rate=1.0, penalty_factor=2.0):
             #total_reward = 0
@@ -555,10 +541,14 @@ class customRepeatableScheduler():
         
         def job_deadline_to_reward():
             sum_of_late_rate = 0
+            total_job_length = 0
             for job_list in self.jobs:
+                total_job_length += len(job_list)
                 for job in job_list:
                     if job.time_exceeded > 0:
                         sum_of_late_rate += (job.time_exceeded / job.deadline)
+
+            sum_of_late_rate /= total_job_length
             return max(0, 1 - sum_of_late_rate)
 
         final_reward_by_op_rate = weight_op_rate * operation_rate_to_reward()
