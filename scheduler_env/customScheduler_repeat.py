@@ -519,6 +519,10 @@ class customRepeatableScheduler():
         if np.any(self.machine_operation_rate):
             self.machine_term = np.mean(self.machine_operation_rate)
         return self.machine_term
+    
+        # Schedule Buffer에 올라온 Job 들의 Estimated Tardiness 평균에 -1을 곱한 것을 반환
+        # Estimated Tardiness가 -1인 Job은 Schedule Buffer에 올라오지 않는다
+        # return -np.mean([job.estimated_tardiness for job_list in self.jobs for job in job_list if job.estimated_tardiness != -1])
 
     def calculate_final_reward(self, weight_final_time = 80, weight_job_deadline = 20, weight_op_rate = 0, target_time = 1000):
         def final_time_to_reward(target_time):
@@ -538,6 +542,8 @@ class customRepeatableScheduler():
             #     total_reward += reward - penalty
         def operation_rate_to_reward():
             return min([machine.operation_rate for machine in self.machines])
+            # 각 Machine의 Hole을 점수로 만든다
+            # return sum([machine.operation_rate for machine in self.machines]) / len(self.machines)
         
         def job_deadline_to_reward():
             sum_of_late_rate = 0
