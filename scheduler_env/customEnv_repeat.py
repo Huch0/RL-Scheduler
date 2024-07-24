@@ -3,10 +3,8 @@ from gymnasium import spaces
 import numpy as np
 import json
 from stable_baselines3.common.env_checker import check_env
-# from stable_baselines3 import A2C, PPO, DQN
-# from sb3_contrib import MaskablePPO
-# from sb3_contrib.common.wrappers import ActionMasker
-from scheduler_env.customScheduler import customScheduler
+from scheduler_env.customScheduler_repeat import customRepeatableScheduler, Job, JobInfo, Machine
+import random
 
 class SchedulingEnv(gym.Env):
     def _load_machines(self, file_path):
@@ -22,8 +20,8 @@ class SchedulingEnv(gym.Env):
             machines.append(machine)
 
         return machines
-
-    def _load_jobs(self, file):
+    
+    def _load_jobs_repeat(self, file):
         # Just in case we are reloading operations
 
         jobs = []  # 리턴할 용도
@@ -69,45 +67,46 @@ class SchedulingEnv(gym.Env):
 
         return jobs
 
-    def __init__(self, machine_config_path="instances/Machines/v0-8.json", job_config_path="instances/Jobs/v0-12-deadline.json", render_mode="seaborn", weight_final_time=80, weight_job_deadline=20, weight_op_rate=0, target_time = 1000):
+    def __init__(self, machine_config_path="instances/Machines/v0-2.json", job_config_path="instances/Jobs/v0-3x3-deadline.json", render_mode="seaborn", weight_final_time=80, weight_job_deadline=20, weight_op_rate=0, target_time = None, max_repeats = [3, 3, 3], test_mode=False):
         super(SchedulingEnv, self).__init__()
         self.weight_final_time = weight_final_time
         self.weight_job_deadline = weight_job_deadline
         self.weight_op_rate = weight_op_rate
         self.target_time = target_time
+        self.max_repeats = max_repeats
+        self.current_repeats = max_repeats
+        self.test_mode = test_mode
+        self.best_makespan = float('inf') # 최적 makespan
 
-        self.job_config = self._load_jobs(job_config_path)
+        self.jobs = self._load_jobs_repeat(job_config_path)
         self.machine_config = self._load_machines(machine_config_path)
 
-        self.custom_scheduler = customScheduler(jobs = self.job_config, machines= self.machine_config)
-        
+        self.custom_scheduler = None
+
         self.len_machines = len(self.machine_config)
-        self.len_jobs = len(self.job_config)
+        self.len_jobs = len(self.jobs)
 
         self.num_steps = 0
-
+        
         self.action_space = spaces.Discrete(self.len_machines * self.len_jobs)
         self.observation_space = spaces.Dict({
             "action_mask": spaces.Box(low=0, high=1, shape=(self.len_machines * self.len_jobs, ), dtype=np.int8),
-            "job_details": spaces.Box(low=-1, high=25, shape=(self.len_jobs, 4, 2), dtype=np.int8),
-            'job_density': spaces.Box(low=0, high=1, shape=(self.len_jobs, ), dtype=np.float32),
+            "job_details": spaces.Box(low=-1, high=25, shape=(len(self.jobs), 4, 2), dtype=np.int8),
             'machine_operation_rate': spaces.Box(low=0, high=1, shape=(self.len_machines, ), dtype=np.float32),
-            "num_operation_per_machine": spaces.Box(low=0, high=100, shape=(self.len_machines, ), dtype=np.int64),
             "machine_types": spaces.Box(low=0, high=1, shape=(self.len_machines, 25), dtype=np.int8),
-            "operation_schedules": spaces.Box(low=0, high=1, shape=(self.len_machines, 50), dtype=np.int8),    
+            "operation_schedules": spaces.Box(low=0, high=1, shape=(self.len_machines, 50), dtype=np.int8),
+            "schedule_buffer": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int8),
+            "estimated_tardiness": spaces.Box(low=-1, high=5, shape=(self.len_jobs, ), dtype=np.float32),
         })
 
     def reset(self, seed=None, options=None):
-        """
-        Important: the observation must be a numpy array
-        :return: (np.array)
-        """
         super().reset(seed=seed, options=options)
-        self.custom_scheduler.reset(seed=seed, options=options)
+        self._initialize_scheduler()
         self.num_steps = 0
 
         return self._get_observation(), self._get_info()
 
+   
     def step(self, action):
         # Map the action to the corresponding machine and job
         selected_machine_id = action // self.len_jobs
@@ -128,6 +127,10 @@ class SchedulingEnv(gym.Env):
 
         terminated = self._is_done()
         if terminated:
+            final_makespan = self.custom_scheduler._get_final_operation_finish()
+            self.best_makespan = min(self.best_makespan, final_makespan)  # Update the best makespan
+            # if not self.target_time:
+            #     self.target_time = self.best_makespan  # Update target time dynamically
             reward = self._calculate_final_reward()
             
         truncated = bool(self.num_steps == 10000)
@@ -160,6 +163,7 @@ class SchedulingEnv(gym.Env):
     def _get_info(self):
         info = self.custom_scheduler.get_info()
         info['num_steps'] = self.num_steps
+        info['current_repeats'] = self.current_repeats
         return info
 
     def _calculate_final_reward(self):
@@ -168,6 +172,41 @@ class SchedulingEnv(gym.Env):
     def _calculate_step_reward(self):
         return self.custom_scheduler.calculate_step_reward()
 
+    def _initialize_scheduler(self):
+        # 각 Job의 반복 횟수를 랜덤하게 설정
+        repeats = [random.randint(1, max_repeat) for max_repeat in self.max_repeats]
+        
+        # 랜덤 반복 횟수에 따라 Job 인스턴스를 생성
+        if self.test_mode:
+            repeats = self.max_repeats
+
+        self.current_repeats = repeats
+        self._calculate_target_time()
+        
+        random_jobs = []
+        for job, repeat in zip(self.jobs, repeats):
+            random_job_info = {
+                'name': job['name'],
+                'color': job['color'],
+                'operations': job['operations'],
+                'deadline': job['deadline'][:repeat]  # 주어진 반복 횟수에 따라 deadline 설정
+            }
+            random_jobs.append(random_job_info)
+
+        # 랜덤 Job 인스턴스를 사용하여 customScheduler 초기화
+        self.custom_scheduler = customRepeatableScheduler(jobs=random_jobs, machines=self.machine_config)
+        self.custom_scheduler.reset()
+
+    def _calculate_target_time(self):
+        if self.target_time:
+            return
+        total_duration = 0
+        for i in range(len(self.jobs)):
+            job_duration = sum(op['duration'] for op in self.jobs[i]['operations'])
+            total_duration += job_duration * self.current_repeats[i]
+        target_time = total_duration / self.len_machines
+        self.target_time = target_time
+
     def render(self, mode="seaborn"):
         self.custom_scheduler.render(mode = mode, num_steps = self.num_steps)
 
@@ -175,8 +214,8 @@ class SchedulingEnv(gym.Env):
         self.custom_scheduler.visualize_graph()
 
 if __name__ == "__main__":
-    env = SchedulingEnv(machines="instances/Machines/v0-8.json",
-                        jobs="instances/Jobs/v0-12-deadline.json")
+    env = SchedulingEnv(machine_config_path="instances/Machines/v0-2.json",
+                        job_config_path="instances/Jobs/v0-3x3-deadline.json")
 
     check_env(env)
 
