@@ -7,8 +7,11 @@ import torch.nn.functional as F
 from torch.optim import Adam
 import numpy as np
 from torch_geometric.data import Data, Batch
+from torchviz import make_dot
 
 import time
+import signal
+import sys
 
 import models.core as core
 from utils.logger import EpochLogger
@@ -109,13 +112,16 @@ def train(
     epochs=50,
     gamma=0.99,
     clip_ratio=0.2,
+    max_grad_norm=0.5,
+    ent_coef=0.1,
+    vf_coef=0.5,
     pi_lr=3e-4,
     vf_lr=1e-3,
     train_pi_iters=80,
     train_v_iters=80,
     lam=0.97,
     max_ep_len=1000,
-    target_kl=0.01,
+    target_kl=0.005,
     logger_kwargs=dict(),
     save_freq=10,
     val_freq=10
@@ -224,6 +230,14 @@ def train(
             the current policy and value function.
 
     """
+    # Define the signal handler function
+    def signal_handler(sig, frame):
+        print('Signal received:', sig)
+        th.save(ac.state_dict(), 'model.pth')
+        sys.exit(0)
+
+    # Set the signal handler for SIGINT
+    signal.signal(signal.SIGINT, signal_handler)
 
     # Set up logger and save configuration
     logger = EpochLogger(**logger_kwargs)
@@ -259,11 +273,19 @@ def train(
 
         ratio = th.exp(logp - logp_old)
         clip_adv = th.clamp(ratio, 1-clip_ratio, 1+clip_ratio) * adv
-        loss_pi = -(th.min(ratio * adv, clip_adv)).mean()
+        loss_pi = -th.min(ratio * adv, clip_adv).mean()
+        
+        # Check which one is selected
+        
+
+        # print(logp, logp_old, ratio, clip_adv, loss_pi)
+        # Calculate entropy of the policy and add it as a regularization term
+        entropy = th.mean(th.stack([pi.entropy() for pi in pis]))
+        # loss_pi -= ent_coef * entropy
 
         # Useful extra info
         approx_kl = (logp_old - logp).mean().item()
-        ent = th.mean(th.stack([pi.entropy() for pi in pis])).item()
+        ent = entropy.item()
         clipped = ratio.gt(1+clip_ratio) | ratio.lt(1-clip_ratio)
         clipfrac = th.as_tensor(clipped, dtype=th.float32).to(ac.device).mean().item()
         pi_info = dict(kl=approx_kl, ent=ent, cf=clipfrac)
@@ -274,11 +296,18 @@ def train(
     def compute_loss_v(data):
         obs, ret = data['obs'], data['ret']
         v = ac.compute_v(obs)
-        return ((v - ret)**2).mean()
+        v = v.squeeze()  # Reshape v to match the shape of ret
+        if v.numel() != ret.numel():
+            # Handle unexpected shape mismatch
+            raise ValueError(f"Shape mismatch: v has {v.numel()} elements; ret has {ret.numel()} elements. obs: {obs}")
+        return F.mse_loss(v, ret)
 
     # Set up optimizers for policy and value function
-    pi_optimizer = Adam(ac.pi.parameters(), lr=pi_lr)
-    vf_optimizer = Adam(ac.v.parameters(), lr=vf_lr)
+    fe_params = list(ac.feature_extractor.parameters())
+    pi_optimizer = Adam(fe_params + list(ac.pi.parameters()), lr=pi_lr)
+    vf_optimizer = Adam(fe_params + list(ac.v.parameters()), lr=vf_lr)
+
+    optimizer = Adam(ac.parameters(), lr=pi_lr)
 
     def update():
         data = buf.get()
@@ -287,13 +316,37 @@ def train(
         pi_l_old = pi_l_old.item()
         v_l_old = compute_loss_v(data).item()
 
+        # Train policy and value function
+        for i in range(train_pi_iters):
+            optimizer.zero_grad()
+            loss_pi, pi_info = compute_loss_pi(data)
+            loss_v = compute_loss_v(data)
+            loss = loss_pi + vf_coef * loss_v
+
+            kl = pi_info['kl']
+            if i > 0 and kl > 1.5 * target_kl:
+                logger.log(f'Early stopping at step {i} due to reaching max kl {kl} > {1.5 * target_kl}')
+                break
+            loss.backward()
+            # Clip grad norm
+            th.nn.utils.clip_grad_norm_(ac.pi.parameters(), max_grad_norm)
+            optimizer.step()
+            
+            # Visualize the computational graph
+            dot = make_dot(loss, params=dict(ac.named_parameters()))
+            dot.graph_attr.update(size="12,12!")  # Increase the size of the output image
+            dot.render("computational_graph", format="png")
+        
+
+        logger.store(StopIter=i)
+
         # Train policy with multiple steps of gradient descent
         for i in range(train_pi_iters):
             pi_optimizer.zero_grad()
             loss_pi, pi_info = compute_loss_pi(data)
             kl = pi_info['kl']
             if kl > 1.5 * target_kl:
-                logger.log('Early stopping at step %d due to reaching max kl.' % i)
+                logger.log(f'Early stopping at step {i} due to reaching max kl {kl} > {1.5 * target_kl}')
                 break
             loss_pi.backward()
             # mpi_avg_grads(ac.pi)    # average grads across MPI processes
@@ -315,6 +368,7 @@ def train(
                      KL=kl, Entropy=ent, ClipFrac=cf,
                      DeltaLossPi=(loss_pi.item() - pi_l_old),
                      DeltaLossV=(loss_v.item() - v_l_old))
+        logger.store(CompinedLoss=loss.item())
 
     start_time = time.time()
     best_model = None
@@ -327,6 +381,8 @@ def train(
         ep_ret = [0 for _ in train_envs]
         ep_len = [0 for _ in train_envs]
         t = 0
+        # Reset obs buffer
+        buf.obs_buf = None
         while t < local_steps_per_epoch:
             env = train_envs[i]
             done = False
@@ -338,9 +394,10 @@ def train(
                 ep_ret[i] += r
                 ep_len[i] += 1
                 # env.render() # For debugging
+                # print(f'ep_ret: {ep_ret}') # For debugging
 
                 # save and log
-                a, v, logp = a.cpu(), v.cpu(), logp.cpu()
+                # a, v, logp = a.cpu(), v.cpu(), logp.cpu()
                 buf.store(graph, can, a, r, v, logp)
                 logger.store(VVals=v)
 
@@ -355,9 +412,7 @@ def train(
                 if terminal or epoch_ended:
                     if epoch_ended and not (terminal):
                         print('Warning: trajectory cut off by epoch at %d steps.' % ep_len[i], flush=True)
-
-                    # if trajectory didn't reach terminal state, bootstrap value target
-                    if timeout or epoch_ended:
+                        # if trajectory didn't reach terminal state, bootstrap value target
                         _, v, _ = ac.step(graph, can)
                     else:
                         v = 0
@@ -365,6 +420,7 @@ def train(
                     if terminal:
                         # only save EpRet / EpLen if trajectory finished
                         logger.store(EpRet=ep_ret[i], EpLen=ep_len[i])
+                    # print(f'ep_ret: {ep_ret}') # For debugging
                     o[i], ep_ret[i], ep_len[i] = env.reset()[0], 0, 0
 
                 t += 1
@@ -398,6 +454,8 @@ def train(
                     if terminal:
                         break
             mean_val_ret = np.mean(ep_ret)
+            # print(f'ep_ret: {ep_ret}') # For debugging
+            # print(f'mean_val_ret: {mean_val_ret}')
             mean_val_len = np.mean(ep_len)
 
             # Log info about validation
@@ -419,6 +477,7 @@ def train(
         logger.log_tabular('TotalEnvInteracts', (epoch+1)*steps_per_epoch)
         logger.log_tabular('LossPi', average_only=True)
         logger.log_tabular('LossV', average_only=True)
+        logger.log_tabular('CompinedLoss', average_only=True)
         logger.log_tabular('DeltaLossPi', average_only=True)
         logger.log_tabular('DeltaLossV', average_only=True)
         logger.log_tabular('Entropy', average_only=True)
@@ -445,7 +504,7 @@ if __name__ == "__main__":
 
     config = {
         'type': 'standard',
-        'path': os.path.join(dir_path, f'standard/ta01'),
+        'path': os.path.join(dir_path, f'standard/ft06.txt'),
         'repeat': [1] * 15
     }
     instance_configs['train'].append(config)
@@ -472,38 +531,51 @@ if __name__ == "__main__":
     #     device = 'mps'
     print(f'Using {device} device')
 
-    gppo = core.GPPO(device=device)
+    hyperparams = {
+        'device': device,
+        'actor_hidden_sizes': (32, 32),
+        'critic_hidden_sizes': (32, 32),
+        'output_feature_dim': 32
+    }
+
+    gppo = core.GPPO(**hyperparams)
     best_model = train(actor_critic=gppo,
                        instance_configs=instance_configs,
-                       steps_per_epoch=2250,
-                       epochs=10)
+                       steps_per_epoch=360,
+                       epochs=1000,
+                       val_freq=10,
+                    #    ent_coef=10,
+                       train_pi_iters=1
+                       )
 
     # Save best model
     th.save(best_model, 'best_model.pth')
 
     # Load best model
-    # model = core.GPPO()
-    # model.load_state_dict(th.load('best_model.pth'))
-    # model.eval()
+    model = core.GPPO(**hyperparams)
+    # print(f'before : {[param for param in model.feature_extractor.parameters()]}')
+    model.load_state_dict(th.load('best_model.pth'))
+    model.eval()
+    # print(f'after : {[param for param in model.feature_extractor.parameters()]}')
 
-    # # Test
-    # test_envs = [GraphJSSPEnv(config) for config in instance_configs['test']]
-    # for env in test_envs:
-    #     step = 0
-    #     obs, _ = env.reset()
-    #     done = False
-    #     total_reward = 0
+    # Test
+    test_envs = [GraphJSSPEnv(config) for config in instance_configs['test']]
+    for env in test_envs:
+        step = 0
+        obs, _ = env.reset()
+        done = False
+        total_reward = 0
 
-    #     while not done:
-    #         step += 1
+        while not done:
+            step += 1
 
-    #         action = model.act(obs['graph'].data, obs['candidate_op_indices'])
-    #         obs, reward, terminated, truncated, info = env.step(action)
-    #         done = terminated or truncated
-    #         total_reward += reward
+            action = model.act(obs['graph'].data, obs['candidate_op_indices'], deterministic=True)
+            obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+            total_reward += reward
 
-    #         if done:
-    #             print("Goal reached!")
-    #             print(step, info, total_reward)
-    #             obs['graph'].visualize_graph()
-    #             env.render()
+            if done:
+                print("Goal reached!")
+                print(step, info, total_reward)
+                obs['graph'].visualize_graph()
+                env.render()

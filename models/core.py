@@ -41,7 +41,8 @@ class GPPO(nn.Module):
 
     def step(self,
              graph: Data,
-             candidate_node_indices: th.Tensor
+             candidate_node_indices: th.Tensor,
+             deterministic=False
              ):
 
         with th.no_grad():
@@ -53,36 +54,45 @@ class GPPO(nn.Module):
 
             # get the action distribution
             pi = self.pi._distribution(h_graph, candidate_node_embeddings)
-            a_index = pi.sample()
+            if deterministic:
+                a_index = pi.probs.argmax()
+            else:
+                a_index = pi.sample()
             a = candidate_node_indices[a_index]
             logp_a = self.pi._log_prob_from_distribution(pi, a_index)
             v = self.v(h_graph)
 
         return a, v, logp_a
 
-    def act(self, graph: Data, candidate_node_indices: th.Tensor):
-        return self.step(graph, candidate_node_indices)[0]
+    def act(self, graph: Data, candidate_node_indices: list, deterministic=True):
+        return self.step(graph, candidate_node_indices, deterministic=deterministic)[0]
 
     def forward(self, graph: Batch, candidate_node_indices: th.Tensor, action: th.Tensor):
         # get the node embeddings for each graph in the batch
         h_nodes, h_graph = self.feature_extractor(graph.x, graph.edge_index, graph.batch)
+        
+        # print(h_nodes.shape, h_graph.shape, action.shape)
+        # print(candidate_node_indices)
 
         pis = []
         logp_as = []
         for i, can in enumerate(candidate_node_indices):
             # get the candidate node embeddings
             candidate_node_embeddings = h_nodes[can]
+            # print(can)
+            # print(candidate_node_embeddings.shape)
 
             # get the action distribution
             pi = self.pi._distribution(h_graph[i], candidate_node_embeddings)
             a_index = th.where(candidate_node_indices[i] == action[i])[0]
             logp_a = self.pi._log_prob_from_distribution(pi, a_index)
-
+            # print(candidate_node_indices[i], action[i], a_index, logp_a)
             pis.append(pi)
             logp_as.append(logp_a)
 
         # Convert to 1d tensor
         logp_as = th.stack(logp_as).flatten()
+        # print(logp_as)
 
         return pis, logp_as
 
@@ -144,7 +154,9 @@ class Actor(nn.Module):
     def _distribution(self, h_graph, candidate_node_embeddings):
         h_graph = h_graph.repeat(candidate_node_embeddings.shape[0], 1)
         logits = self.logits_net(th.cat([h_graph, candidate_node_embeddings], dim=-1).to(self.device))
+        # print(h_graph.shape, logits.shape, th.cat([h_graph, candidate_node_embeddings], dim=-1).shape)
         logits = logits.flatten()
+        # print(logits.shape)
         return th.distributions.Categorical(logits=logits)
 
     def _log_prob_from_distribution(self, pi, act):

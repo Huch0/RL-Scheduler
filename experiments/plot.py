@@ -27,13 +27,13 @@ def plot_results(log_path=None, save_path=None):
     axs[0, 0].plot(df['Epoch'], df['MaxEpRet'], label='Max Episode Return', color='green', linestyle='--')
     axs[0, 0].plot(df['Epoch'], df['MinEpRet'], label='Min Episode Return', color='red', linestyle='--')
     # Add ValMeanEpRet to the same plot
-    axs[0, 0].plot(df['Epoch'], df['ValMeanEpRet'], label='Validation Mean Episode Return', color='purple', linestyle='-.', linewidth=2)
+    axs[0, 0].plot(df['Epoch'], df['ValMeanEpRet'], label='Validation Mean Episode Return',
+                   color='purple', linestyle='-.', linewidth=2)
 
     axs[0, 0].set_title('Episode Return Statistics')
     axs[0, 0].set_xlabel('Epoch')
     axs[0, 0].set_ylabel('Episode Return')
     axs[0, 0].legend(loc='upper left', bbox_to_anchor=(1, 1))
-
 
     # Plot Policy Loss
     axs[0, 1].plot(df['Epoch'], df['LossPi'], label='Policy Loss', color='red')
@@ -49,6 +49,15 @@ def plot_results(log_path=None, save_path=None):
     axs[0, 2].set_ylabel('Loss')
     axs[0, 2].legend()
 
+    # Plot Combined Loss
+    if 'CompinedLoss' in df.columns:
+        print('Plotting Combined Loss')
+        axs[1, 2].plot(df['Epoch'], df['CompinedLoss'], label='Combined Loss', color='orange')
+        axs[1, 2].set_title('Combined Loss')
+        axs[1, 2].set_xlabel('Epoch')
+        axs[1, 2].set_ylabel('Loss')
+        axs[1, 2].legend()
+
     # Plot Entropy
     axs[1, 0].plot(df['Epoch'], df['Entropy'], label='Entropy', color='purple')
     axs[1, 0].set_title('Entropy')
@@ -63,14 +72,17 @@ def plot_results(log_path=None, save_path=None):
     axs[1, 1].set_ylabel('KL Divergence')
     axs[1, 1].legend()
 
-    # Adjust layout and remove the empty subplot
-    fig.delaxes(axs[1][2])
+    # # Adjust layout and remove the empty subplot
+    # fig.delaxes(axs[1][2])
     plt.tight_layout()
- 
+
     if save_path:
         plt.savefig(save_path)
     plt.show()
 
 
 if __name__ == '__main__':
-    plot_results()
+    # log_path = f'./experiments/tmp/1721750103/progress.txt'
+    log_path = f'./experiments/tmp/1721750951/progress.txt'
+    plot_results(log_path=log_path)
+    # plot_results()

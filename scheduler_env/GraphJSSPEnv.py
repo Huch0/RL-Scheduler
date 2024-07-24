@@ -51,6 +51,10 @@ class GraphJSSPEnv(gym.Env):
 
         self.graph.reset()
 
+        self.candidate_job_indices = []
+        self.candidate_op_indices = []
+        self.max_Clb_t = 0
+
         return self._get_observation(), self._get_info()
 
     def step(self, action):
@@ -156,7 +160,7 @@ class DisjunctiveGraph:
             dir_path = os.path.join(os.path.dirname(__file__), '../instances')
             instance_config = {
                 'type': 'standard',
-                'path': os.path.join(dir_path, 'standard/ta10'),
+                'path': os.path.join(dir_path, 'standard/ta01'),
                 'repeat': [1] * 15
             }
 
@@ -442,10 +446,8 @@ if __name__ == "__main__":
         done = terminated or truncated
         total_reward += reward
 
-        # if reward != -10:
-        #     print(action, reward, done, obs['valid_actions'])
+        # print(action, total_reward)
         # obs['graph'].visualize_graph()
-        # env.render()
         # env.render()
 
         if done:
