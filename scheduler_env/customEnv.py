@@ -6,7 +6,7 @@ from stable_baselines3.common.env_checker import check_env
 # from stable_baselines3 import A2C, PPO, DQN
 # from sb3_contrib import MaskablePPO
 # from sb3_contrib.common.wrappers import ActionMasker
-from scheduler_env.customScheduler import customScheduler, Job, JobInfo
+from scheduler_env.customScheduler import customScheduler
 
 class SchedulingEnv(gym.Env):
     def _load_machines(self, file_path):
@@ -68,27 +68,6 @@ class SchedulingEnv(gym.Env):
             jobs.append(job_info)
 
         return jobs
-    
-    def _load_jobs_repeat(self, file):
-        jobs = []  # 리턴할 용도
-        f = open(file)
-
-        # returns JSON object as a dictionary
-        data = json.load(f)
-        f.close()
-        jobs_new_version = data['jobs']
-
-        for job_index, job in enumerate(jobs_new_version):
-            job_info = {
-                'name': job['name'],
-                'color': job['color'],
-                'operations': job['operations']
-            }
-            
-            for deadline_index, deadline in enumerate(job['deadline']):
-                jobs.append(Job(job_info, index=deadline_index, deadline=deadline))
-
-        return jobs
 
     def __init__(self, machine_config_path="instances/Machines/v0-8.json", job_config_path="instances/Jobs/v0-12-deadline.json", render_mode="seaborn", weight_final_time=80, weight_job_deadline=20, weight_op_rate=0, target_time = 1000):
         super(SchedulingEnv, self).__init__()
@@ -107,9 +86,6 @@ class SchedulingEnv(gym.Env):
 
         self.num_steps = 0
 
-        self.max_edges = 100
-        
-        #self.node_space = spaces.Box(low=-100, high=100, shape=(self.custom_scheduler.num_operations + 2, 2), dtype=np.float32)        
         self.action_space = spaces.Discrete(self.len_machines * self.len_jobs)
         self.observation_space = spaces.Dict({
             "action_mask": spaces.Box(low=0, high=1, shape=(self.len_machines * self.len_jobs, ), dtype=np.int8),
@@ -118,9 +94,7 @@ class SchedulingEnv(gym.Env):
             'machine_operation_rate': spaces.Box(low=0, high=1, shape=(self.len_machines, ), dtype=np.float32),
             "num_operation_per_machine": spaces.Box(low=0, high=100, shape=(self.len_machines, ), dtype=np.int64),
             "machine_types": spaces.Box(low=0, high=1, shape=(self.len_machines, 25), dtype=np.int8),
-            "operation_schedules": spaces.Box(low=0, high=1, shape=(self.len_machines, 50), dtype=np.int8),
-            # "node_space": self.node_space,
-            # "edge_index": spaces.Box(low=0, high=self.max_edges, shape=(2, self.max_edges), dtype=np.int64)
+            "operation_schedules": spaces.Box(low=0, high=1, shape=(self.len_machines, 50), dtype=np.int8),    
         })
 
     def reset(self, seed=None, options=None):
