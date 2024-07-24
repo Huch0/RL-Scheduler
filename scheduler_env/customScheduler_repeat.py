@@ -2,6 +2,7 @@ import copy
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from stable_baselines3.common.env_checker import check_env
 import matplotlib.colors as mcolors
@@ -401,7 +402,7 @@ class customRepeatableScheduler():
     def get_observation(self):
 
         observation = {
-            'action_mask': self.action_masks(),
+            'action_masks': self.action_masks(),
             'job_details': self.current_job_details,
             'machine_operation_rate': self.machine_operation_rate,
             'machine_types': self.machine_types,
@@ -427,33 +428,6 @@ class customRepeatableScheduler():
         }
 
     def render(self, mode="seaborn", num_steps = 0):
-        if mode == "console":
-            # You can implement console rendering if needed
-            pass
-        elif mode == "seaborn":
-            return self._render_seaborn(num_steps)
-        elif mode == "rgb_array":
-            return self._render_rgb_array(num_steps)
-
-    def _render_seaborn(self, num_steps):
-        fig = self._make_chart(num_steps)
-        plt.show()
-
-    def _render_rgb_array(self, num_steps):
-        # Render the figure as an image
-        fig = self._make_chart(num_steps)
-        canvas = FigureCanvasAgg(plt.gcf())
-        canvas.draw()
-
-        # Convert the image to RGB array
-        buf = canvas.buffer_rgba()
-        width, height = canvas.get_width_height()
-        rgb_array = np.frombuffer(
-            buf, dtype=np.uint8).reshape((height, width, 4))
-
-        return rgb_array
-
-    def _make_chart(self, num_steps):
         current_schedule = [operation.to_dict() for operation in self.current_schedule]
 
         scheduled_df = list(filter(lambda operation: operation['sequence'] is not None, current_schedule))
@@ -464,13 +438,21 @@ class customRepeatableScheduler():
             plt.title("Operation Schedule Visualization")
             return plt
 
+        n_machines = len(self.machines)
+
         fig, ax = plt.subplots(figsize=(12, 6))
-        legend_jobs = set()
+        ax.set_title(f'Operation Schedule Visualization | steps = {num_steps}')
+        ax.set_yticks(range(n_machines))
+        ax.set_yticklabels([f'Machine {i}\n ability:{self.machines[i].ability}' for i in range(n_machines)])
+        
+
+        ax.set_xlim(0, self.last_finish_time)
+        ax.set_ylim(-1, n_machines)
+        
+        legend_jobs = []
 
         for i in range(len(self.machines)):
             machine_operations = scheduled_df[scheduled_df['machine'] == i]
-            line_offset = i - 0.9
-
             for index, operation in machine_operations.iterrows():
                 base_color = mcolors.to_rgba(operation['color'])
                 job_index = operation["job_index"]
@@ -479,29 +461,22 @@ class customRepeatableScheduler():
 
                 job_label = f'Job {int(operation["job"]) + 1} - Repeat {job_index + 1}'
                 if job_label not in legend_jobs:
-                    legend_jobs.add(job_label)
+                    legend_jobs.append((int(operation["job"]) + 1, job_label, shaded_color))
                 else:
                     job_label = None
 
-                ax.bar(
-                    x=operation["start"] + operation["duration"] / 2,
-                    height=0.8,
-                    width=operation["duration"],
-                    bottom=line_offset,
-                    color=shaded_color,
-                    alpha=0.7,
-                    label=job_label,
-                )
+                op_block = mpatches.Rectangle(
+                    (operation["start"], i - 0.5), operation["finish"] - operation["start"], 1, facecolor=shaded_color, edgecolor='black', linewidth=1)
+                ax.add_patch(op_block)
 
-        ax.set_yticks(np.arange(0, len(self.machines)))
-        ax.set_yticklabels([machine.name for machine in self.machines])
+        # Add legend for job repetition
+        legend_jobs.sort()
+        legend_patches = []
+        for _, label, color in legend_jobs:
+            legend_patches.append(mpatches.Patch(color=color, label=label))
+        ax.legend(handles=legend_patches, bbox_to_anchor=(1.01, 1), loc='upper left')
 
-        ax.set(ylabel="Machine", xlabel="Time")
-        ax.legend(loc='upper left', bbox_to_anchor=(1, 1))
-        plt.title(f'Operation Schedule Visualization step {num_steps}')
-        plt.rcParams['figure.max_open_warning'] = 0
-
-        return fig
+        plt.show()
 
     def is_legal(self, action):
         return self.legal_actions[action[0], action[1]]
