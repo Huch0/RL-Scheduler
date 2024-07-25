@@ -406,7 +406,7 @@ class customRepeatableScheduler():
             'machine_operation_rate': self.machine_operation_rate,
             'machine_types': self.machine_types,
             'operation_schedules': self.operation_schedules,
-            'schedule_buffer': [elem[1] for elem in self.schedule_buffer],
+            'schedule_buffer': [elem for elem in self.schedule_buffer],
             'estimated_tardiness': [self.jobs[i][elem[0]].estimated_tardiness if elem[0] != -1 else -1 for i, elem in enumerate(self.schedule_buffer)]
         }
 
@@ -421,6 +421,7 @@ class customRepeatableScheduler():
             'machine_score': self.machine_term,
             'machine_operation_rate': [machine.operation_rate for machine in self.machines],
             'schedule_buffer': self.schedule_buffer,
+            'job_estimated_tardiness': [job.estimated_tardiness for job_list in self.jobs for job in job_list],
             'current_schedule': self.current_schedule,
             'job_deadline': [job.deadline for job_list in self.jobs for job in job_list],
             'job_time_exceeded': [job.time_exceeded for job_list in self.jobs for job in job_list]
@@ -515,14 +516,13 @@ class customRepeatableScheduler():
         return max(self.current_schedule, key=lambda x: x.finish).finish
 
     def calculate_step_reward(self):
-        self.machine_term = 0.0
-        if np.any(self.machine_operation_rate):
-            self.machine_term = np.mean(self.machine_operation_rate)
-        return self.machine_term
-    
+        # self.machine_term = 0.0
+        # if np.any(self.machine_operation_rate):
+        #     self.machine_term = np.mean(self.machine_operation_rate)
+        # return self.machine_term
+        return 0
         # Schedule Buffer에 올라온 Job 들의 Estimated Tardiness 평균에 -1을 곱한 것을 반환
-        # Estimated Tardiness가 -1인 Job은 Schedule Buffer에 올라오지 않는다
-        # return -np.mean([job.estimated_tardiness for job_list in self.jobs for job in job_list if job.estimated_tardiness != -1])
+        return -np.mean([job_list[0].estimated_tardiness for job_list in self.jobs])
 
     def calculate_final_reward(self, weight_final_time = 80, weight_job_deadline = 20, weight_op_rate = 0, target_time = 1000):
         def final_time_to_reward(target_time):

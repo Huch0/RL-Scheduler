@@ -67,14 +67,14 @@ class SchedulingEnv(gym.Env):
 
         return jobs
 
-    def __init__(self, machine_config_path="instances/Machines/v0-2.json", job_config_path="instances/Jobs/v0-3x3-deadline.json", render_mode="seaborn", weight_final_time=80, weight_job_deadline=20, weight_op_rate=0, target_time = None, max_repeats = [3, 3, 3], test_mode=False):
+    def __init__(self, machine_config_path, job_config_path, job_repeats_params, render_mode="seaborn", weight_final_time=80, weight_job_deadline=20, weight_op_rate=0, target_time = None, test_mode=False):
         super(SchedulingEnv, self).__init__()
         self.weight_final_time = weight_final_time
         self.weight_job_deadline = weight_job_deadline
         self.weight_op_rate = weight_op_rate
         self.target_time = target_time
-        self.max_repeats = max_repeats
-        self.current_repeats = max_repeats
+        self.job_repeats_params = job_repeats_params  # 각 Job의 반복 횟수에 대한 평균과 표준편차
+        self.current_repeats = [job_repeat[0] for job_repeat in job_repeats_params]
         self.test_mode = test_mode
         self.best_makespan = float('inf') # 최적 makespan
 
@@ -95,7 +95,7 @@ class SchedulingEnv(gym.Env):
             'machine_operation_rate': spaces.Box(low=0, high=1, shape=(self.len_machines, ), dtype=np.float32),
             "machine_types": spaces.Box(low=0, high=1, shape=(self.len_machines, 25), dtype=np.int8),
             "operation_schedules": spaces.Box(low=0, high=1, shape=(self.len_machines, 50), dtype=np.int8),
-            "schedule_buffer": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int8),
+            "schedule_buffer": spaces.Box(low=-1, high=10, shape=(self.len_jobs, 2), dtype=np.int8),
             "estimated_tardiness": spaces.Box(low=-1, high=5, shape=(self.len_jobs, ), dtype=np.float32),
         })
 
@@ -174,17 +174,22 @@ class SchedulingEnv(gym.Env):
 
     def _initialize_scheduler(self):
         # 각 Job의 반복 횟수를 랜덤하게 설정
-        repeats = [random.randint(1, max_repeat) for max_repeat in self.max_repeats]
-        
+        #         
+        max_repeats_list = []
+        for mean, std in self.job_repeats_params:
+            max_repeats = max(1, int(np.random.normal(mean, std)))
+            max_repeats_list.append(max_repeats)
+
         # 랜덤 반복 횟수에 따라 Job 인스턴스를 생성
         if self.test_mode:
-            repeats = self.max_repeats
-
-        self.current_repeats = repeats
+            max_repeats_list = self.current_repeats
+        else:
+            self.current_repeats = max_repeats_list
+            
         self._calculate_target_time()
         
         random_jobs = []
-        for job, repeat in zip(self.jobs, repeats):
+        for job, repeat in zip(self.jobs, max_repeats_list):
             random_job_info = {
                 'name': job['name'],
                 'color': job['color'],
