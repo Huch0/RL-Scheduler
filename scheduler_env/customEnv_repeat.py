@@ -6,6 +6,7 @@ from stable_baselines3.common.env_checker import check_env
 from scheduler_env.customScheduler_repeat import customRepeatableScheduler, Job, JobInfo, Machine
 import random
 
+
 class SchedulingEnv(gym.Env):
     def _load_machines(self, file_path):
         machines = []
@@ -20,7 +21,7 @@ class SchedulingEnv(gym.Env):
             machines.append(machine)
 
         return machines
-    
+
     def _load_jobs_repeat(self, file):
         # Just in case we are reloading operations
 
@@ -76,7 +77,7 @@ class SchedulingEnv(gym.Env):
         self.job_repeats_params = job_repeats_params  # 각 Job의 반복 횟수에 대한 평균과 표준편차
         self.current_repeats = [job_repeat[0] for job_repeat in job_repeats_params]
         self.test_mode = test_mode
-        self.best_makespan = float('inf') # 최적 makespan
+        self.best_makespan = float('inf')  # 최적 makespan
 
         self.jobs = self._load_jobs_repeat(job_config_path)
         self.machine_config = self._load_machines(machine_config_path)
@@ -87,10 +88,10 @@ class SchedulingEnv(gym.Env):
         self.len_jobs = len(self.jobs)
 
         self.num_steps = 0
-        
+
         self.action_space = spaces.Discrete(self.len_machines * self.len_jobs)
         self.observation_space = spaces.Dict({
-            "action_mask": spaces.Box(low=0, high=1, shape=(self.len_machines * self.len_jobs, ), dtype=np.int8),
+            "action_masks": spaces.Box(low=0, high=1, shape=(self.len_machines * self.len_jobs, ), dtype=np.int8),
             "job_details": spaces.Box(low=-1, high=25, shape=(len(self.jobs), 4, 2), dtype=np.int8),
             'machine_operation_rate': spaces.Box(low=0, high=1, shape=(self.len_machines, ), dtype=np.float32),
             "machine_types": spaces.Box(low=0, high=1, shape=(self.len_machines, 25), dtype=np.int8),
@@ -106,7 +107,6 @@ class SchedulingEnv(gym.Env):
 
         return self._get_observation(), self._get_info()
 
-   
     def step(self, action):
         # Map the action to the corresponding machine and job
         selected_machine_id = action // self.len_jobs
@@ -132,7 +132,7 @@ class SchedulingEnv(gym.Env):
             # if not self.target_time:
             #     self.target_time = self.best_makespan  # Update target time dynamically
             reward = self._calculate_final_reward()
-            
+
         truncated = bool(self.num_steps == 10000)
         if truncated:
             reward = -100.0
@@ -159,7 +159,11 @@ class SchedulingEnv(gym.Env):
 
     def _get_observation(self):
         return self.custom_scheduler.get_observation()
-    
+
+    # For MaskablePPO
+    def action_masks(self):
+        return self.custom_scheduler.action_masks()
+
     def _get_info(self):
         info = self.custom_scheduler.get_info()
         info['num_steps'] = self.num_steps
@@ -167,8 +171,8 @@ class SchedulingEnv(gym.Env):
         return info
 
     def _calculate_final_reward(self):
-        return self.custom_scheduler.calculate_final_reward(weight_final_time = self.weight_final_time, weight_job_deadline = self.weight_job_deadline, weight_op_rate = self.weight_op_rate, target_time = self.target_time)
-    
+        return self.custom_scheduler.calculate_final_reward(weight_final_time=self.weight_final_time, weight_job_deadline=self.weight_job_deadline, weight_op_rate=self.weight_op_rate, target_time=self.target_time)
+
     def _calculate_step_reward(self):
         return self.custom_scheduler.calculate_step_reward()
 
@@ -187,7 +191,7 @@ class SchedulingEnv(gym.Env):
             self.current_repeats = max_repeats_list
             
         self._calculate_target_time()
-        
+
         random_jobs = []
         for job, repeat in zip(self.jobs, max_repeats_list):
             random_job_info = {
@@ -212,11 +216,12 @@ class SchedulingEnv(gym.Env):
         target_time = total_duration / self.len_machines
         self.target_time = target_time
 
-    def render(self, mode="seaborn"):
-        self.custom_scheduler.render(mode = mode, num_steps = self.num_steps)
+    def render(self, mode="human"):
+        self.custom_scheduler.render(mode=mode, num_steps=self.num_steps)
 
     def visualize_graph(self):
         self.custom_scheduler.visualize_graph()
+
 
 if __name__ == "__main__":
     env = SchedulingEnv(machine_config_path="instances/Machines/v0-2.json",
