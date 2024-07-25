@@ -206,12 +206,14 @@ class customRepeatableScheduler():
             self._schedule_operation(action)
             self._update_job_state()
             self._update_schedule_buffer()
+            self.update_legal_actions()
             self._update_machine_state()
             self.last_finish_time = self._get_final_operation_finish()
         else:
             self._update_schedule_buffer()
             self._update_machine_state(init=True)
             self._update_job_state()
+            self.update_legal_actions()
 
     def update_legal_actions(self):
         # Initialize legal_actions
@@ -231,7 +233,7 @@ class customRepeatableScheduler():
                 if operation_index == -1:
                     # Debug message to check if the operation_index is -1
                     # print(f"Job {job_index} has no operations to schedule.")
-                    break
+                    continue
                 operation = self.job_infos[job_index].operation_queue[operation_index]
                 if not machine.can_process_operation(operation.type):
                     self.legal_actions[machine_index, job_index] = False
@@ -491,10 +493,10 @@ class customRepeatableScheduler():
         return max(self.current_schedule, key=lambda x: x.finish).finish
 
     def calculate_step_reward(self):
-        # self.machine_term = 0.0
-        # if np.any(self.machine_operation_rate):
-        #     self.machine_term = np.mean(self.machine_operation_rate)
-        # return self.machine_term
+        self.machine_term = 0.0
+        if np.any(self.machine_operation_rate):
+            self.machine_term = np.mean(self.machine_operation_rate)
+        return self.machine_term
         return 0.0
         # Schedule Buffer에 올라온 Job 들의 Estimated Tardiness 평균에 -1을 곱한 것을 반환
         return -np.mean([job_list[0].estimated_tardiness for job_list in self.jobs])
