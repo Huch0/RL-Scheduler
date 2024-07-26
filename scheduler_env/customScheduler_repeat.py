@@ -430,9 +430,8 @@ class customRepeatableScheduler():
             'job_time_exceeded': [job.time_exceeded for job_list in self.jobs for job in job_list]
         }
 
-    def render(self, mode="seaborn", num_steps = 0):
+    def render(self, mode="seaborn", num_steps=0):
         current_schedule = [operation.to_dict() for operation in self.current_schedule]
-
         scheduled_df = list(filter(lambda operation: operation['sequence'] is not None, current_schedule))
         scheduled_df = pd.DataFrame(scheduled_df)
 
@@ -447,11 +446,10 @@ class customRepeatableScheduler():
         ax.set_title(f'Operation Schedule Visualization | steps = {num_steps}')
         ax.set_yticks(range(n_machines))
         ax.set_yticklabels([f'Machine {i}\n ability:{self.machines[i].ability}' for i in range(n_machines)])
-        
 
         ax.set_xlim(0, self.last_finish_time)
         ax.set_ylim(-1, n_machines)
-        
+
         legend_jobs = []
 
         for i in range(len(self.machines)):
@@ -462,11 +460,14 @@ class customRepeatableScheduler():
                 shade_factor = (job_index + 1) / (len(self.jobs[0]) + 1)
                 shaded_color = tuple([min(max(shade * shade_factor, 0), 1) if idx < 3 else shade for idx, shade in enumerate(base_color)])
 
-                job_label = f'Job {int(operation["job"]) + 1} - Repeat {job_index + 1}'
-                if job_label not in legend_jobs:
-                    legend_jobs.append((int(operation["job"]) + 1, job_label, shaded_color))
-                else:
-                    job_label = None
+                # Build operation sequence string
+                operation_sequences = scheduled_df[(scheduled_df['job'] == operation['job']) & (scheduled_df['job_index'] == operation['job_index'])].sort_values(by='sequence')
+                operation_info = ' -> '.join(map(str, operation_sequences['machine'].tolist()))
+
+                job_label = f'Job {int(operation["job"]) + 1} - Repeat{job_index + 1} - ({operation_info})'
+                legend = (int(operation["job"]) + 1, job_label, shaded_color)
+                if legend not in legend_jobs:
+                    legend_jobs.append(legend)
 
                 op_block = mpatches.Rectangle(
                     (operation["start"], i - 0.5), operation["finish"] - operation["start"], 1, facecolor=shaded_color, edgecolor='black', linewidth=1)
@@ -487,7 +488,7 @@ class customRepeatableScheduler():
     def is_done(self):
         # 모든 Job의 Operation가 종료된 경우 Terminated를 True로 설정한다
         # 또한 legal_actions가 전부 False인 경우도 Terminated를 True로 설정한다
-        return all([job.operation_queue[-1].finish is not None for job_list in self.jobs for job in job_list]) or not np.any(self.legal_actions)
+        return all([job.operation_queue[-1].finish is not None for job_list in self.jobs for job in job_list])# or not np.any(self.action_mask)
     
     def _get_final_operation_finish(self):
         return max(self.current_schedule, key=lambda x: x.finish).finish
