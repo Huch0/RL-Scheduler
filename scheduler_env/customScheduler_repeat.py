@@ -420,7 +420,13 @@ class customRepeatableScheduler():
         self.current_schedule.append(selected_operation)
         selected_machine.operation_schedule.append(selected_operation)
         self.num_scheduled_operations += 1
-        return
+
+        # Update the earliest_start for the next operation in the job
+        current_op_index = selected_job.operation_queue.index(selected_operation)
+        if current_op_index + 1 < len(selected_job.operation_queue):
+            next_operation = selected_job.operation_queue[current_op_index + 1]
+            next_operation.earliest_start = selected_operation.finish
+            return
 
     def get_observation(self):
         
