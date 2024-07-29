@@ -117,8 +117,6 @@ class SchedulingEnv(gym.Env):
         self.num_steps += 1
         reward = 0.0
 
-        self._update_legal_actions()
-
         if self._is_legal(action):
             self._update_state(action)
             reward += self._calculate_step_reward()
@@ -129,8 +127,6 @@ class SchedulingEnv(gym.Env):
         if terminated:
             final_makespan = self.custom_scheduler._get_final_operation_finish()
             self.best_makespan = min(self.best_makespan, final_makespan)  # Update the best makespan
-            # if not self.target_time:
-            #     self.target_time = self.best_makespan  # Update target time dynamically
             reward = self._calculate_final_reward()
 
         truncated = bool(self.num_steps == 10000)
@@ -144,9 +140,6 @@ class SchedulingEnv(gym.Env):
             truncated,
             self._get_info(),
         )
-
-    def _update_legal_actions(self):
-        self.custom_scheduler.update_legal_actions()
 
     def _is_legal(self, action):
         return self.custom_scheduler.is_legal(action)
@@ -177,23 +170,21 @@ class SchedulingEnv(gym.Env):
         return self.custom_scheduler.calculate_step_reward()
 
     def _initialize_scheduler(self):
-        # 각 Job의 반복 횟수를 랜덤하게 설정
-        #         
-        max_repeats_list = []
-        for mean, std in self.job_repeats_params:
-            max_repeats = max(1, int(np.random.normal(mean, std)))
-            max_repeats_list.append(max_repeats)
-
-        # 랜덤 반복 횟수에 따라 Job 인스턴스를 생성
         if self.test_mode:
-            max_repeats_list = self.current_repeats
+            repeats_list = self.current_repeats[::]
+        # 각 Job의 반복 횟수를 랜덤하게 설정
+        # 랜덤 반복 횟수에 따라 Job 인스턴스를 생성
         else:
-            self.current_repeats = max_repeats_list
+            repeats_list = []
+            for mean, std in self.job_repeats_params:
+                repeats = max(1, int(np.random.normal(mean, std)))
+                repeats_list.append(repeats)
+            self.current_repeats = repeats_list[::]
             
         self._calculate_target_time()
 
         random_jobs = []
-        for job, repeat in zip(self.jobs, max_repeats_list):
+        for job, repeat in zip(self.jobs, repeats_list):
             random_job_info = {
                 'name': job['name'],
                 'color': job['color'],
@@ -207,14 +198,12 @@ class SchedulingEnv(gym.Env):
         self.custom_scheduler.reset()
 
     def _calculate_target_time(self):
-        if self.target_time:
-            return
         total_duration = 0
         for i in range(len(self.jobs)):
             job_duration = sum(op['duration'] for op in self.jobs[i]['operations'])
             total_duration += job_duration * self.current_repeats[i]
-        target_time = total_duration / self.len_machines
-        self.target_time = target_time
+        
+        self.target_time = total_duration / self.len_machines
 
     def render(self, mode="human"):
         self.custom_scheduler.render(mode=mode, num_steps=self.num_steps)
