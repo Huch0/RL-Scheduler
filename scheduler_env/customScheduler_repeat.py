@@ -45,6 +45,7 @@ class Job(JobInfo):
         self.index = index
         self.deadline = deadline
         self.estimated_tardiness = 0
+        self.tardiness = 0
         self.time_exceeded = 0
         
     def __lt__(self, other):
@@ -196,8 +197,14 @@ class customRepeatableScheduler():
         return self.get_observation(), self.get_info() 
     
     def action_masks(self):
-        self.update_legal_actions()
-        self.action_mask = self.legal_actions.flatten()
+        return self.action_mask
+
+    def _update_action_masks(self, action):
+        self._update_legal_actions(action)
+        result = []  # 빈 리스트
+        for legal_action in self.legal_actions:
+            result.extend(legal_action)  # 각 legal_action을 result에 추가
+        self.action_mask = np.array(result)  # 
         return self.action_mask
 
     def update_state(self, action=None):
@@ -206,37 +213,50 @@ class customRepeatableScheduler():
             self._schedule_operation(action)
             self._update_job_state()
             self._update_schedule_buffer()
-            self.update_legal_actions()
+            self._update_action_masks(action)
             self._update_machine_state()
             self.last_finish_time = self._get_final_operation_finish()
         else:
             self._update_schedule_buffer()
             self._update_machine_state(init=True)
             self._update_job_state()
-            self.update_legal_actions()
+            self._update_action_masks(action)
 
-    def update_legal_actions(self):
-        # Initialize legal_actions
-        self.legal_actions = np.ones(
-            (len(self.machines), len(self.jobs)), dtype=bool)
 
-        for job_index in range(len(self.jobs)):
-            # 1. 선택된 Job의 모든 Operation가 이미 종료된 경우
-            if self.schedule_buffer[job_index] == [-1, -1]:
-                self.legal_actions[:, job_index] = False
-
-        for machine_index in range(len(self.machines)):
-            # 2. 선택된 Machine가 선택된 Job의 Operation의 Type을 처리할 수 없는 경우
-            machine = self.machines[machine_index]
-            for job_index in range(len(self.jobs)):
+    def _update_legal_actions(self, action = None):
+        # for job_index in range(len(self.jobs)):
+        #     # 1. 선택된 Job의 모든 Operation가 이미 종료된 경우
+        #     if self.schedule_buffer[job_index] == [-1, -1]:
+        #         self.legal_actions[:, job_index] = False
+        if action:
+            for machine_index in range(len(self.machines)):
+                # 2. 선택된 Machine가 선택된 Job의 Operation의 Type을 처리할 수 없는 경우
+                machine = self.machines[machine_index]
+                job_index = action[1]
+                if self.schedule_buffer[job_index] == [-1, -1]:
+                    self.legal_actions[:, job_index] = False
+                    break
+            
                 operation_index = self.schedule_buffer[job_index][1]
-                if operation_index == -1:
-                    # Debug message to check if the operation_index is -1
-                    # print(f"Job {job_index} has no operations to schedule.")
-                    continue
                 operation = self.job_infos[job_index].operation_queue[operation_index]
-                if not machine.can_process_operation(operation.type):
+                if machine.can_process_operation(operation.type):
+                    self.legal_actions[machine_index, job_index] = True
+                else:
                     self.legal_actions[machine_index, job_index] = False
+        else:
+            for machine_index in range(len(self.machines)):
+                # 2. 선택된 Machine가 선택된 Job의 Operation의 Type을 처리할 수 없는 경우
+                machine = self.machines[machine_index]
+                for job_index in range(len(self.jobs)):
+                    if self.schedule_buffer[job_index] == [-1, -1]:
+                        self.legal_actions[:, job_index] = False
+                        continue
+                    operation_index = self.schedule_buffer[job_index][1]
+                    operation = self.job_infos[job_index].operation_queue[operation_index]
+                    if machine.can_process_operation(operation.type):
+                        self.legal_actions[machine_index, job_index] = True
+                    else:
+                        self.legal_actions[machine_index, job_index] = False
 
     def _update_machine_state(self, init=False):
         if init:
@@ -265,6 +285,7 @@ class customRepeatableScheduler():
                 
                 if not remaining_operations:
                     job.estimated_tardiness = -1
+                    job.tardiness = job.operation_queue[-1].finish - job.deadline
                     if job.deadline < job.operation_queue[-1].finish:
                         job.time_exceeded = job.operation_queue[-1].finish - job.deadline
                     continue
@@ -272,7 +293,7 @@ class customRepeatableScheduler():
                 earliest_operation = remaining_operations[0]
                 earliest_machine_end_times = [
                     machine.operation_schedule[-1].finish if machine.operation_schedule else 0
-                    for machine in self.machines if earliest_operation.type in machine.ability
+                    for machine in self.machines if machine.can_process_operation(earliest_operation.type)
                 ]
                 
                 if earliest_machine_end_times:
@@ -402,9 +423,9 @@ class customRepeatableScheduler():
         return
 
     def get_observation(self):
-
+        
         observation = {
-            'action_masks': self.action_masks(),
+            'action_masks': self.action_mask,
             'job_details': self.current_job_details,
             'machine_operation_rate': self.machine_operation_rate,
             'machine_types': self.machine_types,
@@ -427,7 +448,8 @@ class customRepeatableScheduler():
             'job_estimated_tardiness': [job.estimated_tardiness for job_list in self.jobs for job in job_list],
             'current_schedule': self.current_schedule,
             'job_deadline': [job.deadline for job_list in self.jobs for job in job_list],
-            'job_time_exceeded': [job.time_exceeded for job_list in self.jobs for job in job_list]
+            'job_time_exceeded': [job.time_exceeded for job_list in self.jobs for job in job_list],
+            'job_tardiness': [job.tardiness for job_list in self.jobs for job in job_list]
         }
 
     def render(self, mode="seaborn", num_steps=0):
@@ -483,12 +505,13 @@ class customRepeatableScheduler():
         plt.show()
 
     def is_legal(self, action):
+        return self.action_mask[action[0]*len(self.jobs) + action[1]]
         return self.legal_actions[action[0], action[1]]
 
     def is_done(self):
         # 모든 Job의 Operation가 종료된 경우 Terminated를 True로 설정한다
         # 또한 legal_actions가 전부 False인 경우도 Terminated를 True로 설정한다
-        return all([job.operation_queue[-1].finish is not None for job_list in self.jobs for job in job_list])# or not np.any(self.action_mask)
+        return not np.any(self.action_mask) or all([job.operation_queue[-1].finish is not None for job_list in self.jobs for job in job_list])
     
     def _get_final_operation_finish(self):
         return max(self.current_schedule, key=lambda x: x.finish).finish
@@ -529,17 +552,50 @@ class customRepeatableScheduler():
             for job_list in self.jobs:
                 total_job_length += len(job_list)
                 for job in job_list:
-                    if job.time_exceeded > 0:
-                        sum_of_late_rate += (job.time_exceeded / job.deadline)
-
+                    sum_of_late_rate += (job.tardiness / job.deadline)
             sum_of_late_rate /= total_job_length
-            return max(0, 1 - sum_of_late_rate)
+            
+            return 1 - sum_of_late_rate
+            
+        #def mixed_reward(target_time):
+            # exceed_list = []
+            # early_list = []
+            # total_job_length = 0
+            # for job_list in self.jobs:
+            #     total_job_length += len(job_list)
+            #     for job in job_list:
+            #         exceed_list.append(job.time_exceeded / job.deadline)
+            #         early_list.append(-1 * (job.tardiness / job.deadline))
+
+            # m = np.mean(early_list)
+            # s = np.std(early_list)
+
+            # sum_of_late_rate = 0
+            # for e in exceed_list:
+            #     if e > 0:
+            #         sum_of_late_rate += max(e, (e - m) / s)
+
+            # sum_of_late_rate /= total_job_length
+            
+            # return (1 - sum_of_late_rate) * max(0.5, 1 - ((self._get_final_operation_finish() - target_time) / target_time))
+
+            # sum_of_early_rate = 0
+            # total_job_length = 0
+            # for job_list in self.jobs:
+            #     total_job_length += len(job_list)
+            #     for job in job_list:
+            #         sum_of_early_rate -= (job.tardiness / job.deadline)
+
+            # sum_of_early_rate /= total_job_length
+            # return max(0.25, sum_of_early_rate) * max(0.25, 1 - ((self._get_final_operation_finish() - target_time) / target_time))
+            
 
         final_reward_by_op_rate = weight_op_rate * operation_rate_to_reward()
         final_reward_by_final_time = weight_final_time * final_time_to_reward(target_time) 
         final_reward_by_job_deadline = weight_job_deadline * job_deadline_to_reward()
+        #final_reward_by_mixed = 100 * mixed_reward(target_time)
 
-        return final_reward_by_op_rate + final_reward_by_final_time + final_reward_by_job_deadline
+        return final_reward_by_op_rate + final_reward_by_final_time + final_reward_by_job_deadline #+ final_reward_by_mixed
 
 
     

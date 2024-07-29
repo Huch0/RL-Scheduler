@@ -117,8 +117,6 @@ class SchedulingEnv(gym.Env):
         self.num_steps += 1
         reward = 0.0
 
-        self._update_legal_actions()
-
         if self._is_legal(action):
             self._update_state(action)
             reward += self._calculate_step_reward()
@@ -142,9 +140,6 @@ class SchedulingEnv(gym.Env):
             truncated,
             self._get_info(),
         )
-
-    def _update_legal_actions(self):
-        self.custom_scheduler.update_legal_actions()
 
     def _is_legal(self, action):
         return self.custom_scheduler.is_legal(action)
