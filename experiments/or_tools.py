@@ -4,10 +4,15 @@ from scheduler_env.customEnv_repeat import SchedulingEnv
 import matplotlib.pyplot as plt
 import numpy as np
 import time
+import copy
 
-def solve_with_ortools(env, objective='makespan', SCALE=10000, time_limit=60.0):  # Scaling factor for float approximation
-    print(f'Objective: {objective}')
+
+def solve_with_ortools(env, objective='makespan', SCALE=10000, time_limit=60.0, n_workers=8, copy_env=True, verbose=False):  # Scaling factor for float approximation
+    if verbose:
+        print(f'Objective: {objective}')
     model = cp_model.CpModel()
+    if copy_env:
+        env = copy.deepcopy(env)
 
     jobs = env.custom_scheduler.jobs
     machines = env.custom_scheduler.machines
@@ -109,12 +114,15 @@ def solve_with_ortools(env, objective='makespan', SCALE=10000, time_limit=60.0):
                          for job_list in jobs for job in job_list for op in job.operation_queue])
 
     # Objective : Deadline Compliance
-    deadline_compliance = model.NewIntVar(0, sum(len(job.operation_queue)
-                                          for job_list in jobs for job in job_list), 'deadline_compliance')
+    deadline_compliance = model.NewIntVar(0, sum(len(job_list) for job_list in jobs), 'deadline_compliance')
     deadline_met_list = []
+
     # constraints and counting
     for job_list in jobs:
         for job in job_list:
+            job_meets_deadline = model.NewBoolVar(f'job_{job.name}_{job.index}_meets_deadline')
+            operation_meets_deadline_list = []
+
             for op in job.operation_queue:
                 # Assume each operation inherits the job's deadline
                 # You might need to adjust this if operations have individual deadlines
@@ -122,7 +130,11 @@ def solve_with_ortools(env, objective='makespan', SCALE=10000, time_limit=60.0):
                     deadline_met[(job.name, job.index, op.index)])
                 model.Add(task_ends[(job.name, job.index, op.index)] > job.deadline).OnlyEnforceIf(
                     deadline_met[(job.name, job.index, op.index)].Not())
-                deadline_met_list.append(deadline_met[(job.name, job.index, op.index)])
+                operation_meets_deadline_list.append(deadline_met[(job.name, job.index, op.index)])
+
+            # A job meets the deadline if all its operations meet the deadline
+            model.AddMinEquality(job_meets_deadline, operation_meets_deadline_list)
+            deadline_met_list.append(job_meets_deadline)
 
     model.Add(deadline_compliance == sum(deadline_met_list))
 
@@ -148,9 +160,9 @@ def solve_with_ortools(env, objective='makespan', SCALE=10000, time_limit=60.0):
     # Solve
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = time_limit  # Set a time limit of 60 seconds
-    solver.parameters.num_search_workers = 8  # Adjust based on your CPU cores
+    solver.parameters.num_search_workers = n_workers  # Adjust based on your CPU cores
     # solver.parameters.log_search_progress = True
-    
+
     # Start timing
     start_time = time.time()
     status = solver.Solve(model)
@@ -159,7 +171,8 @@ def solve_with_ortools(env, objective='makespan', SCALE=10000, time_limit=60.0):
     elapsed_time = end_time - start_time
 
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-        print(f'Time elapsed: {elapsed_time} | Status: {solver.StatusName(status)}')
+        if verbose:
+            print(f'Time elapsed: {elapsed_time} | Status: {solver.StatusName(status)}')
         # Extract solution
         solution = []
         i = 0
@@ -186,10 +199,14 @@ def solve_with_ortools(env, objective='makespan', SCALE=10000, time_limit=60.0):
 
                     env.custom_scheduler.current_schedule.append(op)
         # print(solution)
-        objs = [solver.Value(makespan), solver.Value(deadline_compliance), solver.Value(mse) / SCALE]
-        return solution, objs
+        objs = {
+            'makespan': solver.Value(makespan),
+            'deadline_compliance': solver.Value(deadline_compliance),
+            'MSE': solver.Value(mse) / SCALE
+        }
+        return solution, objs, solver.StatusName(status), elapsed_time
     else:
-        return None, None
+        return None, None, solver.StatusName(status), elapsed_time
 
 
 if __name__ == '__main__':
@@ -197,30 +214,35 @@ if __name__ == '__main__':
     env = SchedulingEnv(machine_config_path="instances/Machines/v0-8.json", job_config_path="instances/Jobs/v0-12-repeat.json",
                         job_repeats_params=[(3, 1)] * 12, weight_final_time=0, weight_job_deadline=0.01, weight_op_rate=0, test_mode=False)
     env.reset()
-
-    solution, objs = solve_with_ortools(env, objective='makespan')
+    copy_env = False
+    solution, objs, _, _ = solve_with_ortools(env, objective='deadline', copy_env=copy_env, time_limit=10.0)
     if solution:
-        earliness = [job.deadline - job.operation_queue[-1].finish for job_list in env.custom_scheduler.jobs for job in job_list]
-        scaled_earliness = []
-        for job_list in env.custom_scheduler.jobs:
-            for job in job_list:
-                total_duration = sum([op.duration for op in job.operation_queue])
-                deadline = job.deadline
-                job_earliness = job.deadline - job.operation_queue[-1].finish
-                scaling_factor = total_duration / deadline
-                scaled_value = scaling_factor * job_earliness
-                scaled_earliness.append(scaled_value)
+        print(f"makespan: {objs['makespan']}, deadline compliance: {objs['deadline_compliance']}, MSE: {objs['MSE']}")
+        if not copy_env:
+            info = env._get_info()
+            n_jobs = 0
+            earliness = [job.deadline -
+                         job.operation_queue[-1].finish for job_list in env.custom_scheduler.jobs for job in job_list]
+            scaled_earliness = []
+            for job_list in env.custom_scheduler.jobs:
+                for job in job_list:
+                    total_duration = sum([op.duration for op in job.operation_queue])
+                    deadline = job.deadline
+                    job_earliness = job.deadline - job.operation_queue[-1].finish
+                    scaling_factor = total_duration / deadline
+                    scaled_value = scaling_factor * job_earliness
+                    scaled_earliness.append(scaled_value)
+                    n_jobs += 1
 
-                # Print detailed debug information
-                # print(f"Job Total Duration: {total_duration}, Job Deadline: {deadline}, Job Earliness: {job_earliness}, Scaling Factor: {scaling_factor}, Scaled Earliness: {scaled_value}")
-        info = env._get_info()
-        print(f"makespan: {objs[0]}, deadline compliance: {objs[1]}, MSE: {objs[2]}")
-        print('job_deadline', info['job_deadline'])
-        print(f'job_earliness {earliness}')
-        print(f'job_scaled_earliness {scaled_earliness}')
-        print(f'MSE: {np.mean(scaled_earliness)}')
-        print('current_repeats', info['current_repeats'])
+                    # Print detailed debug information
+                    # print(f"Job Total Duration: {total_duration}, Job Deadline: {deadline}, Job Earliness: {job_earliness}, Scaling Factor: {scaling_factor}, Scaled Earliness: {scaled_value}")
 
-        env.render()
+            print('job_deadline', info['job_deadline'])
+            print(f'job_earliness {earliness}')
+            print(f'job_scaled_earliness {scaled_earliness}')
+            print(f'MSE: {np.mean(scaled_earliness)}')
+            print(f'current_repeats {info["current_repeats"]}, n_jobs {n_jobs}')
+            env.render()
+
     else:
         print("No solution found")
