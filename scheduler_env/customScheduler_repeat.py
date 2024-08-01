@@ -3,11 +3,14 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+from matplotlib.figure import Figure
 from stable_baselines3.common.env_checker import check_env
 import matplotlib.colors as mcolors
 import seaborn as sns
 import heapq
+from PIL import Image
+import io
 
 def type_encoding(type):
     type_code = {'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4, 'F': 5, 'G': 6, 'H': 7, 'I': 8, 'J': 9, 'K': 10, 'L': 11, 'M': 12,
@@ -131,7 +134,7 @@ class customRepeatableScheduler():
 
         self.job_state = None
         self.machine_types = None
-        self.operation_schedules = None
+        self.schedule_heatmap = None
         # self.action_space = spaces.MultiDiscrete([len_machines, len_jobs])
         
         self.action_mask = np.ones(
@@ -174,8 +177,8 @@ class customRepeatableScheduler():
         # self.job_state = np.zeros((len(self.jobs), 4), dtype=np.int32)
         self.machine_types = np.zeros(
             (len(self.machines), 25), dtype=np.int8)
-        self.operation_schedules = np.zeros(
-            (len(self.machines), 50), dtype=np.int8)
+        self.schedule_heatmap = np.zeros(
+            (len(self.machines), 150), dtype=np.int8)
 
         self.legal_actions = np.ones(
             (len(self.machines), len(self.jobs)), dtype=bool)
@@ -214,11 +217,11 @@ class customRepeatableScheduler():
             self._update_job_state()
             self._update_schedule_buffer()
             self._update_action_masks(action)
-            self._update_machine_state()
+            self._update_machine_state(action)
             self.last_finish_time = self._get_final_operation_finish()
         else:
             self._update_schedule_buffer()
-            self._update_machine_state(init=True)
+            self._update_machine_state(action)
             self._update_job_state()
             self._update_action_masks(action)
 
@@ -258,25 +261,37 @@ class customRepeatableScheduler():
                     else:
                         self.legal_actions[machine_index, job_index] = False
 
-    def _update_machine_state(self, init=False):
-        if init:
+    def _update_machine_state(self, action=None):
+        if action is None:
             for i, machine in enumerate(self.machines):
                 self.machine_types[i] = [
                     1 if i in machine.ability else 0 for i in range(25)]
             return
+        
+        machine = self.machines[action[0]]
+        operation_schedule = machine.operation_schedule
+        self.schedule_heatmap[action[0]] = np.array(self._schedule_to_array(operation_schedule))
 
-        for r, machine in enumerate(self.machines):
-            operation_schedule = machine.operation_schedule
-            self.operation_schedules[r] = self._schedule_to_array(
-                operation_schedule)
+        # 선택된 리소스의 스케줄링된 Operation들
+        if machine.operation_schedule:
+            operation_time = sum([operation.duration for operation in machine.operation_schedule])
+            machine.operation_rate = operation_time / self._get_final_operation_finish()
+            self.machine_operation_rate[action[0]] = machine.operation_rate
 
-            # 선택된 리소스의 스케줄링된 Operation들
-            if machine.operation_schedule:
-                operation_time = sum(
-                    [operation.duration for operation in machine.operation_schedule])
 
-                machine.operation_rate = operation_time / self._get_final_operation_finish()
-                self.machine_operation_rate[r] = machine.operation_rate
+        ####
+        # for r, machine in enumerate(self.machines):
+        #     operation_schedule = machine.operation_schedule
+        #     self.schedule_heatmap[r] = self._schedule_to_array(
+        #         operation_schedule)
+
+        #     # 선택된 리소스의 스케줄링된 Operation들
+        #     if machine.operation_schedule:
+        #         operation_time = sum(
+        #             [operation.duration for operation in machine.operation_schedule])
+
+        #         machine.operation_rate = operation_time / self._get_final_operation_finish()
+        #         self.machine_operation_rate[r] = machine.operation_rate
 
     def _update_job_state(self):
         for job_list in self.jobs:
@@ -312,22 +327,19 @@ class customRepeatableScheduler():
             heapq.heapify(job_list)
 
     # 이거 맘에 안 듦
-    def _schedule_to_array(self, operation_schedule):
-        idle_time = []
-
-        for operation in operation_schedule:
-            idle_time.append((operation.start // 100, operation.finish // 100))
-
+    def _schedule_to_array(self, operation_schedule, max_time = 150):
         def is_in_idle_time(time):
-            for interval in idle_time:
-                if interval[0] <= time < interval[1]:
+            for operation in operation_schedule:
+                # 머신이 일하고 있는 시간에는 True 반환
+                if operation.start <= time < operation.finish:
                     return True
+            # 머신이 일하고 있는 시간에는 True 반환
             return False
 
         result = []
 
-        for i in range(50):
-            result.append(is_in_idle_time(i))
+        for i in range(max_time):
+            result.append(is_in_idle_time(i*100))
 
         return result
 
@@ -435,11 +447,11 @@ class customRepeatableScheduler():
             'job_details': self.current_job_details,
             'machine_operation_rate': self.machine_operation_rate,
             'machine_types': self.machine_types,
-            'operation_schedules': self.operation_schedules,
-            'schedule_buffer': [elem for elem in self.schedule_buffer],
-            'estimated_tardiness': [self.jobs[i][elem[0]].estimated_tardiness if elem[0] != -1 else -1 for i, elem in enumerate(self.schedule_buffer)]
+            'schedule_heatmap': self.schedule_heatmap,
+            'schedule_buffer': np.array([np.array(elem) for elem in self.schedule_buffer]),
+            'estimated_tardiness': np.array([self.jobs[i][elem[0]].estimated_tardiness if elem[0] != -1 else -1 for i, elem in enumerate(self.schedule_buffer)])
         }
-
+        
         return observation
 
     def get_info(self):
@@ -457,7 +469,60 @@ class customRepeatableScheduler():
             'job_time_exceeded': [job.time_exceeded for job_list in self.jobs for job in job_list],
             'job_tardiness': [job.tardiness for job_list in self.jobs for job in job_list]
         }
+    
+    # def render_simple(self, num_steps=0, save_path="simple_schedule_plot.png"):
+    #     current_schedule = [operation.to_dict() for operation in self.current_schedule]
+    #     scheduled_df = list(filter(lambda operation: operation['sequence'] is not None, current_schedule))
+    #     scheduled_df = pd.DataFrame(scheduled_df)
 
+    #     if scheduled_df.empty:
+    #         fig = Figure(figsize=(10, 5))
+    #         canvas = FigureCanvas(fig)
+    #         ax = fig.add_subplot(111)
+    #         ax.set_title("Simple Operation Schedule Visualization")
+    #         canvas.print_figure(save_path)
+    #         return
+
+    #     n_machines = len(self.machines)
+
+    #     fig = Figure(figsize=(10, 5), dpi=80)  # 해상도 낮춤
+    #     canvas = FigureCanvas(fig)
+    #     ax = fig.add_subplot(111)
+    #     ax.set_title(f'Simple Operation Schedule Visualization | steps = {num_steps}')
+    #     ax.set_yticks(range(n_machines))
+    #     ax.set_yticklabels([f'Machine {i}' for i in range(n_machines)])
+        
+    #     ax.set_xlim(0, self.last_finish_time // 100)
+    #     ax.set_ylim(-1, n_machines)
+
+    #     patches = []
+    #     for i in range(len(self.machines)):
+    #         machine_operations = scheduled_df[scheduled_df['machine'] == i]
+    #         for index, operation in machine_operations.iterrows():
+    #             start = operation["start"] // 100
+    #             finish = operation["finish"] // 100
+    #             color = mcolors.to_rgba(operation['color'])
+    #             block = mpatches.Rectangle(
+    #                 (start, i - 0.5), finish - start, 1, facecolor=color, edgecolor='black', linewidth=1)
+    #             patches.append(block)
+
+    #     for patch in patches:
+    #         ax.add_patch(patch)
+
+    #     fig.tight_layout()
+    #     canvas.print_figure(save_path)
+    #     plt.close(fig)
+    
+    # def render_image_to_array(self, num_steps = 0):
+    #     buffer = io.BytesIO()
+    #     self.render_simple(num_steps = num_steps, save_path=buffer)  # render_simple에서 save_path를 buffer로 설정
+    #     buffer.seek(0)
+    #     image = Image.open(buffer)
+    #     image = image.resize((128, 128))  # 이미지 크기 조정
+    #     image_array = np.array(image)
+    #     buffer.close()
+    #     return image_array
+    
     def render(self, mode="seaborn", num_steps=0):
         current_schedule = [operation.to_dict() for operation in self.current_schedule]
         scheduled_df = list(filter(lambda operation: operation['sequence'] is not None, current_schedule))
@@ -523,10 +588,10 @@ class customRepeatableScheduler():
         return max(self.current_schedule, key=lambda x: x.finish).finish
 
     def calculate_step_reward(self):
-        self.machine_term = 0.0
-        if np.any(self.machine_operation_rate):
-            self.machine_term = np.mean(self.machine_operation_rate)
-        return self.machine_term
+        # self.machine_term = 0.0
+        # if np.any(self.machine_operation_rate):
+        #     self.machine_term = np.mean(self.machine_operation_rate)
+        # return self.machine_term
         return 0.0
         # Schedule Buffer에 올라온 Job 들의 Estimated Tardiness 평균에 -1을 곱한 것을 반환
         return -np.mean([job_list[0].estimated_tardiness for job_list in self.jobs])
