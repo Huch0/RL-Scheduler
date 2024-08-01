@@ -68,7 +68,7 @@ class SchedulingEnv(gym.Env):
 
         return jobs
 
-    def __init__(self, machine_config_path, job_config_path, job_repeats_params, render_mode="seaborn", weight_final_time=80, weight_job_deadline=20, weight_op_rate=0, target_time = None, test_mode=False):
+    def __init__(self, machine_config_path, job_config_path, job_repeats_params, render_mode="seaborn", weight_final_time=80, weight_job_deadline=20, weight_op_rate=0, target_time = None, test_mode=False, max_time = 150):
         super(SchedulingEnv, self).__init__()
         self.weight_final_time = weight_final_time
         self.weight_job_deadline = weight_job_deadline
@@ -95,9 +95,11 @@ class SchedulingEnv(gym.Env):
             "job_details": spaces.Box(low=-1, high=25, shape=(len(self.jobs), 4, 2), dtype=np.int8),
             'machine_operation_rate': spaces.Box(low=0, high=1, shape=(self.len_machines, ), dtype=np.float32),
             "machine_types": spaces.Box(low=0, high=1, shape=(self.len_machines, 25), dtype=np.int8),
-            "operation_schedules": spaces.Box(low=0, high=1, shape=(self.len_machines, 50), dtype=np.int8),
-            "schedule_buffer": spaces.Box(low=-1, high=10, shape=(self.len_jobs, 2), dtype=np.int8),
-            "estimated_tardiness": spaces.Box(low=-1, high=5, shape=(self.len_jobs, ), dtype=np.float32),
+            "schedule_heatmap": spaces.Box(low=0, high=1, shape=(self.len_machines, max_time), dtype=np.int8),
+            ### 아래는 render 함수의 결과를 배열로 전달하는 것
+            #"schedule_image" : spaces.Box(low=0, high=255, shape=(128, 128, 3), dtype=np.uint8),  # 이미지 공간 설정
+            "schedule_buffer": spaces.Box(low=-1, high=15, shape=(self.len_jobs, 2), dtype=np.int64),
+            "estimated_tardiness": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.float64),
         })
 
     def reset(self, seed=None, options=None):
@@ -151,7 +153,13 @@ class SchedulingEnv(gym.Env):
         self.custom_scheduler.update_state(action)
 
     def _get_observation(self):
-        return self.custom_scheduler.get_observation()
+        observation = self.custom_scheduler.get_observation()
+        #observation["schedule_image"] = self.custom_scheduler.render_image_to_array(num_steps = self.num_steps)[:, :, :3]
+        return observation
+    
+    def set_test_mode(self):
+        self.test_mode = True
+        self.reset()
 
     # For MaskablePPO
     def action_masks(self):
