@@ -448,7 +448,8 @@ class customRepeatableScheduler():
             #'machine_operation_rate': self.machine_operation_rate,
             #'machine_types': self.machine_types,
             'schedule_heatmap': self.schedule_heatmap,
-            'schedule_buffer': np.array([np.array(elem) for elem in self.schedule_buffer]),
+            'schedule_buffer_job_repeat': np.array([elem[0] for elem in self.schedule_buffer]),
+            'schedule_buffer_operation_index':  np.array([elem[1] for elem in self.schedule_buffer]),
             'estimated_tardiness': np.array([self.jobs[i][elem[0]].estimated_tardiness if elem[0] != -1 else -1 for i, elem in enumerate(self.schedule_buffer)])
         }
         

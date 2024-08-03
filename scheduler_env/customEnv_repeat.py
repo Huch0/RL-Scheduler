@@ -3,9 +3,7 @@ from gymnasium import spaces
 import numpy as np
 import json
 from stable_baselines3.common.env_checker import check_env
-from scheduler_env.customScheduler_repeat import customRepeatableScheduler, Job, JobInfo, Machine
-import random
-
+from scheduler_env.customScheduler_repeat import customRepeatableScheduler
 
 class SchedulingEnv(gym.Env):
     def _load_machines(self, file_path):
@@ -98,7 +96,9 @@ class SchedulingEnv(gym.Env):
             "schedule_heatmap": spaces.Box(low=0, high=1, shape=(self.len_machines, max_time), dtype=np.int8),
             ### 아래는 render 함수의 결과를 배열로 전달하는 것
             #"schedule_image" : spaces.Box(low=0, high=255, shape=(128, 128, 3), dtype=np.uint8),  # 이미지 공간 설정
-            "schedule_buffer": spaces.Box(low=-1, high=15, shape=(self.len_jobs, 2), dtype=np.int64),
+            #"schedule_buffer": spaces.Box(low=-1, high=15, shape=(self.len_jobs, 2), dtype=np.int64),
+            "schedule_buffer_job_repeat": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int64),
+            "schedule_buffer_operation_index": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int64),
             "estimated_tardiness": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.float64),
         })
 
@@ -221,9 +221,8 @@ class SchedulingEnv(gym.Env):
 
 
 if __name__ == "__main__":
-    env = SchedulingEnv(machine_config_path="instances/Machines/v0-2.json",
-                        job_config_path="instances/Jobs/v0-3x3-deadline.json")
-
+    env_8_12_1_t = SchedulingEnv(machine_config_path= "instances/Machines/v0-8.json", job_config_path = "instances/Jobs/v0-12-repeat.json", job_repeats_params = [(1, 1)] * 12, test_mode = True)
+    env = env_8_12_1_t
     check_env(env)
 
     step = 0
