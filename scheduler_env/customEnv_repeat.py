@@ -130,6 +130,7 @@ class SchedulingEnv(gym.Env):
             final_makespan = self.custom_scheduler._get_final_operation_finish()
             self.best_makespan = min(self.best_makespan, final_makespan)  # Update the best makespan
             reward = self._calculate_final_reward()
+            self.custom_scheduler.cal_final_cost()
 
         truncated = bool(self.num_steps == 10000)
         if truncated:

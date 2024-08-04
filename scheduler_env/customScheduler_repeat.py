@@ -35,6 +35,16 @@ class Machine():
 
     def can_process_operation(self, operation_type):
         return operation_type in self.ability
+    
+    def cal_utilization_rate(self):
+        if not self.operation_schedule:
+            return 0.0
+
+        util_time = 0
+        for op in self.operation_schedule:
+            util_time += op.duration
+        return 1.0
+
 
 class JobInfo:
     def __init__(self, name, color, operations, index = None):
@@ -326,7 +336,7 @@ class customRepeatableScheduler():
         for job_list in self.jobs:
             heapq.heapify(job_list)
 
-    # 이거 맘에 안 듦
+
     def _schedule_to_array(self, operation_schedule, max_time = 150):
         def is_in_idle_time(time):
             for operation in operation_schedule:
@@ -597,7 +607,7 @@ class customRepeatableScheduler():
         # Schedule Buffer에 올라온 Job 들의 Estimated Tardiness 평균에 -1을 곱한 것을 반환
         return -np.mean([job_list[0].estimated_tardiness for job_list in self.jobs])
 
-    def calculate_final_reward(self, weight_final_time = 80, weight_job_deadline = 20, weight_op_rate = 0, target_time = 1000):
+    def calculate_final_reward(self, weight_final_time, weight_job_deadline, weight_op_rate, target_time = 1000):
         def final_time_to_reward(target_time):
             if target_time >= self._get_final_operation_finish():
                 return 1
@@ -614,7 +624,7 @@ class customRepeatableScheduler():
             #     # 보상에서 패널티를 빼서 최종 보상을 계산함
             #     total_reward += reward - penalty
         def operation_rate_to_reward():
-            return min([machine.operation_rate for machine in self.machines])
+            return np.mean([machine.operation_rate for machine in self.machines])
             # 각 Machine의 Hole을 점수로 만든다
             # return sum([machine.operation_rate for machine in self.machines]) / len(self.machines)
         
@@ -670,4 +680,69 @@ class customRepeatableScheduler():
         return final_reward_by_op_rate + final_reward_by_final_time + final_reward_by_job_deadline #+ final_reward_by_mixed
 
 
-    
+    def cal_final_cost(self, cost_deadline_per_time = 5, cost_hole_per_time = 2, cost_processing_per_time = 1, cost_makespan_per_time = 1):
+        # 반도체 공장
+        # 주문: 만들어야하는 chip의 종류가 1~12이고 하루에 처리해야하는 일의 양이 변동함. (정규분포 따름)
+        # 기계: 1~8번까지 있고, 각 기계가 할 수 있는 일의 양이 다름
+        # Cost 
+        # 
+
+        # 1. Job deadline 어긴 정도 / 비율로 duration이 분모로감
+        # - 총 duration 600, deadline : 900
+        # - 끝난 시간 1000이면 1/6 * 단위시간 당 cost 만큼 cost 발생
+        # -> obs 추가
+        def cal_job_deadline_cost():
+            job_deadline_cost = 0
+
+            sum_of_late_rate = 0
+            sum_of_tard = 0
+            total_job_length = 0
+            for job_list in self.jobs:
+                total_job_length += len(job_list)
+                for job in job_list:
+                    total_duration = sum([op.duration for op in job.operation_queue])
+                    sum_of_tard += job.tardiness
+                    #sum_of_late_rate += (job.tardiness / total_duration)
+            job_deadline_cost = sum_of_tard / 100 * cost_deadline_per_time #sum_of_late_rate * cost_deadline_per_time 
+
+            return job_deadline_cost
+
+        # 2. machine Processing cost, hole cost 는 절반(hyperparams)으로
+        # - 100 times 일할때마다 0.1,  
+        # - 100 times 놀 때마다 0.05, 
+        # 시작되는 시점부터 머신은 가동됨
+        def cal_machine_cost():
+            sum_of_hole_time = 0
+            sum_of_up_time = 0
+            for machine in self.machines:
+                up_time = 0
+                hole_time = 0
+                machine.operation_schedule.sort(key = lambda x: x.start)
+                first_start = machine.operation_schedule[0].start
+                last_finish = machine.operation_schedule[-1].finish
+                # print(first_start)
+                # print(last_finish)
+            
+
+                for op in machine.operation_schedule:
+                    up_time += op.duration
+
+                # print(up_time)
+                hole_time = last_finish - first_start - up_time
+                # print(hole_time)
+                sum_of_up_time += up_time
+                sum_of_hole_time += hole_time
+            
+            return (sum_of_hole_time * cost_hole_per_time + sum_of_up_time * cost_processing_per_time) / 100
+        
+        # 3. Entire cost, (makespan cost)
+        # - Makespan 100단위당 0.01
+        def cal_entire_cost():
+            return self._get_final_operation_finish() * cost_makespan_per_time / 100
+        
+        # 각 cost를 알아보기 좋게 출력
+        print(f"Job Deadline Cost: {cal_job_deadline_cost()}")
+        print(f"Machine Cost: {cal_machine_cost()}")
+        print(f"Entire Cost: {cal_entire_cost()}")
+
+        return cal_job_deadline_cost() + cal_machine_cost() + cal_entire_cost()
