@@ -72,6 +72,7 @@ class SchedulingEnv(gym.Env):
         self.weight_job_deadline = weight_job_deadline
         self.weight_op_rate = weight_op_rate
         self.target_time = target_time
+        self.total_durations = 0
         self.job_repeats_params = job_repeats_params  # 각 Job의 반복 횟수에 대한 평균과 표준편차
         self.current_repeats = [job_repeat[0] for job_repeat in job_repeats_params]
         self.test_mode = test_mode
@@ -173,7 +174,7 @@ class SchedulingEnv(gym.Env):
         return info
 
     def _calculate_final_reward(self):
-        return self.custom_scheduler.calculate_final_reward(weight_final_time=self.weight_final_time, weight_job_deadline=self.weight_job_deadline, weight_op_rate=self.weight_op_rate, target_time=self.target_time)
+        return self.custom_scheduler.calculate_final_reward(total_durations=self.total_durations, weight_final_time=self.weight_final_time, weight_job_deadline=self.weight_job_deadline, weight_op_rate=self.weight_op_rate, target_time=self.target_time)
 
     def _calculate_step_reward(self):
         return self.custom_scheduler.calculate_step_reward()
@@ -212,6 +213,7 @@ class SchedulingEnv(gym.Env):
             job_duration = sum(op['duration'] for op in self.jobs[i]['operations'])
             total_duration += job_duration * self.current_repeats[i]
         
+        self.total_durations = total_duration
         self.target_time = total_duration / self.len_machines
 
     def render(self, mode="human"):
@@ -219,6 +221,101 @@ class SchedulingEnv(gym.Env):
 
     def visualize_graph(self):
         self.custom_scheduler.visualize_graph()
+
+
+    def print_result(self, info, detail_mode = False):
+        current_repeats = info['current_repeats']
+        print(f"Current Repeats\t\t\t:\t{current_repeats}")
+
+        # 최종 점수 출력
+        reward = info["reward"]
+        print(f"Goal reached! Final score\t:\t{reward:.2f}")
+
+        cost_deadline = info["cost_deadline"]
+        cost_hole = info["cost_hole"]
+        cost_processing = info["cost_processing"]
+        cost_makespan = info["cost_makespan"]
+        sum_costs = cost_deadline + cost_hole + cost_processing + cost_makespan
+        profit = env.total_durations / 100 * 10 - sum_costs
+        print(f"Total revenue = {profit:.2f} - {sum_costs:.2f} = {profit - sum_costs:.2f}")
+        print(f"Sum of Costs\t\t\t:\t{cost_deadline + cost_hole + cost_processing + cost_makespan:.2f}")
+        print(f"Cost Deadline\t\t\t:\t{cost_deadline:.2f}")
+        print(f"Cost Hole\t\t\t:\t{cost_hole:.2f}")
+        print(f"Cost Processing\t\t:\t{cost_processing:.2f}")
+        print(f"Cost Makespan\t\t\t:\t{cost_makespan:.2f}")
+
+
+        # 최종 완료 시간 출력
+        env = info["env"]
+        print(f"Finish Time / Target Time\t:\t{info['finish_time']} / {int(env.target_time)}")
+
+        # jobs 생성
+        jobs = []
+        job_deadlines = info['job_deadline']
+        job_tardiness = info['job_time_exceeded']
+        index = 0
+
+        if detail_mode:
+            for repeat in current_repeats:
+                for r in range(repeat):
+                    deadline = job_deadlines[index+r]
+                    tardiness = job_tardiness[index+r]
+                    print(f"Job {index + 1} - Repeat {r + 1}\t\t:\tTardiness/Deadline = {tardiness}/{deadline}")
+                index += 1
+            
+        for job_id, repeat in enumerate(current_repeats, 1):
+            job_info = {
+                'job_id': job_id,
+                'tardiness': job_tardiness[index:index+repeat],
+                'deadline': job_deadlines[index:index+repeat]
+            }
+            jobs.append(job_info)
+            index += repeat
+
+        
+        # Calculate Tardiness/Deadline ratios and assign colors
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
+                '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
+                '#aec7e8', '#ffbb78']  # Color palette for jobs
+        
+        ratios = []
+        x_labels = []
+        bar_colors = []
+        x_positions = []
+        
+        current_x = 0
+        for job in jobs:
+            ratio = [t/d if d != 0 else 0 for t, d in zip(job['tardiness'], job['deadline'])]
+            ratios.extend(ratio)
+            x_labels.extend([f'Job {job["job_id"]} - Repeat {i+1}' for i in range(len(ratio))])
+            bar_colors.extend([colors[job['job_id'] - 1]] * len(ratio))
+            x_positions.extend([current_x + i for i in range(len(ratio))])
+            current_x += len(ratio) + 1  # Add space between different jobs
+
+        # Calculate and print the average Tardiness/Deadline ratio
+        avg_ratio = np.mean(ratios)
+        print(f"Average Tardiness/Deadline Ratio:\t{avg_ratio:.2f}")
+        
+        # Plotting
+        fig, ax = plt.subplots(figsize=(10, 5))
+        bar_width = 0.8
+        ax.bar(x_positions, ratios, width=bar_width, color=bar_colors)
+        
+        # Set x-ticks and x-tick labels
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels(x_labels, rotation=90, ha='center')
+        ax.set_xlabel('Job - Repeat')
+        ax.set_ylabel('Tardiness/Deadline Ratio')
+        ax.set_title('Tardiness/Deadline Ratio per Job Repeat')
+        
+        # Legend
+        unique_jobs = list(set([f'Job {job["job_id"]}' for job in jobs]))
+        legend_patches = [mpatches.Patch(color=colors[i], label=unique_jobs[i]) for i in range(len(unique_jobs))]
+        legend_patches.sort(key=lambda x: int(x.get_label().split()[1]))
+        ax.legend(handles=legend_patches, bbox_to_anchor=(1.05, 1), loc='upper left')
+        
+        plt.tight_layout()
+        plt.show()
 
 
 if __name__ == "__main__":
