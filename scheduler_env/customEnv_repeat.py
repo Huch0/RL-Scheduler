@@ -3,9 +3,7 @@ from gymnasium import spaces
 import numpy as np
 import json
 from stable_baselines3.common.env_checker import check_env
-from scheduler_env.customScheduler_repeat import customRepeatableScheduler, Job, JobInfo, Machine
-import random
-
+from scheduler_env.customScheduler_repeat import customRepeatableScheduler
 
 class SchedulingEnv(gym.Env):
     def _load_machines(self, file_path):
@@ -68,7 +66,7 @@ class SchedulingEnv(gym.Env):
 
         return jobs
 
-    def __init__(self, machine_config_path, job_config_path, job_repeats_params, render_mode="seaborn", weight_final_time=80, weight_job_deadline=20, weight_op_rate=0, target_time = None, test_mode=False):
+    def __init__(self, machine_config_path, job_config_path, job_repeats_params, render_mode="seaborn", weight_final_time=80, weight_job_deadline=20, weight_op_rate=0, target_time = None, test_mode=False, max_time = 150):
         super(SchedulingEnv, self).__init__()
         self.weight_final_time = weight_final_time
         self.weight_job_deadline = weight_job_deadline
@@ -93,11 +91,15 @@ class SchedulingEnv(gym.Env):
         self.observation_space = spaces.Dict({
             "action_masks": spaces.Box(low=0, high=1, shape=(self.len_machines * self.len_jobs, ), dtype=np.int8),
             "job_details": spaces.Box(low=-1, high=25, shape=(len(self.jobs), 4, 2), dtype=np.int8),
-            'machine_operation_rate': spaces.Box(low=0, high=1, shape=(self.len_machines, ), dtype=np.float32),
-            "machine_types": spaces.Box(low=0, high=1, shape=(self.len_machines, 25), dtype=np.int8),
-            "operation_schedules": spaces.Box(low=0, high=1, shape=(self.len_machines, 50), dtype=np.int8),
-            "schedule_buffer": spaces.Box(low=-1, high=10, shape=(self.len_jobs, 2), dtype=np.int8),
-            "estimated_tardiness": spaces.Box(low=-1, high=5, shape=(self.len_jobs, ), dtype=np.float32),
+            #'machine_operation_rate': spaces.Box(low=0, high=1, shape=(self.len_machines, ), dtype=np.float32),
+            #"machine_types": spaces.Box(low=0, high=1, shape=(self.len_machines, 25), dtype=np.int8),
+            "schedule_heatmap": spaces.Box(low=0, high=1, shape=(self.len_machines, max_time), dtype=np.int8),
+            ### 아래는 render 함수의 결과를 배열로 전달하는 것
+            #"schedule_image" : spaces.Box(low=0, high=255, shape=(128, 128, 3), dtype=np.uint8),  # 이미지 공간 설정
+            #"schedule_buffer": spaces.Box(low=-1, high=15, shape=(self.len_jobs, 2), dtype=np.int64),
+            "schedule_buffer_job_repeat": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int64),
+            "schedule_buffer_operation_index": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int64),
+            "estimated_tardiness": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.float64),
         })
 
     def reset(self, seed=None, options=None):
@@ -128,6 +130,7 @@ class SchedulingEnv(gym.Env):
             final_makespan = self.custom_scheduler._get_final_operation_finish()
             self.best_makespan = min(self.best_makespan, final_makespan)  # Update the best makespan
             reward = self._calculate_final_reward()
+            self.custom_scheduler.cal_final_cost()
 
         truncated = bool(self.num_steps == 10000)
         if truncated:
@@ -151,7 +154,13 @@ class SchedulingEnv(gym.Env):
         self.custom_scheduler.update_state(action)
 
     def _get_observation(self):
-        return self.custom_scheduler.get_observation()
+        observation = self.custom_scheduler.get_observation()
+        #observation["schedule_image"] = self.custom_scheduler.render_image_to_array(num_steps = self.num_steps)[:, :, :3]
+        return observation
+    
+    def set_test_mode(self):
+        self.test_mode = True
+        self.reset()
 
     # For MaskablePPO
     def action_masks(self):
@@ -213,9 +222,8 @@ class SchedulingEnv(gym.Env):
 
 
 if __name__ == "__main__":
-    env = SchedulingEnv(machine_config_path="instances/Machines/v0-2.json",
-                        job_config_path="instances/Jobs/v0-3x3-deadline.json")
-
+    env_8_12_1_t = SchedulingEnv(machine_config_path= "instances/Machines/v0-8.json", job_config_path = "instances/Jobs/v0-12-repeat.json", job_repeats_params = [(1, 1)] * 12, test_mode = True)
+    env = env_8_12_1_t
     check_env(env)
 
     step = 0
