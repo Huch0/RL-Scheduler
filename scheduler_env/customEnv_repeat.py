@@ -3,7 +3,7 @@ from gymnasium import spaces
 import numpy as np
 import json
 from stable_baselines3.common.env_checker import check_env
-from customScheduler_repeat import customRepeatableScheduler
+from scheduler_env.customScheduler_repeat import customRepeatableScheduler
 
 class SchedulingEnv(gym.Env):
     def _load_machines(self, file_path):
@@ -104,7 +104,8 @@ class SchedulingEnv(gym.Env):
             #"schedule_buffer": spaces.Box(low=-1, high=15, shape=(self.len_jobs, 2), dtype=np.int64),
             "schedule_buffer_job_repeat": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int64),
             "schedule_buffer_operation_index": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int64),
-            "estimated_tardiness": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.float64),
+            "mean_estimated_tardiness_per_job": spaces.Box(low=-50, high=50, shape=(self.len_jobs, ), dtype=np.float64),
+            "std_estimated_tardiness_per_job": spaces.Box(low=-50, high=50, shape=(self.len_jobs, ), dtype=np.float64),
         })
 
     def reset(self, seed=None, options=None):
