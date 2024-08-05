@@ -35,6 +35,32 @@ class Machine():
 
     def can_process_operation(self, operation_type):
         return operation_type in self.ability
+    
+    def cal_best_finish_time(self, op_duration, op_type, op_earliest_start):
+        if not self.can_process_operation(op_type):
+            return -1
+        
+        if not self.operation_schedule:
+            return op_earliest_start + op_duration
+        
+        operation_schedule = self.operation_schedule[::]
+        operation_schedule.sort(key=lambda x: x.start)
+
+        for i in range(len(operation_schedule)):
+            if i == 0:
+                if operation_schedule[i].start >= op_earliest_start + op_duration:
+                    return op_earliest_start + op_duration
+                else:
+                    return operation_schedule[i].finish + op_earliest_start + op_duration 
+            else:
+                if op_earliest_start <= operation_schedule[i-1].finish:
+                    if operation_schedule[i].start - operation_schedule[i-1].finish >= op_duration:
+                        return operation_schedule[i-1].finish + op_duration
+                else:
+                    if operation_schedule[i].start - op_earliest_start >= op_duration:
+                        return op_earliest_start + op_duration
+            return max(operation_schedule[-1].finish, op_earliest_start) + op_duration
+            
 
 class JobInfo:
     def __init__(self, name, color, operations, index = None):
@@ -154,6 +180,11 @@ class customRepeatableScheduler():
         self.job_term = 0
         self.machine_term = 0
 
+        self.cost_deadline = 0
+        self.cost_hole = 0
+        self.cost_processing = 0
+        self.cost_makespan = 0
+
     def reset(self, seed=None, options=None):
         """
         Important: the observation must be a numpy array
@@ -196,6 +227,11 @@ class customRepeatableScheduler():
         self.num_steps = 0
         self.last_finish_time = 0
         self.valid_count = 0
+
+        self.cost_deadline = 0
+        self.cost_hole = 0
+        self.cost_processing = 0
+        self.cost_makespan = 0
 
         return self.get_observation(), self.get_info() 
     
@@ -301,32 +337,31 @@ class customRepeatableScheduler():
                 if not remaining_operations:
                     job.estimated_tardiness = -1
                     job.tardiness = job.operation_queue[-1].finish - job.deadline
-                    if job.deadline < job.operation_queue[-1].finish:
-                        job.time_exceeded = job.operation_queue[-1].finish - job.deadline
+                    job.time_exceeded = max(0, job.operation_queue[-1].finish - job.deadline)
                     continue
                 
                 earliest_operation = remaining_operations[0]
-                earliest_machine_end_times = [
-                    machine.operation_schedule[-1].finish if machine.operation_schedule else 0
-                    for machine in self.machines if machine.can_process_operation(earliest_operation.type)
+                best_finish_times = [
+                    machine.cal_best_finish_time(op_earliest_start=earliest_operation.earliest_start, op_type = earliest_operation.type, op_duration = earliest_operation.duration)
+                    for machine in self.machines
                 ]
-                
-                if earliest_machine_end_times:
-                    earliest_machine_end_time = min(earliest_machine_end_times)
-                else:
-                    earliest_machine_end_time = 0
+                best_finish_times = [time for time in best_finish_times if time != -1]
 
-                estimated_finish_time = max(earliest_machine_end_time, earliest_operation.earliest_start) + earliest_operation.duration
+                if best_finish_times:
+                    best_finish_time = min(best_finish_times)
+                else:
+                    best_finish_time = 0
+
                 remaining_durations = [op.duration for op in remaining_operations[1:]]
-                estimated_total_duration = sum(remaining_durations)
+                operation_deadline = job.deadline - sum(remaining_durations)
                 
-                job.estimated_tardiness = (estimated_finish_time + estimated_total_duration - job.deadline) / job.deadline
+                job.estimated_tardiness = (best_finish_time - operation_deadline) / operation_deadline
 
         # Rebuild the heap based on the updated estimated tardiness values
         for job_list in self.jobs:
             heapq.heapify(job_list)
 
-    # 이거 맘에 안 듦
+
     def _schedule_to_array(self, operation_schedule, max_time = 150):
         def is_in_idle_time(time):
             for operation in operation_schedule:
@@ -445,8 +480,8 @@ class customRepeatableScheduler():
         observation = {
             'action_masks': self.action_mask,
             'job_details': self.current_job_details,
-            'machine_operation_rate': self.machine_operation_rate,
-            'machine_types': self.machine_types,
+            #'machine_operation_rate': self.machine_operation_rate,
+            #'machine_types': self.machine_types,
             'schedule_heatmap': self.schedule_heatmap,
             'schedule_buffer_job_repeat': np.array([elem[0] for elem in self.schedule_buffer]),
             'schedule_buffer_operation_index':  np.array([elem[1] for elem in self.schedule_buffer]),
@@ -468,7 +503,11 @@ class customRepeatableScheduler():
             'current_schedule': self.current_schedule,
             'job_deadline': [job.deadline for job_list in self.jobs for job in job_list],
             'job_time_exceeded': [job.time_exceeded for job_list in self.jobs for job in job_list],
-            'job_tardiness': [job.tardiness for job_list in self.jobs for job in job_list]
+            'job_tardiness': [job.tardiness for job_list in self.jobs for job in job_list],
+            'cost_deadline': self.cost_deadline,
+            'cost_hole': self.cost_hole,
+            'cost_processing': self.cost_processing,
+            'cost_makespan': self.cost_makespan
         }
     
     # def render_simple(self, num_steps=0, save_path="simple_schedule_plot.png"):
@@ -592,12 +631,16 @@ class customRepeatableScheduler():
         # self.machine_term = 0.0
         # if np.any(self.machine_operation_rate):
         #     self.machine_term = np.mean(self.machine_operation_rate)
-        # return self.machine_term
+        # return self.machine_term        
         return 0.0
         # Schedule Buffer에 올라온 Job 들의 Estimated Tardiness 평균에 -1을 곱한 것을 반환
         return -np.mean([job_list[0].estimated_tardiness for job_list in self.jobs])
 
-    def calculate_final_reward(self, weight_final_time = 80, weight_job_deadline = 20, weight_op_rate = 0, target_time = 1000):
+    def calculate_final_reward(self, total_durations, cost_deadline_per_time, cost_hole_per_time, cost_processing_per_time, cost_makespan_per_time, target_time = 1000):
+        profit = (total_durations / 100) * 10
+        cost = self.cal_final_cost(cost_deadline_per_time, cost_hole_per_time, cost_processing_per_time, cost_makespan_per_time)
+        return ((profit - cost) / profit) * 100
+        
         def final_time_to_reward(target_time):
             if target_time >= self._get_final_operation_finish():
                 return 1
@@ -614,7 +657,7 @@ class customRepeatableScheduler():
             #     # 보상에서 패널티를 빼서 최종 보상을 계산함
             #     total_reward += reward - penalty
         def operation_rate_to_reward():
-            return min([machine.operation_rate for machine in self.machines])
+            return np.mean([machine.operation_rate for machine in self.machines])
             # 각 Machine의 Hole을 점수로 만든다
             # return sum([machine.operation_rate for machine in self.machines]) / len(self.machines)
         
@@ -670,4 +713,77 @@ class customRepeatableScheduler():
         return final_reward_by_op_rate + final_reward_by_final_time + final_reward_by_job_deadline #+ final_reward_by_mixed
 
 
-    
+    def cal_final_cost(self, cost_deadline_per_time = 5, cost_hole_per_time = 1, cost_processing_per_time = 2, cost_makespan_per_time = 10):
+        # 반도체 공장
+        # 주문: 만들어야하는 chip의 종류가 1~12이고 하루에 처리해야하는 일의 양이 변동함. (정규분포 따름)
+        # 기계: 1~8번까지 있고, 각 기계가 할 수 있는 일의 양이 다름
+        # Cost 
+        # 
+
+        # 1. Job deadline 어긴 정도 / 비율로 duration이 분모로감
+        # - 총 duration 600, deadline : 900
+        # - 끝난 시간 1000이면 1/6 * 단위시간 당 cost 만큼 cost 발생
+        # -> obs 추가
+        def cal_job_deadline_cost():
+            job_deadline_cost = 0
+
+            #sum_of_late_rate = 0
+            sum_of_tard = 0
+            #total_job_length = 0
+            for job_list in self.jobs:
+                #total_job_length += len(job_list)
+                for job in job_list:
+                    #total_duration = sum([op.duration for op in job.operation_queue])
+                    sum_of_tard += job.time_exceeded
+                    #sum_of_late_rate += (job.time_exceeded / total_duration)
+            job_deadline_cost = sum_of_tard / 100 * cost_deadline_per_time #sum_of_late_rate * cost_deadline_per_time 
+
+            self.cost_deadline = job_deadline_cost
+
+            return job_deadline_cost
+
+        # 2. machine Processing cost, hole cost 는 절반(hyperparams)으로
+        # - 100 times 일할때마다 0.1,  
+        # - 100 times 놀 때마다 0.05, 
+        # 시작되는 시점부터 머신은 가동됨
+        def cal_machine_cost():
+            sum_of_hole_time = 0
+            sum_of_up_time = 0
+            for machine in self.machines:
+                up_time = 0
+                hole_time = 0
+                if not machine.operation_schedule:
+                    continue
+                machine.operation_schedule.sort(key = lambda x: x.start)
+                first_start = machine.operation_schedule[0].start
+                last_finish = machine.operation_schedule[-1].finish
+                # print(first_start)
+                # print(last_finish)
+            
+
+                for op in machine.operation_schedule:
+                    up_time += op.duration
+
+                # print(up_time)
+                hole_time = last_finish - first_start - up_time
+                # print(hole_time)
+                sum_of_up_time += up_time
+                sum_of_hole_time += hole_time
+            
+            self.cost_hole = sum_of_hole_time * cost_hole_per_time / 100
+            self.cost_processing = sum_of_up_time * cost_processing_per_time / 100
+
+            return (sum_of_hole_time * cost_hole_per_time + sum_of_up_time * cost_processing_per_time) / 100
+        
+        # 3. Entire cost, (makespan cost)
+        # - Makespan 100단위당 0.01
+        def cal_entire_cost():
+            self.cost_makespan = self._get_final_operation_finish() * cost_makespan_per_time / 100
+            return self.cost_makespan
+        
+        # 각 cost를 알아보기 좋게 출력
+        # print(f"Job Deadline Cost: {cal_job_deadline_cost()}")
+        # print(f"Machine Cost: {cal_machine_cost()}")
+        # print(f"Entire Cost: {cal_entire_cost()}")
+
+        return cal_job_deadline_cost() + cal_machine_cost() + cal_entire_cost()
