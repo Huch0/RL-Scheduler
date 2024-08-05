@@ -66,11 +66,15 @@ class SchedulingEnv(gym.Env):
 
         return jobs
 
-    def __init__(self, machine_config_path, job_config_path, job_repeats_params, render_mode="seaborn", weight_final_time=80, weight_job_deadline=20, weight_op_rate=0, target_time = None, test_mode=False, max_time = 150):
+    def __init__(self, machine_config_path, job_config_path, job_repeats_params, render_mode="seaborn", cost_deadline_per_time = 5, cost_hole_per_time = 1, cost_processing_per_time = 2, cost_makespan_per_time = 10, target_time = None, test_mode=False, max_time = 150):
         super(SchedulingEnv, self).__init__()
-        self.weight_final_time = weight_final_time
-        self.weight_job_deadline = weight_job_deadline
-        self.weight_op_rate = weight_op_rate
+        # self.weight_final_time = weight_final_time
+        # self.weight_job_deadline = weight_job_deadline
+        # self.weight_op_rate = weight_op_rate
+        self.cost_deadline_per_time = cost_deadline_per_time
+        self.cost_hole_per_time = cost_hole_per_time
+        self.cost_processing_per_time = cost_processing_per_time
+        self.cost_makespan_per_time = cost_makespan_per_time
         self.target_time = target_time
         self.total_durations = 0
         self.job_repeats_params = job_repeats_params  # 각 Job의 반복 횟수에 대한 평균과 표준편차
@@ -174,7 +178,7 @@ class SchedulingEnv(gym.Env):
         return info
 
     def _calculate_final_reward(self):
-        return self.custom_scheduler.calculate_final_reward(total_durations=self.total_durations, weight_final_time=self.weight_final_time, weight_job_deadline=self.weight_job_deadline, weight_op_rate=self.weight_op_rate, target_time=self.target_time)
+        return self.custom_scheduler.calculate_final_reward(total_durations=self.total_durations, cost_deadline_per_time = self.cost_deadline_per_time, cost_hole_per_time = self.cost_hole_per_time, cost_processing_per_time = self.cost_processing_per_time, cost_makespan_per_time = self.cost_makespan_per_time, target_time=self.target_time)
 
     def _calculate_step_reward(self):
         return self.custom_scheduler.calculate_step_reward()
@@ -223,7 +227,7 @@ class SchedulingEnv(gym.Env):
         self.custom_scheduler.visualize_graph()
 
 
-    def print_result(self, info, detail_mode = False):
+    def print_result(info, detail_mode = False):
         current_repeats = info['current_repeats']
         print(f"Current Repeats\t\t\t:\t{current_repeats}")
 
@@ -231,22 +235,23 @@ class SchedulingEnv(gym.Env):
         reward = info["reward"]
         print(f"Goal reached! Final score\t:\t{reward:.2f}")
 
+        env = info["env"]
+
         cost_deadline = info["cost_deadline"]
         cost_hole = info["cost_hole"]
         cost_processing = info["cost_processing"]
         cost_makespan = info["cost_makespan"]
         sum_costs = cost_deadline + cost_hole + cost_processing + cost_makespan
-        profit = env.total_durations / 100 * 10 - sum_costs
-        print(f"Total revenue = {profit:.2f} - {sum_costs:.2f} = {profit - sum_costs:.2f}")
+        profit = env.total_durations / 100 * 10
+        print(f"Total revenue\t\t\t:\t{profit:.2f} - {sum_costs:.2f} = {profit - sum_costs:.2f}")
         print(f"Sum of Costs\t\t\t:\t{cost_deadline + cost_hole + cost_processing + cost_makespan:.2f}")
         print(f"Cost Deadline\t\t\t:\t{cost_deadline:.2f}")
         print(f"Cost Hole\t\t\t:\t{cost_hole:.2f}")
-        print(f"Cost Processing\t\t:\t{cost_processing:.2f}")
+        print(f"Cost Processing\t\t\t:\t{cost_processing:.2f}")
         print(f"Cost Makespan\t\t\t:\t{cost_makespan:.2f}")
 
 
-        # 최종 완료 시간 출력
-        env = info["env"]
+        # 최종 완료 시간 출력    
         print(f"Finish Time / Target Time\t:\t{info['finish_time']} / {int(env.target_time)}")
 
         # jobs 생성
@@ -279,34 +284,37 @@ class SchedulingEnv(gym.Env):
                 '#aec7e8', '#ffbb78']  # Color palette for jobs
         
         ratios = []
+        tardinesses = []
         x_labels = []
         bar_colors = []
         x_positions = []
         
         current_x = 0
         for job in jobs:
-            ratio = [t/d if d != 0 else 0 for t, d in zip(job['tardiness'], job['deadline'])]
-            ratios.extend(ratio)
-            x_labels.extend([f'Job {job["job_id"]} - Repeat {i+1}' for i in range(len(ratio))])
-            bar_colors.extend([colors[job['job_id'] - 1]] * len(ratio))
-            x_positions.extend([current_x + i for i in range(len(ratio))])
-            current_x += len(ratio) + 1  # Add space between different jobs
+            # ratio = [t/d if d != 0 else 0 for t, d in zip(job['tardiness'], job['deadline'])]
+            # ratios.extend(ratio)
+            tardiness = [t for t in job['tardiness']]
+            tardinesses.extend(tardiness)
+            x_labels.extend([f'Job {job["job_id"]} - Repeat {i+1}' for i in range(len(tardiness))])
+            bar_colors.extend([colors[job['job_id'] - 1]] * len(tardiness))
+            x_positions.extend([current_x + i for i in range(len(tardiness))])
+            current_x += len(tardiness) + 1  # Add space between different jobs
 
         # Calculate and print the average Tardiness/Deadline ratio
-        avg_ratio = np.mean(ratios)
-        print(f"Average Tardiness/Deadline Ratio:\t{avg_ratio:.2f}")
+        avg_tardiness = np.mean(tardinesses)
+        print(f"Average Tardiness:\t{avg_tardiness:.2f}")
         
         # Plotting
         fig, ax = plt.subplots(figsize=(10, 5))
         bar_width = 0.8
-        ax.bar(x_positions, ratios, width=bar_width, color=bar_colors)
+        ax.bar(x_positions, tardinesses, width=bar_width, color=bar_colors)
         
         # Set x-ticks and x-tick labels
         ax.set_xticks(x_positions)
         ax.set_xticklabels(x_labels, rotation=90, ha='center')
         ax.set_xlabel('Job - Repeat')
-        ax.set_ylabel('Tardiness/Deadline Ratio')
-        ax.set_title('Tardiness/Deadline Ratio per Job Repeat')
+        ax.set_ylabel('Tardiness per Job repeat')
+        ax.set_title('Tardiness per Job repeat')
         
         # Legend
         unique_jobs = list(set([f'Job {job["job_id"]}' for job in jobs]))
