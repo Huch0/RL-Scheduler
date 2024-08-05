@@ -3,7 +3,7 @@ from gymnasium import spaces
 import numpy as np
 import json
 from stable_baselines3.common.env_checker import check_env
-from scheduler_env.customScheduler_repeat import customRepeatableScheduler
+from customScheduler_repeat import customRepeatableScheduler
 
 class SchedulingEnv(gym.Env):
     def _load_machines(self, file_path):
