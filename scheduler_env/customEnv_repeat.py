@@ -97,6 +97,7 @@ class SchedulingEnv(gym.Env):
         self.observation_space = spaces.Dict({
             "action_masks": spaces.Box(low=0, high=1, shape=(self.len_machines * self.len_jobs, ), dtype=np.int8),
             "job_details": spaces.Box(low=-1, high=25, shape=(len(self.jobs), 4, 2), dtype=np.int8),
+            'last_finish_time_per_machine': spaces.Box(low=0, high=max_time, shape=(self.len_machines, ), dtype=np.int64),
             #'machine_operation_rate': spaces.Box(low=0, high=1, shape=(self.len_machines, ), dtype=np.float32),
             #"machine_types": spaces.Box(low=0, high=1, shape=(self.len_machines, 25), dtype=np.int8),
             "schedule_heatmap": spaces.Box(low=0, high=1, shape=(self.len_machines, max_time), dtype=np.int8),
@@ -105,7 +106,8 @@ class SchedulingEnv(gym.Env):
             #"schedule_buffer": spaces.Box(low=-1, high=15, shape=(self.len_jobs, 2), dtype=np.int64),
             "schedule_buffer_job_repeat": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int64),
             "schedule_buffer_operation_index": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int64),
-            "estimated_tardiness": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.float64),
+            "mean_estimated_tardiness_per_job": spaces.Box(low=-50, high=50, shape=(self.len_jobs, ), dtype=np.float64),
+            "std_estimated_tardiness_per_job": spaces.Box(low=-50, high=50, shape=(self.len_jobs, ), dtype=np.float64),
         })
 
     def reset(self, seed=None, options=None):
