@@ -66,7 +66,7 @@ class SchedulingEnv(gym.Env):
 
         return jobs
 
-    def __init__(self, machine_config_path, job_config_path, job_repeats_params, render_mode="seaborn", cost_deadline_per_time = 5, cost_hole_per_time = 1, cost_processing_per_time = 2, cost_makespan_per_time = 10, target_time = None, test_mode=False, max_time = 150):
+    def __init__(self, machine_config_path, job_config_path, job_repeats_params, render_mode="seaborn", cost_deadline_per_time = 5, cost_hole_per_time = 1, cost_processing_per_time = 2, cost_makespan_per_time = 10, profit_per_time = 10, target_time = None, test_mode=False, max_time = 150):
         super(SchedulingEnv, self).__init__()
         # self.weight_final_time = weight_final_time
         # self.weight_job_deadline = weight_job_deadline
@@ -75,6 +75,7 @@ class SchedulingEnv(gym.Env):
         self.cost_hole_per_time = cost_hole_per_time
         self.cost_processing_per_time = cost_processing_per_time
         self.cost_makespan_per_time = cost_makespan_per_time
+        self.profit_per_time = profit_per_time
         self.target_time = target_time
         self.total_durations = 0
         self.job_repeats_params = job_repeats_params  # 각 Job의 반복 횟수에 대한 평균과 표준편차
@@ -178,7 +179,7 @@ class SchedulingEnv(gym.Env):
         return info
 
     def _calculate_final_reward(self):
-        return self.custom_scheduler.calculate_final_reward(total_durations=self.total_durations, cost_deadline_per_time = self.cost_deadline_per_time, cost_hole_per_time = self.cost_hole_per_time, cost_processing_per_time = self.cost_processing_per_time, cost_makespan_per_time = self.cost_makespan_per_time, target_time=self.target_time)
+        return self.custom_scheduler.calculate_final_reward(total_durations=self.total_durations, cost_deadline_per_time = self.cost_deadline_per_time, cost_hole_per_time = self.cost_hole_per_time, cost_processing_per_time = self.cost_processing_per_time, cost_makespan_per_time = self.cost_makespan_per_time, profit_per_time = self.profit_per_time, target_time=self.target_time)
 
     def _calculate_step_reward(self):
         return self.custom_scheduler.calculate_step_reward()

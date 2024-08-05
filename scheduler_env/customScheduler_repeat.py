@@ -636,8 +636,8 @@ class customRepeatableScheduler():
         # Schedule Buffer에 올라온 Job 들의 Estimated Tardiness 평균에 -1을 곱한 것을 반환
         return -np.mean([job_list[0].estimated_tardiness for job_list in self.jobs])
 
-    def calculate_final_reward(self, total_durations, cost_deadline_per_time, cost_hole_per_time, cost_processing_per_time, cost_makespan_per_time, target_time = 1000):
-        profit = (total_durations / 100) * 10
+    def calculate_final_reward(self, total_durations, cost_deadline_per_time, cost_hole_per_time, cost_processing_per_time, cost_makespan_per_time, profit_per_time, target_time = 1000):
+        profit = (total_durations / 100) * profit_per_time
         cost = self.cal_final_cost(cost_deadline_per_time, cost_hole_per_time, cost_processing_per_time, cost_makespan_per_time)
         return ((profit - cost) / profit) * 100
         
