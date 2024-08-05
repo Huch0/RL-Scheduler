@@ -7,7 +7,18 @@ import time
 import copy
 
 
-def solve_with_ortools(env, objective='makespan', SCALE=10000, time_limit=60.0, n_workers=8, copy_env=True, verbose=False):  # Scaling factor for float approximation
+def solve_with_ortools(env,
+                       objective='makespan',
+                       cost_weights={
+                           'tard': 5,
+                           'idle_time': 1,
+                           'makespan': 1
+                       },
+                       SCALE=10000, time_limit=60.0,
+                       n_workers=8,
+                       copy_env=True,
+                       verbose=False
+                       ):  # Scaling factor for float approximation
     if verbose:
         print(f'Objective: {objective}')
     model = cp_model.CpModel()
@@ -31,6 +42,17 @@ def solve_with_ortools(env, objective='makespan', SCALE=10000, time_limit=60.0, 
     # for MSE objective
     job_earliness = {}
     job_scaled_earliness = {}
+    # for cost objective
+    tardiness = {}
+    idle_time = {}
+    machine_starts = {}
+    machine_ends = {}
+    total_operation_time = model.NewIntVar(0, max_time, 'total_operation_time')
+    model.Add(total_operation_time == max_time)
+
+    for m in range(len(machines)):
+        machine_starts[m] = model.NewIntVar(0, max_time, f'machine_{m}_start')
+        machine_ends[m] = model.NewIntVar(0, max_time, f'machine_{m}_end')
 
     n_operations = 0
     for job_list in jobs:
@@ -83,14 +105,23 @@ def solve_with_ortools(env, objective='makespan', SCALE=10000, time_limit=60.0, 
                     model.Add(task_machines[(job.name, job.index, op.index)] == m).OnlyEnforceIf(is_present)
                     model.Add(task_machines[(job.name, job.index, op.index)] != m).OnlyEnforceIf(is_present.Not())
 
+                    # Update machine start and end times only if the operation is on this machine
+                    start_time = task_starts[(job.name, job.index, op.index)]
+                    end_time = task_ends[(job.name, job.index, op.index)]
+                    model.Add(machine_starts[m] <= start_time).OnlyEnforceIf(is_present)
+                    model.Add(machine_ends[m] >= end_time).OnlyEnforceIf(is_present)
             # MSE calculations
             job_earliness[(job.name, job.index)] = model.NewIntVar(-max_time * SCALE,
                                                                    max_time * SCALE, f'earliness_{job.name}-{job.index}')
 
-            # Calculate earliness (can be negative)
             last_op = job.operation_queue[-1]
+
+            job_completion_time = model.NewIntVar(0, max_time, f'job_{job.name}_{job.index}_completion_time')
+            model.Add(job_completion_time == task_ends[(job.name, job.index, last_op.index)])
+
+            # Calculate earliness (can be negative)
             model.Add(job_earliness[(job.name, job.index)] ==
-                      job.deadline - task_ends[(job.name, job.index, last_op.index)])
+                      job.deadline - job_completion_time)
 
             # For now, we'll set scaled_earliness equal to earliness (no scaling yet)
             job_scaled_earliness[(job.name, job.index)] = model.NewIntVar(-max_time * SCALE,
@@ -104,6 +135,12 @@ def solve_with_ortools(env, objective='makespan', SCALE=10000, time_limit=60.0, 
                 job_earliness[(job.name, job.index)],
                 scale_factor
             )
+
+            # Calculate tardiness as the maximum lateness of any operation in the job
+            tardiness[(job.name, job.index)] = model.NewIntVar(0, max_time, f'tardiness_{job.name}-{job.index}')
+            model.Add(tardiness[(job.name, job.index)] >= job_completion_time - job.deadline)
+            model.Add(tardiness[(job.name, job.index)] >= 0)
+
     # No overlap constraint
     for machine in machine_to_intervals:
         model.AddNoOverlap(machine_to_intervals[machine])
@@ -111,7 +148,7 @@ def solve_with_ortools(env, objective='makespan', SCALE=10000, time_limit=60.0, 
     # Objective: Minimize makespan
     makespan = model.NewIntVar(0, max_time, 'makespan')
     model.AddMaxEquality(makespan, [task_ends[(job.name, job.index, op.index)]
-                         for job_list in jobs for job in job_list for op in job.operation_queue])
+                                    for job_list in jobs for job in job_list for op in job.operation_queue])
 
     # Objective : Deadline Compliance
     deadline_compliance = model.NewIntVar(0, sum(len(job_list) for job_list in jobs), 'deadline_compliance')
@@ -147,6 +184,25 @@ def solve_with_ortools(env, objective='makespan', SCALE=10000, time_limit=60.0, 
     mse = model.NewIntVar(-max_time * SCALE, max_time * SCALE, 'mse')
     model.AddDivisionEquality(mse, total_scaled_earliness, len(jobs))
 
+    # Objective: Cost
+    # Calculate tardiness
+    total_tardiness = model.NewIntVar(0, max_time * len(jobs), 'total_tardiness')
+    model.Add(total_tardiness == sum(tardiness.values()))
+
+    # Calculate total idle time
+    total_machine_time = model.NewIntVar(0, max_time * len(machines), 'total_machine_time')
+    machine_times = []
+
+    for m in range(len(machines)):
+        machine_time = model.NewIntVar(0, max_time, f'machine_{m}_time')
+        model.Add(machine_time == machine_ends[m] - machine_starts[m])
+        machine_times.append(machine_time)
+
+    model.Add(total_machine_time == sum(machine_times))
+
+    total_idle_time = model.NewIntVar(0, max_time * len(machines), 'total_idle_time')
+    model.Add(total_idle_time == total_machine_time - total_operation_time)
+
     # Set objective
     if objective == 'makespan':
         model.Minimize(makespan)
@@ -154,6 +210,10 @@ def solve_with_ortools(env, objective='makespan', SCALE=10000, time_limit=60.0, 
         model.Maximize(deadline_compliance)
     elif objective == 'MSE':
         model.Maximize(mse)
+    elif objective == 'cost':
+        model.Minimize(cost_weights['tard'] * total_tardiness
+                       + cost_weights['idle_time'] * total_idle_time
+                       + cost_weights['makespan'] * makespan)
     else:
         raise ValueError(f"Objective {objective} not supported")
 
@@ -173,6 +233,13 @@ def solve_with_ortools(env, objective='makespan', SCALE=10000, time_limit=60.0, 
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
         if verbose:
             print(f'Time elapsed: {elapsed_time} | Status: {solver.StatusName(status)}')
+            
+        for m in range(len(machines)):
+            print(f'Machine {m} start: {solver.Value(machine_starts[m])}, end: {solver.Value(machine_ends[m])}')
+            
+        print(f'Total operation time: {solver.Value(total_operation_time)}')
+        print(f'Total machine time: {solver.Value(total_machine_time)}')
+        print(f'Total idle time: {solver.Value(total_idle_time)}')
         # Extract solution
         solution = []
         i = 0
@@ -198,11 +265,17 @@ def solve_with_ortools(env, objective='makespan', SCALE=10000, time_limit=60.0, 
                         env.custom_scheduler.last_finish_time, solver.Value(task_ends[(job.name, job.index, op.index)]))
 
                     env.custom_scheduler.current_schedule.append(op)
-        # print(solution)
+        tard_cost = solver.Value(total_tardiness) * cost_weights['tard']
+        idle_time_cost = solver.Value(total_idle_time) * cost_weights['idle_time']
+        makespan_cost = solver.Value(makespan) * cost_weights['makespan']
         objs = {
             'makespan': solver.Value(makespan),
             'deadline_compliance': solver.Value(deadline_compliance),
-            'MSE': solver.Value(mse) / SCALE
+            'MSE': solver.Value(mse) / SCALE,
+            'tard_cost': tard_cost,
+            'idle_time_cost': idle_time_cost,
+            'makespan_cost': makespan_cost,
+            'total_cost': tard_cost + idle_time_cost + makespan_cost
         }
         return solution, objs, solver.StatusName(status), elapsed_time
     else:
@@ -212,35 +285,24 @@ def solve_with_ortools(env, objective='makespan', SCALE=10000, time_limit=60.0, 
 if __name__ == '__main__':
     # Create environment
     env = SchedulingEnv(machine_config_path="instances/Machines/v0-8.json", job_config_path="instances/Jobs/v0-12-repeat.json",
-                        job_repeats_params=[(3, 1)] * 12, weight_final_time=0, weight_job_deadline=0.01, weight_op_rate=0, test_mode=False)
+                        job_repeats_params=[(3, 1)] * 12, weight_final_time=0, weight_job_deadline=0.01, weight_op_rate=0, test_mode=True)
     env.reset()
     copy_env = False
-    solution, objs, _, _ = solve_with_ortools(env, objective='deadline', copy_env=copy_env, time_limit=10.0)
+    solution, objs, status, elapsed_time = solve_with_ortools(
+        env, objective='cost', copy_env=copy_env, time_limit=60.0)
+    print(f"Status: {status}, Elapsed time: {elapsed_time}")
     if solution:
-        print(f"makespan: {objs['makespan']}, deadline compliance: {objs['deadline_compliance']}, MSE: {objs['MSE']}")
+        print(f"Objective values: {objs}")
         if not copy_env:
             info = env._get_info()
             n_jobs = 0
             earliness = [job.deadline -
                          job.operation_queue[-1].finish for job_list in env.custom_scheduler.jobs for job in job_list]
-            scaled_earliness = []
-            for job_list in env.custom_scheduler.jobs:
-                for job in job_list:
-                    total_duration = sum([op.duration for op in job.operation_queue])
-                    deadline = job.deadline
-                    job_earliness = job.deadline - job.operation_queue[-1].finish
-                    scaling_factor = total_duration / deadline
-                    scaled_value = scaling_factor * job_earliness
-                    scaled_earliness.append(scaled_value)
-                    n_jobs += 1
-
-                    # Print detailed debug information
-                    # print(f"Job Total Duration: {total_duration}, Job Deadline: {deadline}, Job Earliness: {job_earliness}, Scaling Factor: {scaling_factor}, Scaled Earliness: {scaled_value}")
+            tardiness = [max(0, -earliness[i]) for i in range(len(earliness))]
 
             print('job_deadline', info['job_deadline'])
+            print(f'job_tardiness {tardiness} | total {sum(tardiness)}')
             print(f'job_earliness {earliness}')
-            print(f'job_scaled_earliness {scaled_earliness}')
-            print(f'MSE: {np.mean(scaled_earliness)}')
             print(f'current_repeats {info["current_repeats"]}, n_jobs {n_jobs}')
             env.render()
 
