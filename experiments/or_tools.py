@@ -12,7 +12,7 @@ def solve_with_ortools(env,
                        cost_weights={
                            'tard': 5,
                            'idle_time': 1,
-                           'makespan': 1
+                           'makespan': 10
                        },
                        SCALE=10000, time_limit=60.0,
                        n_workers=8,
@@ -283,13 +283,19 @@ def solve_with_ortools(env,
 
 
 if __name__ == '__main__':
+    cost_weights = {
+        'tard': 5,
+        'idle_time': 1,
+        'makespan': 10
+    }
     # Create environment
-    env = SchedulingEnv(machine_config_path="instances/Machines/v0-8.json", job_config_path="instances/Jobs/v0-12-repeat.json",
-                        job_repeats_params=[(3, 1)] * 12, weight_final_time=0, weight_job_deadline=0.01, weight_op_rate=0, test_mode=True)
+    env = SchedulingEnv(machine_config_path="instances/Machines/v0-8.json", job_config_path="instances/Jobs/v0-12-repeat-hard.json",
+                        job_repeats_params=[(8, 1)] * 12, test_mode=True)
     env.reset()
+    objective='cost'
     copy_env = False
     solution, objs, status, elapsed_time = solve_with_ortools(
-        env, objective='cost', copy_env=copy_env, time_limit=60.0)
+        env, objective=objective, cost_weights=cost_weights, copy_env=copy_env, time_limit=600.0)
     print(f"Status: {status}, Elapsed time: {elapsed_time}")
     if solution:
         print(f"Objective values: {objs}")
@@ -299,9 +305,28 @@ if __name__ == '__main__':
             earliness = [job.deadline -
                          job.operation_queue[-1].finish for job_list in env.custom_scheduler.jobs for job in job_list]
             tardiness = [max(0, -earliness[i]) for i in range(len(earliness))]
+            total_tardiness = sum(tardiness)
+            if objective != 'cost':
+                total_op_time = sum(op.duration for op in env.custom_scheduler.current_schedule)
+                # machine time = finish - start
+                total_machine_time = 0
+                for m in range(len(env.custom_scheduler.machines)):
+                    machine_operations = [op for op in env.custom_scheduler.current_schedule if op.machine == m]
+                    machine_start = min(op.start for op in machine_operations)
+                    machine_end = max(op.finish for op in machine_operations)
+                    total_machine_time += machine_end - machine_start
+                print('total_machine_time', total_machine_time)
+                total_idle_time = total_machine_time - total_op_time
+                print('total_idle_time', total_idle_time)
+                idle_time_cost = total_idle_time * cost_weights['idle_time']
+                print('Real cost values:')
+                tard_cost = total_tardiness * cost_weights['tard']
+                makespan_cost = objs['makespan'] * cost_weights['makespan']
+                total_cost = tard_cost + idle_time_cost + makespan_cost
+                print(f'\ttard_cost {tard_cost} | idle_time_cost {idle_time_cost} | makespan_cost {makespan_cost} | total_cost {total_cost}')
 
             print('job_deadline', info['job_deadline'])
-            print(f'job_tardiness {tardiness} | total {sum(tardiness)}')
+            print(f'job_tardiness {tardiness} | total {total_tardiness}')
             print(f'job_earliness {earliness}')
             print(f'current_repeats {info["current_repeats"]}, n_jobs {n_jobs}')
             env.render()
