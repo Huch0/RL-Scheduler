@@ -511,9 +511,12 @@ class customRepeatableScheduler():
         std_estimated_tardiness_per_job = []
         for job_list in self.jobs:
             total_duration = job_list[0].total_duration
-            estimated_tardiness = [job.estimated_tardiness / job.deadline for job in job_list]
+            estimated_tardiness = [job.estimated_tardiness / job.total_duration for job in job_list]
             mean_estimated_tardiness_per_job.append(np.mean(estimated_tardiness))
             std_estimated_tardiness_per_job.append(np.std(estimated_tardiness))
+        
+        # 스케줄 버퍼에 올라와있는 작업의 deadline 계산
+        job_deadline = [job_list[0].deadline // 100 for job_list in self.jobs]
 
         observation = {
             'action_masks': self.action_mask,
@@ -521,6 +524,7 @@ class customRepeatableScheduler():
             #'machine_operation_rate': self.machine_operation_rate,
             #'machine_types': self.machine_types,
             'last_finish_time_per_machine' : np.array([machine.cal_last_finish_time()//100 for machine in self.machines]),
+            'job_deadline': np.array(job_deadline),
             'schedule_heatmap': self.schedule_heatmap,
             'schedule_buffer_job_repeat': np.array([elem[0] for elem in self.schedule_buffer]),
             'schedule_buffer_operation_index':  np.array([elem[1] for elem in self.schedule_buffer]),
