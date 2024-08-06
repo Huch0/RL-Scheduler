@@ -66,7 +66,7 @@ class SchedulingEnv(gym.Env):
 
         return jobs
 
-    def __init__(self, machine_config_path, job_config_path, job_repeats_params, render_mode="seaborn", cost_deadline_per_time = 5, cost_hole_per_time = 1, cost_processing_per_time = 2, cost_makespan_per_time = 10, target_time = None, test_mode=False, max_time = 150):
+    def __init__(self, machine_config_path, job_config_path, job_repeats_params, render_mode="seaborn", cost_deadline_per_time = 5, cost_hole_per_time = 1, cost_processing_per_time = 2, cost_makespan_per_time = 10, profit_per_time = 10, target_time = None, test_mode=False, max_time = 150):
         super(SchedulingEnv, self).__init__()
         # self.weight_final_time = weight_final_time
         # self.weight_job_deadline = weight_job_deadline
@@ -75,6 +75,7 @@ class SchedulingEnv(gym.Env):
         self.cost_hole_per_time = cost_hole_per_time
         self.cost_processing_per_time = cost_processing_per_time
         self.cost_makespan_per_time = cost_makespan_per_time
+        self.profit_per_time = profit_per_time
         self.target_time = target_time
         self.total_durations = 0
         self.job_repeats_params = job_repeats_params  # 각 Job의 반복 횟수에 대한 평균과 표준편차
@@ -96,6 +97,7 @@ class SchedulingEnv(gym.Env):
         self.observation_space = spaces.Dict({
             "action_masks": spaces.Box(low=0, high=1, shape=(self.len_machines * self.len_jobs, ), dtype=np.int8),
             "job_details": spaces.Box(low=-1, high=25, shape=(len(self.jobs), 4, 2), dtype=np.int8),
+            'last_finish_time_per_machine': spaces.Box(low=0, high=max_time, shape=(self.len_machines, ), dtype=np.int64),
             #'machine_operation_rate': spaces.Box(low=0, high=1, shape=(self.len_machines, ), dtype=np.float32),
             #"machine_types": spaces.Box(low=0, high=1, shape=(self.len_machines, 25), dtype=np.int8),
             "schedule_heatmap": spaces.Box(low=0, high=1, shape=(self.len_machines, max_time), dtype=np.int8),
@@ -104,7 +106,8 @@ class SchedulingEnv(gym.Env):
             #"schedule_buffer": spaces.Box(low=-1, high=15, shape=(self.len_jobs, 2), dtype=np.int64),
             "schedule_buffer_job_repeat": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int64),
             "schedule_buffer_operation_index": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int64),
-            "estimated_tardiness": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.float64),
+            "mean_estimated_tardiness_per_job": spaces.Box(low=-50, high=50, shape=(self.len_jobs, ), dtype=np.float64),
+            "std_estimated_tardiness_per_job": spaces.Box(low=-50, high=50, shape=(self.len_jobs, ), dtype=np.float64),
         })
 
     def reset(self, seed=None, options=None):
@@ -178,7 +181,7 @@ class SchedulingEnv(gym.Env):
         return info
 
     def _calculate_final_reward(self):
-        return self.custom_scheduler.calculate_final_reward(total_durations=self.total_durations, cost_deadline_per_time = self.cost_deadline_per_time, cost_hole_per_time = self.cost_hole_per_time, cost_processing_per_time = self.cost_processing_per_time, cost_makespan_per_time = self.cost_makespan_per_time, target_time=self.target_time)
+        return self.custom_scheduler.calculate_final_reward(total_durations=self.total_durations, cost_deadline_per_time = self.cost_deadline_per_time, cost_hole_per_time = self.cost_hole_per_time, cost_processing_per_time = self.cost_processing_per_time, cost_makespan_per_time = self.cost_makespan_per_time, profit_per_time = self.profit_per_time, target_time=self.target_time)
 
     def _calculate_step_reward(self):
         return self.custom_scheduler.calculate_step_reward()

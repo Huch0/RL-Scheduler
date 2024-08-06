@@ -33,6 +33,12 @@ class Machine():
     def ability_encoding(self, ability):
         return [type_encoding(type) for type in ability]
 
+    def cal_last_finish_time(self):
+        if self.operation_schedule:
+            return max([op.finish for op in self.operation_schedule])
+        else:
+            return 0
+
     def can_process_operation(self, operation_type):
         return operation_type in self.ability
     
@@ -67,6 +73,7 @@ class JobInfo:
         self.name = name
         self.color = color
         self.operation_queue = [Operation(op_info, job_id= str(int(name[4:])-1), color=color, job_index = index) for op_info in operations]
+        self.total_duration = sum([op.duration for op in self.operation_queue])
 
 class Job(JobInfo):
     def __init__(self, job_info, index, deadline):
@@ -76,9 +83,15 @@ class Job(JobInfo):
         self.estimated_tardiness = 0
         self.tardiness = 0
         self.time_exceeded = 0
+        self.is_done = False
         
     def __lt__(self, other):
         # Define the comparison first by estimated_tardiness descending and then by index ascending
+        if self.is_done and not other.is_done:
+            return False
+        if not self.is_done and other.is_done:
+            return True
+        
         if self.estimated_tardiness == other.estimated_tardiness:
             return self.index < other.index
         return self.estimated_tardiness > other.estimated_tardiness
@@ -335,9 +348,10 @@ class customRepeatableScheduler():
                 remaining_operations = [op for op in job.operation_queue if op.finish is None]
                 
                 if not remaining_operations:
-                    job.estimated_tardiness = -1
                     job.tardiness = job.operation_queue[-1].finish - job.deadline
                     job.time_exceeded = max(0, job.operation_queue[-1].finish - job.deadline)
+                    job.estimated_tardiness = job.tardiness
+                    job.is_done = True
                     continue
                 
                 earliest_operation = remaining_operations[0]
@@ -355,7 +369,7 @@ class customRepeatableScheduler():
                 remaining_durations = [op.duration for op in remaining_operations[1:]]
                 operation_deadline = job.deadline - sum(remaining_durations)
                 
-                job.estimated_tardiness = (best_finish_time - operation_deadline) / operation_deadline
+                job.estimated_tardiness = (best_finish_time - operation_deadline) #/ job.total_duration
 
         # Rebuild the heap based on the updated estimated tardiness values
         for job_list in self.jobs:
@@ -382,7 +396,7 @@ class customRepeatableScheduler():
         # Clear the current schedule buffer
 
         for i in range(len(self.schedule_buffer)):
-            if all(job.estimated_tardiness == -1 for job in self.jobs[i]):
+            if all(job.is_done for job in self.jobs[i]):
                 self.schedule_buffer[i] = [-1, -1]
                 continue
             
@@ -476,16 +490,25 @@ class customRepeatableScheduler():
             return
 
     def get_observation(self):
-        
+        mean_estimated_tardiness_per_job = []
+        std_estimated_tardiness_per_job = []
+        for job_list in self.jobs:
+            total_duration = job_list[0].total_duration
+            estimated_tardiness = [job.estimated_tardiness / total_duration for job in job_list]
+            mean_estimated_tardiness_per_job.append(np.mean(estimated_tardiness))
+            std_estimated_tardiness_per_job.append(np.std(estimated_tardiness))
+
         observation = {
             'action_masks': self.action_mask,
             'job_details': self.current_job_details,
             #'machine_operation_rate': self.machine_operation_rate,
             #'machine_types': self.machine_types,
+            'last_finish_time_per_machine' : np.array([machine.cal_last_finish_time()//100 for machine in self.machines]),
             'schedule_heatmap': self.schedule_heatmap,
             'schedule_buffer_job_repeat': np.array([elem[0] for elem in self.schedule_buffer]),
             'schedule_buffer_operation_index':  np.array([elem[1] for elem in self.schedule_buffer]),
-            'estimated_tardiness': np.array([self.jobs[i][elem[0]].estimated_tardiness if elem[0] != -1 else -1 for i, elem in enumerate(self.schedule_buffer)])
+            'mean_estimated_tardiness_per_job': np.array(mean_estimated_tardiness_per_job),
+            'std_estimated_tardiness_per_job' : np.array(std_estimated_tardiness_per_job)
         }
         
         return observation
@@ -636,8 +659,8 @@ class customRepeatableScheduler():
         # Schedule Buffer에 올라온 Job 들의 Estimated Tardiness 평균에 -1을 곱한 것을 반환
         return -np.mean([job_list[0].estimated_tardiness for job_list in self.jobs])
 
-    def calculate_final_reward(self, total_durations, cost_deadline_per_time, cost_hole_per_time, cost_processing_per_time, cost_makespan_per_time, target_time = 1000):
-        profit = (total_durations / 100) * 10
+    def calculate_final_reward(self, total_durations, cost_deadline_per_time, cost_hole_per_time, cost_processing_per_time, cost_makespan_per_time, profit_per_time, target_time = 1000):
+        profit = (total_durations / 100) * profit_per_time
         cost = self.cal_final_cost(cost_deadline_per_time, cost_hole_per_time, cost_processing_per_time, cost_makespan_per_time)
         return ((profit - cost) / profit) * 100
         
