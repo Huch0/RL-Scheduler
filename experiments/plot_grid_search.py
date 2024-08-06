@@ -5,6 +5,7 @@ import numpy as np
 import os
 from PIL import Image
 
+
 def plot_results(log_path='./experiments/tmp/1'):
     log_dirs = sorted([d for d in os.listdir(log_path) if os.path.isdir(os.path.join(log_path, d))])
     metrics = [
@@ -25,7 +26,7 @@ def plot_results(log_path='./experiments/tmp/1'):
             if os.path.exists(csv_path):
                 df = pd.read_csv(csv_path)
                 df = df.replace([np.inf, -np.inf], np.nan)
-                
+
                 if metric == 'eval/mean_reward':
                     # For eval/mean_reward, use line plot with markers
                     valid_data = df[df[metric].notna()]
@@ -57,6 +58,7 @@ def plot_results(log_path='./experiments/tmp/1'):
     img = Image.open(save_path)
     img.show()
 
+
 if __name__ == '__main__':
-    log_path = './experiments/tmp/1'
+    log_path = './experiments/tmp/2'
     plot_results(log_path=log_path)

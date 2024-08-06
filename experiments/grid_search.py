@@ -10,13 +10,14 @@ from stable_baselines3.common.vec_env import VecEnv
 
 class MaskableDummyVecEnv(DummyVecEnv):
     def action_masks(self):
-        return [env.action_masks() for env in self.envs]
+        return np.array([env.get_wrapper_attr('action_masks')() for env in self.envs])
+
 
 def grid_search(params,
                 env_timesteps=1_000_000,
                 eval_freq=10_000,
                 n_eval_envs=10,
-                eval_episodes=10,
+                eval_episodes=1,
                 log_path="./experiments/tmp/1"):
 
     def make_env():
@@ -28,6 +29,7 @@ def grid_search(params,
             return Monitor(env)
         return _init
 
+    train_env = MaskableDummyVecEnv([make_env()])
     eval_envs = MaskableDummyVecEnv([make_env() for _ in range(n_eval_envs)])
 
     best_reward = float('-inf')
@@ -51,8 +53,7 @@ def grid_search(params,
                                              deterministic=True, render=False)
 
         # Create and train the model
-        env = make_env()()
-        model = MaskablePPO("MultiInputPolicy", env, **current_params, verbose=1)
+        model = MaskablePPO("MultiInputPolicy", train_env, **current_params, verbose=1)
 
         # Log and print the model parameters
         print(f"\n--- Starting Run {i+1}/{len(param_combinations)} ---")
@@ -71,63 +72,25 @@ def grid_search(params,
         model.set_logger(logger)
         model.learn(env_timesteps, callback=eval_callback)
 
-        # Evaluate the model on the fixed set of environments
-        episode_rewards = []
-        obs = eval_envs.reset()
-        for _ in range(eval_episodes):
-            done = [False for _ in range(n_eval_envs)]
-            episode_reward = [0 for _ in range(n_eval_envs)]
-            while not all(done):
-                action_masks = eval_envs.action_masks()
-                action, _ = model.predict(obs, deterministic=True, action_masks=action_masks)
-                obs, reward, done, _ = eval_envs.step(action)
-                episode_reward = [r + reward[i] for i, r in enumerate(episode_reward)]
-            episode_rewards.extend(episode_reward)
-
-        mean_reward = np.mean(episode_rewards)
-        std_reward = np.std(episode_rewards)
-
-        print(f"Mean reward: {mean_reward:.2f} +/- {std_reward:.2f}")
-        
-        # Save the results
-        results.append({
-            **current_params,
-            'mean_reward': mean_reward,
-            'std_reward': std_reward
-        })
-
-        if mean_reward > best_reward:
-            best_reward = mean_reward
-            best_params = current_params
-
         # Clean up
-        env.close()
+        train_env.close()
         del model
-        
-    # Print the best parameters and reward
-    for result in results:
-        print(result)
-
-    print("\nBest parameters:")
-    print(best_params)
-    print(f"Best mean reward: {best_reward:.2f}")
-
-    # Clean up evaluation environments
-    eval_envs.close()
 
     return best_params, best_reward
 
 
 if __name__ == "__main__":
     params = {
-        "n_steps": [1024, 2048, 4096],
-        "clip_range": [0.1],
-        "learning_rate": [0.0005]
-        # "clip_range": [0.1, 0.2, 0.3],
-        # "learning_rate": [0.0005, 0.0003, 0.0001]
+        "clip_range": [0.1, 0.2, 0.3],
+        "learning_rate": [0.0005, 0.0003, 0.0001]
     }
     log_path = "./experiments/tmp/2"
 
-    best_params, best_reward = grid_search(params, log_path=log_path)
+    best_params, best_reward = grid_search(params,
+                                        #    env_timesteps=100,
+                                        #    eval_freq=100,
+                                        #    n_eval_envs=10,
+                                        #    eval_episodes=1,
+                                           log_path=log_path)
     print(f"Best parameters: {best_params}")
     print(f"Best mean reward: {best_reward:.2f}")
