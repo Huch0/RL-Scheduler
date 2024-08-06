@@ -1,0 +1,68 @@
+{
+  "machines": [
+    {
+      "name": "machine 1",
+      "type": "A, B"
+    },
+    {
+      "name": "machine 2",
+      "type": "B, D"
+    },
+    {
+      "name": "machine 3",
+      "type": "A, C, D"
+    },
+    {
+      "name": "machine 4",
+      "type": "A, C"
+    },
+    {
+      "name": "machine 5",
+      "type": "B, C, D"
+    },
+    {
+      "name": "machine 6",
+      "type": "A, B, C"
+    },
+    {
+      "name": "machine 7",
+      "type": "C, D, A"
+    },
+    {
+      "name": "machine 8",
+      "type": "D, B"
+    },
+    {
+      "name": "machine 9",
+      "type": "A, D"
+    },
+    {
+      "name": "machine 10",
+      "type": "B, C, A"
+    },
+    {
+      "name": "machine 11",
+      "type": "D, C"
+    },
+    {
+      "name": "machine 12",
+      "type": "A, B, D"
+    },
+    {
+      "name": "machine 13",
+      "type": "C, D, B"
+    },
+    {
+      "name": "machine 14",
+      "type": "A, C, B"
+    },
+    {
+      "name": "machine 15",
+      "type": "B, D, A"
+    },
+    {
+      "name": "machine 16",
+      "type": "C, A, D"
+    }
+  ]
+}

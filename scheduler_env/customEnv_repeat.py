@@ -4,6 +4,8 @@ import numpy as np
 import json
 from stable_baselines3.common.env_checker import check_env
 from scheduler_env.customScheduler_repeat import customRepeatableScheduler
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches  # 필요한 모듈을 가져옵니다.
 
 class SchedulingEnv(gym.Env):
     def _load_machines(self, file_path):
@@ -128,8 +130,8 @@ class SchedulingEnv(gym.Env):
         reward = 0.0
 
         if self._is_legal(action):
-            self._update_state(action)
-            reward += self._calculate_step_reward()
+            reward += self._calculate_step_reward(action)
+            #self._update_state(action)
         else:  # Illegal action
             reward = -0.5
 
@@ -139,6 +141,7 @@ class SchedulingEnv(gym.Env):
             self.best_makespan = min(self.best_makespan, final_makespan)  # Update the best makespan
             reward = self._calculate_final_reward()
             self.custom_scheduler.cal_final_cost()
+            # self.custom_scheduler.print_jobs()
 
         truncated = bool(self.num_steps == 10000)
         if truncated:
@@ -183,8 +186,8 @@ class SchedulingEnv(gym.Env):
     def _calculate_final_reward(self):
         return self.custom_scheduler.calculate_final_reward(total_durations=self.total_durations, cost_deadline_per_time = self.cost_deadline_per_time, cost_hole_per_time = self.cost_hole_per_time, cost_processing_per_time = self.cost_processing_per_time, cost_makespan_per_time = self.cost_makespan_per_time, profit_per_time = self.profit_per_time, target_time=self.target_time)
 
-    def _calculate_step_reward(self):
-        return self.custom_scheduler.calculate_step_reward()
+    def _calculate_step_reward(self, action):
+        return self.custom_scheduler.calculate_step_reward(action)
 
     def _initialize_scheduler(self):
         if self.test_mode:
@@ -245,7 +248,7 @@ class SchedulingEnv(gym.Env):
         cost_processing = info["cost_processing"]
         cost_makespan = info["cost_makespan"]
         sum_costs = cost_deadline + cost_hole + cost_processing + cost_makespan
-        profit = env.total_durations / 100 * 10
+        profit = env.total_durations / 100 * info["profit_ratio"]
         print(f"Total revenue\t\t\t:\t{profit:.2f} - {sum_costs:.2f} = {profit - sum_costs:.2f}")
         print(f"Sum of Costs\t\t\t:\t{cost_deadline + cost_hole + cost_processing + cost_makespan:.2f}")
         print(f"Cost Deadline\t\t\t:\t{cost_deadline:.2f}")
@@ -258,50 +261,50 @@ class SchedulingEnv(gym.Env):
         print(f"Finish Time / Target Time\t:\t{info['finish_time']} / {int(env.target_time)}")
 
         # jobs 생성
-        jobs = []
+        jobs = info["jobs"]
         job_deadlines = info['job_deadline']
         job_tardiness = info['job_time_exceeded']
         index = 0
 
-        if detail_mode:
-            for repeat in current_repeats:
-                for r in range(repeat):
-                    deadline = job_deadlines[index+r]
-                    tardiness = job_tardiness[index+r]
-                    print(f"Job {index + 1} - Repeat {r + 1}\t\t:\tTardiness/Deadline = {tardiness}/{deadline}")
-                index += 1
-            
-        for job_id, repeat in enumerate(current_repeats, 1):
-            job_info = {
-                'job_id': job_id,
-                'tardiness': job_tardiness[index:index+repeat],
-                'deadline': job_deadlines[index:index+repeat]
-            }
-            jobs.append(job_info)
-            index += repeat
+        for job_id in range(len(jobs)):
+            jobs[job_id].sort(key = lambda x : x.index)
 
-        
+        if detail_mode:
+            for job_list in jobs:
+                for job in job_list:
+                    print(str(job))
+
+            # print("--------------------------------")
+            # print(job_deadlines)
+            # print("--------------------------------")
+            # print(job_tardiness)
+            # for repeat in current_repeats:
+            #     for r in range(repeat):
+            #         deadline = job_deadlines[index+r]
+            #         tardiness = job_tardiness[index+r]
+            #         print(f"Job {index + 1} - Repeat {r + 1}\t\t:\tTardiness/Deadline = {tardiness}/{deadline}")
+            #     index += 1
+
+
         # Calculate Tardiness/Deadline ratios and assign colors
         colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
                 '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
                 '#aec7e8', '#ffbb78']  # Color palette for jobs
         
         ratios = []
-        tardinesses = []
+        tardinesses = [job.tardiness for job_list in jobs for job in job_list]
         x_labels = []
         bar_colors = []
         x_positions = []
         
         current_x = 0
-        for job in jobs:
-            # ratio = [t/d if d != 0 else 0 for t, d in zip(job['tardiness'], job['deadline'])]
-            # ratios.extend(ratio)
-            tardiness = [t for t in job['tardiness']]
-            tardinesses.extend(tardiness)
-            x_labels.extend([f'Job {job["job_id"]} - Repeat {i+1}' for i in range(len(tardiness))])
-            bar_colors.extend([colors[job['job_id'] - 1]] * len(tardiness))
-            x_positions.extend([current_x + i for i in range(len(tardiness))])
-            current_x += len(tardiness) + 1  # Add space between different jobs
+        
+        for job_id in range(len(current_repeats)):
+            repeat = current_repeats[job_id]
+            x_labels.extend([f'Job {job_id} - Repeat {i+1}' for i in range(repeat)])
+            bar_colors.extend([colors[job_id - 1]] * repeat)
+            x_positions.extend([current_x + i for i in range(repeat)])
+            current_x += repeat + 1  # Add space between different jobs
 
         # Calculate and print the average Tardiness/Deadline ratio
         avg_tardiness = np.mean(tardinesses)
@@ -320,7 +323,7 @@ class SchedulingEnv(gym.Env):
         ax.set_title('Tardiness per Job repeat')
         
         # Legend
-        unique_jobs = list(set([f'Job {job["job_id"]}' for job in jobs]))
+        unique_jobs = list(set([f'{job.name}' for job_list in jobs for job in job_list]))
         legend_patches = [mpatches.Patch(color=colors[i], label=unique_jobs[i]) for i in range(len(unique_jobs))]
         legend_patches.sort(key=lambda x: int(x.get_label().split()[1]))
         ax.legend(handles=legend_patches, bbox_to_anchor=(1.05, 1), loc='upper left')
@@ -328,21 +331,25 @@ class SchedulingEnv(gym.Env):
         plt.tight_layout()
         plt.show()
 
-
 if __name__ == "__main__":
-    env_8_12_1_t = SchedulingEnv(machine_config_path= "instances/Machines/v0-8.json", job_config_path = "instances/Jobs/v0-12-repeat.json", job_repeats_params = [(1, 1)] * 12, test_mode = True)
-    env = env_8_12_1_t
+    env_5_8_8_2 = SchedulingEnv(machine_config_path= "instances/Machines/v0-5.json", job_config_path = "instances/Jobs/v0-8x12-deadline.json", job_repeats_params = [(8, 2)] * 8)
+    env = env_5_8_8_2
     check_env(env)
 
     step = 0
-    obs, _ = env.reset()
+    obs, info = env.reset()
+    print(info["current_repeats"])
 
     while True:
         step += 1
-        action = env.action_space.sample()
+        action = env.action_space.sample()    
         obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
+        info["reward"] = reward
+        info["env"] = env
+        info["profit_ratio"] = env.profit_per_time
+        
         if done:
-            print("Goal reached!", "reward=", reward)
+            env.print_result(info, detail_mode = True)
             env.render()
             break
