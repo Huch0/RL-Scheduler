@@ -38,6 +38,17 @@ class Machine():
             return max([op.finish for op in self.operation_schedule])
         else:
             return 0
+        
+    def cal_idle_time(self):
+        # 선택된 machine에 idle time이 있는지 확인
+        if not self.operation_schedule:
+            return 0
+        self.operation_schedule.sort(key=lambda x: x.start)
+        first_start = self.operation_schedule[0].start
+        last_finish = self.operation_schedule[-1].finish
+        total_duration = sum(op.duration for op in self.operation_schedule)
+        hole_time = last_finish - first_start - total_duration
+        return hole_time > 0
 
     def can_process_operation(self, operation_type):
         return operation_type in self.ability
@@ -97,8 +108,8 @@ class Job(JobInfo):
         return self.estimated_tardiness > other.estimated_tardiness
     
     def __str__(self) -> str:
-        pass
-
+        return f"{self.name} - Repeat {self.index + 1}\t\t:\tTardiness/Deadline = {self.tardiness}/{self.deadline}"
+    
 class Operation():
     def __init__(self, operation_info, job_id, color, job_index = None):
         self.sequence = None  # 초기화 시점에는 설정되지 않음
@@ -248,6 +259,12 @@ class customRepeatableScheduler():
 
         return self.get_observation(), self.get_info() 
     
+    # def print_jobs(self):
+    #     for job in self.jobs:
+    #         print(type(job))
+    #         print(str(job))
+
+
     def action_masks(self):
         return self.action_mask
 
@@ -362,14 +379,14 @@ class customRepeatableScheduler():
                 best_finish_times = [time for time in best_finish_times if time != -1]
 
                 if best_finish_times:
-                    best_finish_time = min(best_finish_times)
+                    approx_best_finish_time = int(np.mean(best_finish_times))
                 else:
-                    best_finish_time = 0
+                    approx_best_finish_time = 0
 
                 remaining_durations = [op.duration for op in remaining_operations[1:]]
                 operation_deadline = job.deadline - sum(remaining_durations)
                 
-                job.estimated_tardiness = (best_finish_time - operation_deadline) #/ job.total_duration
+                job.estimated_tardiness = (approx_best_finish_time - operation_deadline) #/ job.total_duration
 
         # Rebuild the heap based on the updated estimated tardiness values
         for job_list in self.jobs:
@@ -494,7 +511,7 @@ class customRepeatableScheduler():
         std_estimated_tardiness_per_job = []
         for job_list in self.jobs:
             total_duration = job_list[0].total_duration
-            estimated_tardiness = [job.estimated_tardiness / total_duration for job in job_list]
+            estimated_tardiness = [job.estimated_tardiness / job.deadline for job in job_list]
             mean_estimated_tardiness_per_job.append(np.mean(estimated_tardiness))
             std_estimated_tardiness_per_job.append(np.std(estimated_tardiness))
 
@@ -515,6 +532,7 @@ class customRepeatableScheduler():
 
     def get_info(self):
         return {
+            'jobs' : self.jobs,
             'finish_time': self.last_finish_time,
             'legal_actions': self.legal_actions,
             'action_mask': self.action_mask,
@@ -650,12 +668,30 @@ class customRepeatableScheduler():
     def _get_final_operation_finish(self):
         return max(self.current_schedule, key=lambda x: x.finish).finish
 
-    def calculate_step_reward(self):
+    def calculate_step_reward(self, action):
+        selected_machine = self.machines[action[0]]
+        selected_job = self.jobs[action[1]][0]
+
+        reward = 0
+
+        self.update_state(action)
+        # 선택된 job이 방금 끝난 경우
+        if selected_job.is_done:
+            profit = (selected_job.total_duration) * 10
+            cost = selected_job.time_exceeded * 5
+            reward += (profit - cost) / profit
+
+        # 선택된 machine이 hole이 있는 경우
+        idle_time = selected_machine.cal_idle_time()
+        reward -= idle_time // 100
+  
+        return reward
+    
+
         # self.machine_term = 0.0
         # if np.any(self.machine_operation_rate):
         #     self.machine_term = np.mean(self.machine_operation_rate)
-        # return self.machine_term        
-        return 0.0
+        # return self.machine_term      
         # Schedule Buffer에 올라온 Job 들의 Estimated Tardiness 평균에 -1을 곱한 것을 반환
         return -np.mean([job_list[0].estimated_tardiness for job_list in self.jobs])
 
