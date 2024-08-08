@@ -546,7 +546,8 @@ class customRepeatableScheduler():
             'mean_estimated_tardiness_per_job': np.array(mean_estimated_tardiness_per_job),
             'std_estimated_tardiness_per_job' : np.array(std_estimated_tardiness_per_job),
             # cost 관련 지표
-            'cost_per_time': np.array([self.cost_deadline, self.cost_hole, self.cost_processing, self.cost_makespan])
+            'cost_factor_per_time': np.array([self.cost_deadline_per_time, self.cost_hole_per_time, self.cost_processing_per_time, self.cost_makespan_per_time]),
+            'current_costs' : np.array([self.cost_deadline, self.cost_hole, self.cost_processing, self.cost_makespan])
         }
         
         return observation
@@ -676,7 +677,7 @@ class customRepeatableScheduler():
     def cal_job_deadline_cost(self):
         sum_of_time_exceed = 0
         for job_list in self.jobs:
-            sum_of_time_exceed = sum([job.time_exceeded for job in job_list])
+            sum_of_time_exceed += sum([job.time_exceeded for job in job_list])
         self.cost_deadline = sum_of_time_exceed / 100 * self.cost_deadline_per_time
 
         return self.cost_deadline

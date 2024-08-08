@@ -117,7 +117,8 @@ class SchedulingEnv(gym.Env):
             "mean_estimated_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
             "std_estimated_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
             # cost 관련 지표
-            "cost_per_time": spaces.Box(low=-100, high=100, shape=(4, ), dtype=np.float64),
+            "cost_factor_per_time": spaces.Box(low=-100, high=100, shape=(4, ), dtype=np.float64),
+            "current_costs": spaces.Box(low=0, high=50000, shape=(4, ), dtype=np.float64),
         })
 
     def reset(self, seed=None, options=None):
