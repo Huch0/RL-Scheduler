@@ -99,25 +99,31 @@ class SchedulingEnv(gym.Env):
         self.observation_space = spaces.Dict({
             # Vaild 행동, Invalid 행동 관련 지표
             "action_masks": spaces.Box(low=0, high=1, shape=(self.len_machines * self.len_jobs, ), dtype=np.int8),
-            "job_details": spaces.Box(low=-1, high=25, shape=(len(self.jobs), 4, 2), dtype=np.int8),
             # Instance 특징에 대한 지표
             "current_repeats": spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
             'total_durations_per_job' : spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
+            'num_operations_per_job': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
+            'mean_operation_duration_per_job': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.float64),
+            'std_operation_duration_per_job': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.float64),
             # 현 scheduling 상황 관련 지표
             'last_finish_time_per_machine': spaces.Box(low=0, high=max_time, shape=(self.len_machines, ), dtype=np.int64),
             "schedule_heatmap": spaces.Box(low=0, high=1, shape=(self.len_machines, max_time), dtype=np.int8),
             "mean_real_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
             "std_real_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
+            'remaining_repeats': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
             # schedule_buffer 관련 지표
             "schedule_buffer_job_repeat": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int64),
             "schedule_buffer_operation_index": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int64),
             "earliest_start_per_operation": spaces.Box(low=-1, high=max_time, shape=(self.len_jobs, ), dtype=np.int64),
             'job_deadline': spaces.Box(low=-1, high=max_time, shape=(self.len_jobs, ), dtype=np.int64),
+            'op_duration': spaces.Box(low=-1, high=20, shape=(self.len_jobs, ), dtype=np.int64),
+            'op_type': spaces.Box(low=-1, high=25, shape=(self.len_jobs, ), dtype=np.int64),
             # 추정 tardiness 관련 지표
             "mean_estimated_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
             "std_estimated_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
             # cost 관련 지표
-            "cost_per_time": spaces.Box(low=-100, high=100, shape=(4, ), dtype=np.float64),
+            "cost_factor_per_time": spaces.Box(low=-100, high=100, shape=(4, ), dtype=np.float64),
+            "current_costs": spaces.Box(low=0, high=50000, shape=(4, ), dtype=np.float64),
         })
 
     def reset(self, seed=None, options=None):
@@ -138,8 +144,8 @@ class SchedulingEnv(gym.Env):
         reward = 0.0
 
         if self._is_legal(action):
-            reward += self._calculate_step_reward(action)
-            #self._update_state(action)
+            #reward += self._calculate_step_reward(action)
+            self._update_state(action)
         else:  # Illegal action
             reward = -0.5
 
@@ -148,8 +154,6 @@ class SchedulingEnv(gym.Env):
             final_makespan = self.custom_scheduler._get_final_operation_finish()
             self.best_makespan = min(self.best_makespan, final_makespan)  # Update the best makespan
             reward = self._calculate_final_reward()
-            self.custom_scheduler.cal_final_cost()
-            # self.custom_scheduler.print_jobs()
 
         truncated = bool(self.num_steps == 10000)
         if truncated:

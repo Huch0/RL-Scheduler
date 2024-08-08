@@ -181,15 +181,14 @@ class customRepeatableScheduler():
         self.schedule_buffer = [[-1, -1] for _ in range(len_jobs)]
         
         # 4 : 각 리소스별 operation 수 최댓값
-        self.original_job_details = np.ones(
-            (len_jobs, 4, 2), dtype=np.int8) * -1
-        for j in range(len_jobs):
-            for o in range(len(self.job_infos[j].operation_queue)):
-                self.original_job_details[j][o][0] = int(
-                    self.job_infos[j].operation_queue[o].duration // 100)
-                self.original_job_details[j][o][1] = int(
-                    self.job_infos[j].operation_queue[o].type)
-        self.current_job_details = copy.deepcopy(self.original_job_details)
+        # self.original_job_details = np.ones(
+        #     (len_jobs, 4, 2), dtype=np.int8) * -1
+        # for j in range(len_jobs):
+        #     for o in range(len(self.job_infos[j].operation_queue)):
+        #         self.original_job_details[j][o][0] = int(
+        #             self.job_infos[j].operation_queue[o].duration // 100)
+        #         self.original_job_details[j][o][1] = int(
+        #             self.job_infos[j].operation_queue[o].type)
 
         self.job_state = None
         self.machine_types = None
@@ -227,7 +226,7 @@ class customRepeatableScheduler():
         self.jobs = copy.deepcopy(self.original_jobs)
         self.machines = copy.deepcopy(self.original_machines)
         self.operations = copy.deepcopy(self.original_operations)
-        self.current_job_details = copy.deepcopy(self.original_job_details)
+        # self.current_job_details = copy.deepcopy(self.original_job_details)
 
         self.schedule_buffer = [[-1, -1] for _ in range(len(self.jobs))]
 
@@ -378,6 +377,8 @@ class customRepeatableScheduler():
 
 
     def _schedule_to_array(self, operation_schedule, max_time = 150):
+        operation_schedule.sort(key = lambda x: x.start)
+        finished_time = operation_schedule[-1].finish // 100
         def is_in_idle_time(time):
             for operation in operation_schedule:
                 # 머신이 일하고 있는 시간에는 True 반환
@@ -386,10 +387,10 @@ class customRepeatableScheduler():
             # 머신이 일하고 있는 시간에는 True 반환
             return False
 
-        result = []
-
-        for i in range(max_time):
-            result.append(is_in_idle_time(i*100))
+        result = [-1 for _ in range(max_time)]
+        
+        for i in range(min(finished_time, max_time)):
+            result[i] = is_in_idle_time(i*100)
 
         return result
 
@@ -491,6 +492,7 @@ class customRepeatableScheduler():
             return
 
     def get_observation(self):
+        remaining_repeats = []
         mean_estimated_tardiness_per_job = []
         std_estimated_tardiness_per_job = []
         real_tardiness_per_job = []
@@ -500,26 +502,38 @@ class customRepeatableScheduler():
             mean_estimated_tardiness_per_job.append(np.mean(estimated_tardiness))
             std_estimated_tardiness_per_job.append(np.std(estimated_tardiness))
             real_tardiness_per_job.append([job.tardiness // 100 for job in job_list])
+            remaining_repeats.append(sum([not job.is_done for job in job_list]))
         
         mean_tardiness_per_job = [np.mean(job_tardiness) for job_tardiness in real_tardiness_per_job]
         std_tardiness_per_job = [np.std(job_tardiness) for job_tardiness in real_tardiness_per_job]
         # 각 Job의 Total Duration 계산
         total_durations_per_job = [job_list[0].total_duration // 100 for job_list in self.jobs]
+        # 각 Job의 operation 개수 계산
+        num_operations_per_job = [len(job_list[0].operation_queue) for job_list in self.jobs]
+        # 각 Job의 operation duration 평균, 표준편차 계산
+        mean_operation_duration_per_job = [np.mean([op.duration // 100 for op in job_list[0].operation_queue]) for job_list in self.jobs]
+        std_operation_duration_per_job = [np.std([op.duration // 100 for op in job_list[0].operation_queue]) for job_list in self.jobs]
 
         # 스케줄 버퍼에 올라와있는 작업의 정보 계산
         job_deadline = []
+        op_duration = []
         schedule_buffer_job_repeat = []
         schedule_buffer_operation_index = []
         earliest_start_per_operation = []
+        op_type = []
         for i, elem in enumerate(self.schedule_buffer):
             schedule_buffer_job_repeat.append(elem[0])
             schedule_buffer_operation_index.append(elem[1])
             if elem[0] == -1:
                 earliest_start_per_operation.append(-1)
                 job_deadline.append(-1)
+                op_duration.append(-1)
+                op_type.append(-1)
             else:
                 earliest_start_per_operation.append(self.jobs[i][0].operation_queue[elem[1]].earliest_start // 100)
                 job_deadline.append(self.jobs[i][0].deadline // 100)
+                op_duration.append(self.jobs[i][0].operation_queue[elem[1]].duration // 100)
+                op_type.append(self.jobs[i][0].operation_queue[elem[1]].type)
 
         self.cal_job_deadline_cost()
         self.cal_machine_cost()
@@ -528,25 +542,31 @@ class customRepeatableScheduler():
         observation = {
             # Vaild 행동, Invalid 행동 관련 지표
             'action_masks': self.action_mask,
-            'job_details': self.current_job_details,
             # Instance 특징에 대한 지표
             'current_repeats': np.array(self.current_repeats),
             'total_durations_per_job' : np.array(total_durations_per_job),
+            'num_operations_per_job' : np.array(num_operations_per_job),
+            'mean_operation_duration_per_job' : np.array(mean_operation_duration_per_job),
+            'std_operation_duration_per_job' : np.array(std_operation_duration_per_job),
             # 현 scheduling 상황 관련 지표
             'last_finish_time_per_machine' : np.array([machine.cal_last_finish_time()//100 for machine in self.machines]),
             'schedule_heatmap': self.schedule_heatmap,
             'mean_real_tardiness_per_job': np.array(mean_tardiness_per_job),
             'std_real_tardiness_per_job': np.array(std_tardiness_per_job),
+            'remaining_repeats': np.array(remaining_repeats),
             # schedule_buffer 관련 지표
             'schedule_buffer_job_repeat': np.array(schedule_buffer_job_repeat),
             'schedule_buffer_operation_index':  np.array(schedule_buffer_operation_index),
             'earliest_start_per_operation': np.array(earliest_start_per_operation),
             'job_deadline': np.array(job_deadline),
+            'op_duration': np.array(op_duration),
+            'op_type': np.array(op_type),
             # 추정 tardiness 관련 지표
             'mean_estimated_tardiness_per_job': np.array(mean_estimated_tardiness_per_job),
             'std_estimated_tardiness_per_job' : np.array(std_estimated_tardiness_per_job),
             # cost 관련 지표
-            'cost_per_time': np.array([self.cost_deadline, self.cost_hole, self.cost_processing, self.cost_makespan])
+            'cost_factor_per_time': np.array([self.cost_deadline_per_time, self.cost_hole_per_time, self.cost_processing_per_time, self.cost_makespan_per_time]),
+            'current_costs' : np.array([self.cost_deadline, self.cost_hole, self.cost_processing, self.cost_makespan])
         }
         
         return observation
@@ -557,7 +577,6 @@ class customRepeatableScheduler():
             'finish_time': self.last_finish_time,
             'legal_actions': self.legal_actions,
             'action_mask': self.action_mask,
-            'job_details': self.current_job_details,
             'machine_score': self.machine_term,
             'machine_operation_rate': [machine.operation_rate for machine in self.machines],
             'schedule_buffer': self.schedule_buffer,
@@ -676,7 +695,7 @@ class customRepeatableScheduler():
     def cal_job_deadline_cost(self):
         sum_of_time_exceed = 0
         for job_list in self.jobs:
-            sum_of_time_exceed = sum([job.time_exceeded for job in job_list])
+            sum_of_time_exceed += sum([job.time_exceeded for job in job_list])
         self.cost_deadline = sum_of_time_exceed / 100 * self.cost_deadline_per_time
 
         return self.cost_deadline
