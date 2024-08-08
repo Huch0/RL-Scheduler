@@ -147,7 +147,7 @@ class Operation():
         return f"job : {self.job}, index : {self.index} | ({self.start}, {self.finish})"
     
 class customRepeatableScheduler():
-    def __init__(self, jobs, machines) -> None:
+    def __init__(self, jobs, machines, cost_deadline_per_time, cost_hole_per_time, cost_processing_per_time, cost_makespan_per_time, profit_per_time, current_repeats) -> None:
         self.machines = [Machine(machine_info)
                           for machine_info in machines]
         self.job_infos = [JobInfo(job_info["name"], job_info["color"], job_info["operations"]) for job_info in jobs]
@@ -168,6 +168,15 @@ class customRepeatableScheduler():
         self.original_machines = copy.deepcopy(self.machines)
         self.original_operations = copy.deepcopy(
             [operation for job in self.job_infos for operation in job.operation_queue])
+        
+
+        self.cost_deadline_per_time = cost_deadline_per_time
+        self.cost_hole_per_time = cost_hole_per_time
+        self.cost_processing_per_time = cost_processing_per_time
+        self.cost_makespan_per_time = cost_makespan_per_time
+        self.profit_per_time = profit_per_time
+
+        self.current_repeats = current_repeats
         
         self.schedule_buffer = [[-1, -1] for _ in range(len_jobs)]
         
@@ -258,12 +267,6 @@ class customRepeatableScheduler():
         self.cost_makespan = 0
 
         return self.get_observation(), self.get_info() 
-    
-    # def print_jobs(self):
-    #     for job in self.jobs:
-    #         print(type(job))
-    #         print(str(job))
-
 
     def action_masks(self):
         return self.action_mask
@@ -293,13 +296,8 @@ class customRepeatableScheduler():
 
 
     def _update_legal_actions(self, action = None):
-        # for job_index in range(len(self.jobs)):
-        #     # 1. 선택된 Job의 모든 Operation가 이미 종료된 경우
-        #     if self.schedule_buffer[job_index] == [-1, -1]:
-        #         self.legal_actions[:, job_index] = False
         if action:
             for machine_index in range(len(self.machines)):
-                # 2. 선택된 Machine가 선택된 Job의 Operation의 Type을 처리할 수 없는 경우
                 machine = self.machines[machine_index]
                 job_index = action[1]
                 if self.schedule_buffer[job_index] == [-1, -1]:
@@ -345,20 +343,6 @@ class customRepeatableScheduler():
             self.machine_operation_rate[action[0]] = machine.operation_rate
 
 
-        ####
-        # for r, machine in enumerate(self.machines):
-        #     operation_schedule = machine.operation_schedule
-        #     self.schedule_heatmap[r] = self._schedule_to_array(
-        #         operation_schedule)
-
-        #     # 선택된 리소스의 스케줄링된 Operation들
-        #     if machine.operation_schedule:
-        #         operation_time = sum(
-        #             [operation.duration for operation in machine.operation_schedule])
-
-        #         machine.operation_rate = operation_time / self._get_final_operation_finish()
-        #         self.machine_operation_rate[r] = machine.operation_rate
-
     def _update_job_state(self):
         for job_list in self.jobs:
             for job in job_list:
@@ -386,8 +370,8 @@ class customRepeatableScheduler():
                 remaining_durations = [op.duration for op in remaining_operations[1:]]
                 operation_deadline = job.deadline - sum(remaining_durations)
                 
-                job.estimated_tardiness = (approx_best_finish_time - operation_deadline) #/ job.total_duration
-
+                job.estimated_tardiness = (approx_best_finish_time - operation_deadline) 
+                
         # Rebuild the heap based on the updated estimated tardiness values
         for job_list in self.jobs:
             heapq.heapify(job_list)
@@ -509,27 +493,60 @@ class customRepeatableScheduler():
     def get_observation(self):
         mean_estimated_tardiness_per_job = []
         std_estimated_tardiness_per_job = []
+        real_tardiness_per_job = []
         for job_list in self.jobs:
-            total_duration = job_list[0].total_duration
-            estimated_tardiness = [job.estimated_tardiness / job.total_duration for job in job_list]
+            # 아래 공식 분모 제거
+            estimated_tardiness = [job.estimated_tardiness // 100 for job in job_list]
             mean_estimated_tardiness_per_job.append(np.mean(estimated_tardiness))
             std_estimated_tardiness_per_job.append(np.std(estimated_tardiness))
+            real_tardiness_per_job.append([job.tardiness // 100 for job in job_list])
         
-        # 스케줄 버퍼에 올라와있는 작업의 deadline 계산
-        job_deadline = [job_list[0].deadline // 100 for job_list in self.jobs]
+        mean_tardiness_per_job = [np.mean(job_tardiness) for job_tardiness in real_tardiness_per_job]
+        std_tardiness_per_job = [np.std(job_tardiness) for job_tardiness in real_tardiness_per_job]
+        # 각 Job의 Total Duration 계산
+        total_durations_per_job = [job_list[0].total_duration // 100 for job_list in self.jobs]
+
+        # 스케줄 버퍼에 올라와있는 작업의 정보 계산
+        job_deadline = []
+        schedule_buffer_job_repeat = []
+        schedule_buffer_operation_index = []
+        earliest_start_per_operation = []
+        for i, elem in enumerate(self.schedule_buffer):
+            schedule_buffer_job_repeat.append(elem[0])
+            schedule_buffer_operation_index.append(elem[1])
+            if elem[0] == -1:
+                earliest_start_per_operation.append(-1)
+                job_deadline.append(-1)
+            else:
+                earliest_start_per_operation.append(self.jobs[i][0].operation_queue[elem[1]].earliest_start // 100)
+                job_deadline.append(self.jobs[i][0].deadline // 100)
+
+        self.cal_job_deadline_cost()
+        self.cal_machine_cost()
+        self.cal_entire_cost()
 
         observation = {
+            # Vaild 행동, Invalid 행동 관련 지표
             'action_masks': self.action_mask,
             'job_details': self.current_job_details,
-            #'machine_operation_rate': self.machine_operation_rate,
-            #'machine_types': self.machine_types,
+            # Instance 특징에 대한 지표
+            'current_repeats': np.array(self.current_repeats),
+            'total_durations_per_job' : np.array(total_durations_per_job),
+            # 현 scheduling 상황 관련 지표
             'last_finish_time_per_machine' : np.array([machine.cal_last_finish_time()//100 for machine in self.machines]),
-            'job_deadline': np.array(job_deadline),
             'schedule_heatmap': self.schedule_heatmap,
-            'schedule_buffer_job_repeat': np.array([elem[0] for elem in self.schedule_buffer]),
-            'schedule_buffer_operation_index':  np.array([elem[1] for elem in self.schedule_buffer]),
+            'mean_real_tardiness_per_job': np.array(mean_tardiness_per_job),
+            'std_real_tardiness_per_job': np.array(std_tardiness_per_job),
+            # schedule_buffer 관련 지표
+            'schedule_buffer_job_repeat': np.array(schedule_buffer_job_repeat),
+            'schedule_buffer_operation_index':  np.array(schedule_buffer_operation_index),
+            'earliest_start_per_operation': np.array(earliest_start_per_operation),
+            'job_deadline': np.array(job_deadline),
+            # 추정 tardiness 관련 지표
             'mean_estimated_tardiness_per_job': np.array(mean_estimated_tardiness_per_job),
-            'std_estimated_tardiness_per_job' : np.array(std_estimated_tardiness_per_job)
+            'std_estimated_tardiness_per_job' : np.array(std_estimated_tardiness_per_job),
+            # cost 관련 지표
+            'cost_per_time': np.array([self.cost_deadline, self.cost_hole, self.cost_processing, self.cost_makespan])
         }
         
         return observation
@@ -554,59 +571,6 @@ class customRepeatableScheduler():
             'cost_processing': self.cost_processing,
             'cost_makespan': self.cost_makespan
         }
-    
-    # def render_simple(self, num_steps=0, save_path="simple_schedule_plot.png"):
-    #     current_schedule = [operation.to_dict() for operation in self.current_schedule]
-    #     scheduled_df = list(filter(lambda operation: operation['sequence'] is not None, current_schedule))
-    #     scheduled_df = pd.DataFrame(scheduled_df)
-
-    #     if scheduled_df.empty:
-    #         fig = Figure(figsize=(10, 5))
-    #         canvas = FigureCanvas(fig)
-    #         ax = fig.add_subplot(111)
-    #         ax.set_title("Simple Operation Schedule Visualization")
-    #         canvas.print_figure(save_path)
-    #         return
-
-    #     n_machines = len(self.machines)
-
-    #     fig = Figure(figsize=(10, 5), dpi=80)  # 해상도 낮춤
-    #     canvas = FigureCanvas(fig)
-    #     ax = fig.add_subplot(111)
-    #     ax.set_title(f'Simple Operation Schedule Visualization | steps = {num_steps}')
-    #     ax.set_yticks(range(n_machines))
-    #     ax.set_yticklabels([f'Machine {i}' for i in range(n_machines)])
-        
-    #     ax.set_xlim(0, self.last_finish_time // 100)
-    #     ax.set_ylim(-1, n_machines)
-
-    #     patches = []
-    #     for i in range(len(self.machines)):
-    #         machine_operations = scheduled_df[scheduled_df['machine'] == i]
-    #         for index, operation in machine_operations.iterrows():
-    #             start = operation["start"] // 100
-    #             finish = operation["finish"] // 100
-    #             color = mcolors.to_rgba(operation['color'])
-    #             block = mpatches.Rectangle(
-    #                 (start, i - 0.5), finish - start, 1, facecolor=color, edgecolor='black', linewidth=1)
-    #             patches.append(block)
-
-    #     for patch in patches:
-    #         ax.add_patch(patch)
-
-    #     fig.tight_layout()
-    #     canvas.print_figure(save_path)
-    #     plt.close(fig)
-    
-    # def render_image_to_array(self, num_steps = 0):
-    #     buffer = io.BytesIO()
-    #     self.render_simple(num_steps = num_steps, save_path=buffer)  # render_simple에서 save_path를 buffer로 설정
-    #     buffer.seek(0)
-    #     image = Image.open(buffer)
-    #     image = image.resize((128, 128))  # 이미지 크기 조정
-    #     image_array = np.array(image)
-    #     buffer.close()
-    #     return image_array
     
     def render(self, mode="seaborn", num_steps=0):
         current_schedule = [operation.to_dict() for operation in self.current_schedule]
@@ -670,7 +634,10 @@ class customRepeatableScheduler():
         return not np.any(self.action_mask) or all([job.operation_queue[-1].finish is not None for job_list in self.jobs for job in job_list])
     
     def _get_final_operation_finish(self):
-        return max(self.current_schedule, key=lambda x: x.finish).finish
+        if self.current_schedule:
+            return max(self.current_schedule, key=lambda x: x.finish).finish
+        else:
+            return 0
 
     def calculate_step_reward(self, action):
         selected_machine = self.machines[action[0]]
@@ -691,162 +658,75 @@ class customRepeatableScheduler():
   
         return reward
     
-
         # self.machine_term = 0.0
         # if np.any(self.machine_operation_rate):
         #     self.machine_term = np.mean(self.machine_operation_rate)
-        # return self.machine_term      
-        # Schedule Buffer에 올라온 Job 들의 Estimated Tardiness 평균에 -1을 곱한 것을 반환
-        return -np.mean([job_list[0].estimated_tardiness for job_list in self.jobs])
+        # return self.machine_term
 
-    def calculate_final_reward(self, total_durations, cost_deadline_per_time, cost_hole_per_time, cost_processing_per_time, cost_makespan_per_time, profit_per_time, target_time = 1000):
-        profit = (total_durations / 100) * profit_per_time
-        cost = self.cal_final_cost(cost_deadline_per_time, cost_hole_per_time, cost_processing_per_time, cost_makespan_per_time)
+    def calculate_final_reward(self):
+        total_up_time = 0
+        for i, repeat in enumerate(self.current_repeats):
+            total_duration_per_job = self.jobs[i][0].total_duration // 100
+            total_up_time += total_duration_per_job * repeat
+
+        profit = total_up_time * self.profit_per_time
+        cost = self.cal_final_cost()
         return ((profit - cost) / profit) * 100
+
+    def cal_job_deadline_cost(self):
+        sum_of_time_exceed = 0
+        for job_list in self.jobs:
+            sum_of_time_exceed = sum([job.time_exceeded for job in job_list])
+        self.cost_deadline = sum_of_time_exceed / 100 * self.cost_deadline_per_time
+
+        return self.cost_deadline
+    
+    def cal_machine_cost(self):
+        sum_of_hole_time = 0
+        sum_of_up_time = 0
+        for machine in self.machines:
+            up_time = 0
+            hole_time = 0
+            if not machine.operation_schedule:
+                continue
+            machine.operation_schedule.sort(key = lambda x: x.start)
+            first_start = machine.operation_schedule[0].start
+            last_finish = machine.operation_schedule[-1].finish
+
+            for op in machine.operation_schedule:
+                up_time += op.duration
+
+            hole_time = last_finish - first_start - up_time
+            sum_of_up_time += up_time
+            sum_of_hole_time += hole_time
         
-        def final_time_to_reward(target_time):
-            if target_time >= self._get_final_operation_finish():
-                return 1
-            # Final_time이 target_time에 비해 몇 퍼센트 초과되었는지를 바탕으로 100점 만점으로 환산하여 점수 계산
-            return max(0, 1 - ((self._get_final_operation_finish() - target_time) / target_time))
-        
-        #def operation_rate_to_reward(operation_rates, target_rate=1.0, penalty_factor=2.0):
-            #total_reward = 0
-            # for rate in operation_rates:
-            #     # operation rate가 목표에 가까울수록 보상을 증가시킴
-            #     reward = 2/(abs(rate - target_rate) - 2) + 2
-            #     # operation rate의 차이에 따라 패널티를 부여함
-            #     penalty = penalty_factor * abs(rate - target_rate)
-            #     # 보상에서 패널티를 빼서 최종 보상을 계산함
-            #     total_reward += reward - penalty
-        def operation_rate_to_reward():
-            return np.mean([machine.operation_rate for machine in self.machines])
-            # 각 Machine의 Hole을 점수로 만든다
-            # return sum([machine.operation_rate for machine in self.machines]) / len(self.machines)
-        
-        def job_deadline_to_reward():
-            sum_of_late_rate = 0
-            total_job_length = 0
-            for job_list in self.jobs:
-                total_job_length += len(job_list)
-                for job in job_list:
-                    sum_of_late_rate += (job.tardiness / job.deadline)
-            sum_of_late_rate /= total_job_length
-            
-            return 1 - sum_of_late_rate
-            
-        #def mixed_reward(target_time):
-            # exceed_list = []
-            # early_list = []
-            # total_job_length = 0
-            # for job_list in self.jobs:
-            #     total_job_length += len(job_list)
-            #     for job in job_list:
-            #         exceed_list.append(job.time_exceeded / job.deadline)
-            #         early_list.append(-1 * (job.tardiness / job.deadline))
+        self.cost_hole = sum_of_hole_time * self.cost_hole_per_time / 100
+        self.cost_processing = sum_of_up_time * self.cost_processing_per_time / 100
 
-            # m = np.mean(early_list)
-            # s = np.std(early_list)
+        return self.cost_hole + self.cost_processing
 
-            # sum_of_late_rate = 0
-            # for e in exceed_list:
-            #     if e > 0:
-            #         sum_of_late_rate += max(e, (e - m) / s)
+    def cal_entire_cost(self):
+            self.cost_makespan = self._get_final_operation_finish() * self.cost_makespan_per_time / 100
+            return self.cost_makespan
 
-            # sum_of_late_rate /= total_job_length
-            
-            # return (1 - sum_of_late_rate) * max(0.5, 1 - ((self._get_final_operation_finish() - target_time) / target_time))
-
-            # sum_of_early_rate = 0
-            # total_job_length = 0
-            # for job_list in self.jobs:
-            #     total_job_length += len(job_list)
-            #     for job in job_list:
-            #         sum_of_early_rate -= (job.tardiness / job.deadline)
-
-            # sum_of_early_rate /= total_job_length
-            # return max(0.25, sum_of_early_rate) * max(0.25, 1 - ((self._get_final_operation_finish() - target_time) / target_time))
-            
-
-        final_reward_by_op_rate = weight_op_rate * operation_rate_to_reward()
-        final_reward_by_final_time = weight_final_time * final_time_to_reward(target_time) 
-        final_reward_by_job_deadline = weight_job_deadline * job_deadline_to_reward()
-        #final_reward_by_mixed = 100 * mixed_reward(target_time)
-
-        return final_reward_by_op_rate + final_reward_by_final_time + final_reward_by_job_deadline #+ final_reward_by_mixed
-
-
-    def cal_final_cost(self, cost_deadline_per_time = 5, cost_hole_per_time = 1, cost_processing_per_time = 2, cost_makespan_per_time = 10):
+    def cal_final_cost(self):
         # 반도체 공장
         # 주문: 만들어야하는 chip의 종류가 1~12이고 하루에 처리해야하는 일의 양이 변동함. (정규분포 따름)
         # 기계: 1~8번까지 있고, 각 기계가 할 수 있는 일의 양이 다름
         # Cost 
-        # 
 
         # 1. Job deadline 어긴 정도 / 비율로 duration이 분모로감
         # - 총 duration 600, deadline : 900
         # - 끝난 시간 1000이면 1/6 * 단위시간 당 cost 만큼 cost 발생
         # -> obs 추가
-        def cal_job_deadline_cost():
-            job_deadline_cost = 0
-
-            #sum_of_late_rate = 0
-            sum_of_tard = 0
-            #total_job_length = 0
-            for job_list in self.jobs:
-                #total_job_length += len(job_list)
-                for job in job_list:
-                    #total_duration = sum([op.duration for op in job.operation_queue])
-                    sum_of_tard += job.time_exceeded
-                    #sum_of_late_rate += (job.time_exceeded / total_duration)
-            job_deadline_cost = sum_of_tard / 100 * cost_deadline_per_time #sum_of_late_rate * cost_deadline_per_time 
-
-            self.cost_deadline = job_deadline_cost
-
-            return job_deadline_cost
-
+        job_deadline_cost = self.cal_job_deadline_cost()
         # 2. machine Processing cost, hole cost 는 절반(hyperparams)으로
         # - 100 times 일할때마다 0.1,  
         # - 100 times 놀 때마다 0.05, 
         # 시작되는 시점부터 머신은 가동됨
-        def cal_machine_cost():
-            sum_of_hole_time = 0
-            sum_of_up_time = 0
-            for machine in self.machines:
-                up_time = 0
-                hole_time = 0
-                if not machine.operation_schedule:
-                    continue
-                machine.operation_schedule.sort(key = lambda x: x.start)
-                first_start = machine.operation_schedule[0].start
-                last_finish = machine.operation_schedule[-1].finish
-                # print(first_start)
-                # print(last_finish)
-            
-
-                for op in machine.operation_schedule:
-                    up_time += op.duration
-
-                # print(up_time)
-                hole_time = last_finish - first_start - up_time
-                # print(hole_time)
-                sum_of_up_time += up_time
-                sum_of_hole_time += hole_time
-            
-            self.cost_hole = sum_of_hole_time * cost_hole_per_time / 100
-            self.cost_processing = sum_of_up_time * cost_processing_per_time / 100
-
-            return (sum_of_hole_time * cost_hole_per_time + sum_of_up_time * cost_processing_per_time) / 100
-        
+        machine_util_cost = self.cal_machine_cost()
         # 3. Entire cost, (makespan cost)
         # - Makespan 100단위당 0.01
-        def cal_entire_cost():
-            self.cost_makespan = self._get_final_operation_finish() * cost_makespan_per_time / 100
-            return self.cost_makespan
-        
-        # 각 cost를 알아보기 좋게 출력
-        # print(f"Job Deadline Cost: {cal_job_deadline_cost()}")
-        # print(f"Machine Cost: {cal_machine_cost()}")
-        # print(f"Entire Cost: {cal_entire_cost()}")
+        entire_cost = self.cal_entire_cost()
 
-        return cal_job_deadline_cost() + cal_machine_cost() + cal_entire_cost()
+        return job_deadline_cost + machine_util_cost + entire_cost

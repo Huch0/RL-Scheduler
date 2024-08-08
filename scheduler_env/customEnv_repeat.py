@@ -97,20 +97,27 @@ class SchedulingEnv(gym.Env):
 
         self.action_space = spaces.Discrete(self.len_machines * self.len_jobs)
         self.observation_space = spaces.Dict({
+            # Vaild 행동, Invalid 행동 관련 지표
             "action_masks": spaces.Box(low=0, high=1, shape=(self.len_machines * self.len_jobs, ), dtype=np.int8),
             "job_details": spaces.Box(low=-1, high=25, shape=(len(self.jobs), 4, 2), dtype=np.int8),
+            # Instance 특징에 대한 지표
+            "current_repeats": spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
+            'total_durations_per_job' : spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
+            # 현 scheduling 상황 관련 지표
             'last_finish_time_per_machine': spaces.Box(low=0, high=max_time, shape=(self.len_machines, ), dtype=np.int64),
-            'job_deadline': spaces.Box(low=0, high=max_time, shape=(self.len_jobs, ), dtype=np.int64),
-            #'machine_operation_rate': spaces.Box(low=0, high=1, shape=(self.len_machines, ), dtype=np.float32),
-            #"machine_types": spaces.Box(low=0, high=1, shape=(self.len_machines, 25), dtype=np.int8),
             "schedule_heatmap": spaces.Box(low=0, high=1, shape=(self.len_machines, max_time), dtype=np.int8),
-            ### 아래는 render 함수의 결과를 배열로 전달하는 것
-            #"schedule_image" : spaces.Box(low=0, high=255, shape=(128, 128, 3), dtype=np.uint8),  # 이미지 공간 설정
-            #"schedule_buffer": spaces.Box(low=-1, high=15, shape=(self.len_jobs, 2), dtype=np.int64),
+            "mean_real_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
+            "std_real_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
+            # schedule_buffer 관련 지표
             "schedule_buffer_job_repeat": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int64),
             "schedule_buffer_operation_index": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int64),
-            "mean_estimated_tardiness_per_job": spaces.Box(low=-50, high=50, shape=(self.len_jobs, ), dtype=np.float64),
-            "std_estimated_tardiness_per_job": spaces.Box(low=-50, high=50, shape=(self.len_jobs, ), dtype=np.float64),
+            "earliest_start_per_operation": spaces.Box(low=-1, high=max_time, shape=(self.len_jobs, ), dtype=np.int64),
+            'job_deadline': spaces.Box(low=-1, high=max_time, shape=(self.len_jobs, ), dtype=np.int64),
+            # 추정 tardiness 관련 지표
+            "mean_estimated_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
+            "std_estimated_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
+            # cost 관련 지표
+            "cost_per_time": spaces.Box(low=-100, high=100, shape=(4, ), dtype=np.float64),
         })
 
     def reset(self, seed=None, options=None):
@@ -185,8 +192,8 @@ class SchedulingEnv(gym.Env):
         return info
 
     def _calculate_final_reward(self):
-        return self.custom_scheduler.calculate_final_reward(total_durations=self.total_durations, cost_deadline_per_time = self.cost_deadline_per_time, cost_hole_per_time = self.cost_hole_per_time, cost_processing_per_time = self.cost_processing_per_time, cost_makespan_per_time = self.cost_makespan_per_time, profit_per_time = self.profit_per_time, target_time=self.target_time)
-
+        return self.custom_scheduler.calculate_final_reward()
+    
     def _calculate_step_reward(self, action):
         return self.custom_scheduler.calculate_step_reward(action)
 
@@ -215,7 +222,7 @@ class SchedulingEnv(gym.Env):
             random_jobs.append(random_job_info)
 
         # 랜덤 Job 인스턴스를 사용하여 customScheduler 초기화
-        self.custom_scheduler = customRepeatableScheduler(jobs=random_jobs, machines=self.machine_config)
+        self.custom_scheduler = customRepeatableScheduler(jobs=random_jobs, machines=self.machine_config, cost_deadline_per_time= self.cost_deadline_per_time, cost_hole_per_time = self.cost_hole_per_time, cost_processing_per_time = self.cost_processing_per_time, cost_makespan_per_time = self.cost_makespan_per_time, profit_per_time = self.profit_per_time, current_repeats=self.current_repeats)
         self.custom_scheduler.reset()
 
     def _calculate_target_time(self):
@@ -234,7 +241,7 @@ class SchedulingEnv(gym.Env):
         self.custom_scheduler.visualize_graph()
 
 
-    def print_result(info, detail_mode = False):
+    def print_result(self, info, detail_mode = False):
         current_repeats = info['current_repeats']
         print(f"Current Repeats\t\t\t:\t{current_repeats}")
 
