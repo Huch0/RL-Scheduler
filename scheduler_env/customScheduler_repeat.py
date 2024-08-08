@@ -491,6 +491,7 @@ class customRepeatableScheduler():
             return
 
     def get_observation(self):
+        remaining_repeats = []
         mean_estimated_tardiness_per_job = []
         std_estimated_tardiness_per_job = []
         real_tardiness_per_job = []
@@ -500,6 +501,7 @@ class customRepeatableScheduler():
             mean_estimated_tardiness_per_job.append(np.mean(estimated_tardiness))
             std_estimated_tardiness_per_job.append(np.std(estimated_tardiness))
             real_tardiness_per_job.append([job.tardiness // 100 for job in job_list])
+            remaining_repeats.append(sum([not job.is_done for job in job_list]))
         
         mean_tardiness_per_job = [np.mean(job_tardiness) for job_tardiness in real_tardiness_per_job]
         std_tardiness_per_job = [np.std(job_tardiness) for job_tardiness in real_tardiness_per_job]
@@ -537,6 +539,7 @@ class customRepeatableScheduler():
             'schedule_heatmap': self.schedule_heatmap,
             'mean_real_tardiness_per_job': np.array(mean_tardiness_per_job),
             'std_real_tardiness_per_job': np.array(std_tardiness_per_job),
+            'remaining_repeats': np.array(remaining_repeats),
             # schedule_buffer 관련 지표
             'schedule_buffer_job_repeat': np.array(schedule_buffer_job_repeat),
             'schedule_buffer_operation_index':  np.array(schedule_buffer_operation_index),
