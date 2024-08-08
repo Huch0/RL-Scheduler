@@ -181,15 +181,14 @@ class customRepeatableScheduler():
         self.schedule_buffer = [[-1, -1] for _ in range(len_jobs)]
         
         # 4 : 각 리소스별 operation 수 최댓값
-        self.original_job_details = np.ones(
-            (len_jobs, 4, 2), dtype=np.int8) * -1
-        for j in range(len_jobs):
-            for o in range(len(self.job_infos[j].operation_queue)):
-                self.original_job_details[j][o][0] = int(
-                    self.job_infos[j].operation_queue[o].duration // 100)
-                self.original_job_details[j][o][1] = int(
-                    self.job_infos[j].operation_queue[o].type)
-        self.current_job_details = copy.deepcopy(self.original_job_details)
+        # self.original_job_details = np.ones(
+        #     (len_jobs, 4, 2), dtype=np.int8) * -1
+        # for j in range(len_jobs):
+        #     for o in range(len(self.job_infos[j].operation_queue)):
+        #         self.original_job_details[j][o][0] = int(
+        #             self.job_infos[j].operation_queue[o].duration // 100)
+        #         self.original_job_details[j][o][1] = int(
+        #             self.job_infos[j].operation_queue[o].type)
 
         self.job_state = None
         self.machine_types = None
@@ -227,7 +226,7 @@ class customRepeatableScheduler():
         self.jobs = copy.deepcopy(self.original_jobs)
         self.machines = copy.deepcopy(self.original_machines)
         self.operations = copy.deepcopy(self.original_operations)
-        self.current_job_details = copy.deepcopy(self.original_job_details)
+        # self.current_job_details = copy.deepcopy(self.original_job_details)
 
         self.schedule_buffer = [[-1, -1] for _ in range(len(self.jobs))]
 
@@ -389,8 +388,8 @@ class customRepeatableScheduler():
             return False
 
         result = [-1 for _ in range(max_time)]
-
-        for i in range(finished_time):
+        
+        for i in range(max(finished_time, max_time)):
             result[i] = is_in_idle_time(i*100)
 
         return result
@@ -509,6 +508,11 @@ class customRepeatableScheduler():
         std_tardiness_per_job = [np.std(job_tardiness) for job_tardiness in real_tardiness_per_job]
         # 각 Job의 Total Duration 계산
         total_durations_per_job = [job_list[0].total_duration // 100 for job_list in self.jobs]
+        # 각 Job의 operation 개수 계산
+        num_operations_per_job = [len(job_list[0].operation_queue) for job_list in self.jobs]
+        # 각 Job의 operation duration 평균, 표준편차 계산
+        mean_operation_duration_per_job = [np.mean([op.duration // 100 for op in job_list[0].operation_queue]) for job_list in self.jobs]
+        std_operation_duration_per_job = [np.std([op.duration // 100 for op in job_list[0].operation_queue]) for job_list in self.jobs]
 
         # 스케줄 버퍼에 올라와있는 작업의 정보 계산
         job_deadline = []
@@ -538,10 +542,12 @@ class customRepeatableScheduler():
         observation = {
             # Vaild 행동, Invalid 행동 관련 지표
             'action_masks': self.action_mask,
-            'job_details': self.current_job_details,
             # Instance 특징에 대한 지표
             'current_repeats': np.array(self.current_repeats),
             'total_durations_per_job' : np.array(total_durations_per_job),
+            'num_operations_per_job' : np.array(num_operations_per_job),
+            'mean_operation_duration_per_job' : np.array(mean_operation_duration_per_job),
+            'std_operation_duration_per_job' : np.array(std_operation_duration_per_job),
             # 현 scheduling 상황 관련 지표
             'last_finish_time_per_machine' : np.array([machine.cal_last_finish_time()//100 for machine in self.machines]),
             'schedule_heatmap': self.schedule_heatmap,
@@ -571,7 +577,6 @@ class customRepeatableScheduler():
             'finish_time': self.last_finish_time,
             'legal_actions': self.legal_actions,
             'action_mask': self.action_mask,
-            'job_details': self.current_job_details,
             'machine_score': self.machine_term,
             'machine_operation_rate': [machine.operation_rate for machine in self.machines],
             'schedule_buffer': self.schedule_buffer,

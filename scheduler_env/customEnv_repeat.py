@@ -99,10 +99,12 @@ class SchedulingEnv(gym.Env):
         self.observation_space = spaces.Dict({
             # Vaild 행동, Invalid 행동 관련 지표
             "action_masks": spaces.Box(low=0, high=1, shape=(self.len_machines * self.len_jobs, ), dtype=np.int8),
-            "job_details": spaces.Box(low=-1, high=25, shape=(len(self.jobs), 4, 2), dtype=np.int8),
             # Instance 특징에 대한 지표
             "current_repeats": spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
             'total_durations_per_job' : spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
+            'num_operations_per_job': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
+            'mean_operation_duration_per_job': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.float64),
+            'std_operation_duration_per_job': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.float64),
             # 현 scheduling 상황 관련 지표
             'last_finish_time_per_machine': spaces.Box(low=0, high=max_time, shape=(self.len_machines, ), dtype=np.int64),
             "schedule_heatmap": spaces.Box(low=0, high=1, shape=(self.len_machines, max_time), dtype=np.int8),
