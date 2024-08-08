@@ -389,7 +389,7 @@ class customRepeatableScheduler():
 
         result = [-1 for _ in range(max_time)]
         
-        for i in range(max(finished_time, max_time)):
+        for i in range(min(finished_time, max_time)):
             result[i] = is_in_idle_time(i*100)
 
         return result
