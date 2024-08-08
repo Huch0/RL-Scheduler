@@ -114,6 +114,8 @@ class SchedulingEnv(gym.Env):
             "schedule_buffer_operation_index": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int64),
             "earliest_start_per_operation": spaces.Box(low=-1, high=max_time, shape=(self.len_jobs, ), dtype=np.int64),
             'job_deadline': spaces.Box(low=-1, high=max_time, shape=(self.len_jobs, ), dtype=np.int64),
+            'op_duration': spaces.Box(low=-1, high=20, shape=(self.len_jobs, ), dtype=np.int64),
+            'op_type': spaces.Box(low=-1, high=25, shape=(self.len_jobs, ), dtype=np.int64),
             # 추정 tardiness 관련 지표
             "mean_estimated_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
             "std_estimated_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
@@ -140,8 +142,8 @@ class SchedulingEnv(gym.Env):
         reward = 0.0
 
         if self._is_legal(action):
-            reward += self._calculate_step_reward(action)
-            #self._update_state(action)
+            #reward += self._calculate_step_reward(action)
+            self._update_state(action)
         else:  # Illegal action
             reward = -0.5
 
@@ -150,8 +152,6 @@ class SchedulingEnv(gym.Env):
             final_makespan = self.custom_scheduler._get_final_operation_finish()
             self.best_makespan = min(self.best_makespan, final_makespan)  # Update the best makespan
             reward = self._calculate_final_reward()
-            self.custom_scheduler.cal_final_cost()
-            # self.custom_scheduler.print_jobs()
 
         truncated = bool(self.num_steps == 10000)
         if truncated:

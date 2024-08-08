@@ -378,6 +378,8 @@ class customRepeatableScheduler():
 
 
     def _schedule_to_array(self, operation_schedule, max_time = 150):
+        operation_schedule.sort(key = lambda x: x.start)
+        finished_time = operation_schedule[-1].finish // 100
         def is_in_idle_time(time):
             for operation in operation_schedule:
                 # 머신이 일하고 있는 시간에는 True 반환
@@ -386,10 +388,10 @@ class customRepeatableScheduler():
             # 머신이 일하고 있는 시간에는 True 반환
             return False
 
-        result = []
+        result = [-1 for _ in range(max_time)]
 
-        for i in range(max_time):
-            result.append(is_in_idle_time(i*100))
+        for i in range(finished_time):
+            result[i] = is_in_idle_time(i*100)
 
         return result
 
@@ -510,18 +512,24 @@ class customRepeatableScheduler():
 
         # 스케줄 버퍼에 올라와있는 작업의 정보 계산
         job_deadline = []
+        op_duration = []
         schedule_buffer_job_repeat = []
         schedule_buffer_operation_index = []
         earliest_start_per_operation = []
+        op_type = []
         for i, elem in enumerate(self.schedule_buffer):
             schedule_buffer_job_repeat.append(elem[0])
             schedule_buffer_operation_index.append(elem[1])
             if elem[0] == -1:
                 earliest_start_per_operation.append(-1)
                 job_deadline.append(-1)
+                op_duration.append(-1)
+                op_type.append(-1)
             else:
                 earliest_start_per_operation.append(self.jobs[i][0].operation_queue[elem[1]].earliest_start // 100)
                 job_deadline.append(self.jobs[i][0].deadline // 100)
+                op_duration.append(self.jobs[i][0].operation_queue[elem[1]].duration // 100)
+                op_type.append(self.jobs[i][0].operation_queue[elem[1]].type)
 
         self.cal_job_deadline_cost()
         self.cal_machine_cost()
@@ -545,6 +553,8 @@ class customRepeatableScheduler():
             'schedule_buffer_operation_index':  np.array(schedule_buffer_operation_index),
             'earliest_start_per_operation': np.array(earliest_start_per_operation),
             'job_deadline': np.array(job_deadline),
+            'op_duration': np.array(op_duration),
+            'op_type': np.array(op_type),
             # 추정 tardiness 관련 지표
             'mean_estimated_tardiness_per_job': np.array(mean_estimated_tardiness_per_job),
             'std_estimated_tardiness_per_job' : np.array(std_estimated_tardiness_per_job),
