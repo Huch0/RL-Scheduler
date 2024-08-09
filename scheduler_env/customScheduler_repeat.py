@@ -387,11 +387,12 @@ class customRepeatableScheduler():
             # 머신이 일하고 있는 시간에는 True 반환
             return False
 
-        result = [-1 for _ in range(max_time)]
+        result = [0 for _ in range(max_time)]
         
-        for i in range(min(finished_time, max_time)):
+        for i in range(max_time):
             result[i] = is_in_idle_time(i*100)
 
+        result[-1] = -1
         return result
 
     def _update_schedule_buffer(self):

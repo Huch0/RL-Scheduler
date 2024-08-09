@@ -72,16 +72,19 @@ class SchedulingEnv(gym.Env):
 
     def __init__(self, machine_config_path, job_config_path, job_repeats_params, render_mode="seaborn", cost_deadline_per_time = 5, cost_hole_per_time = 1, cost_processing_per_time = 2, cost_makespan_per_time = 10, profit_per_time = 10, target_time = None, test_mode=False, max_time = 150):
         super(SchedulingEnv, self).__init__()
-        # self.weight_final_time = weight_final_time
-        # self.weight_job_deadline = weight_job_deadline
-        # self.weight_op_rate = weight_op_rate
+
+        # cost 관련 변수
         self.cost_deadline_per_time = cost_deadline_per_time
         self.cost_hole_per_time = cost_hole_per_time
         self.cost_processing_per_time = cost_processing_per_time
         self.cost_makespan_per_time = cost_makespan_per_time
+
+        # profit 관련 변수
         self.profit_per_time = profit_per_time
+
         self.target_time = target_time
         self.total_durations = 0
+        
         self.job_repeats_params = job_repeats_params  # 각 Job의 반복 횟수에 대한 평균과 표준편차
         self.current_repeats = [job_repeat[0] for job_repeat in job_repeats_params]
         self.test_mode = test_mode
@@ -96,6 +99,17 @@ class SchedulingEnv(gym.Env):
         self.len_jobs = len(self.jobs)
 
         self.num_steps = 0
+
+        self.mean_duration_per_job = None
+        self.std_duration_per_job = None
+        self.mean_deadline_per_job = None
+        self.std_deadline_per_job = None
+        self.num_operations_per_job = None
+
+        self.mean_operation_duration_per_type = None
+        self.std_operation_duration_per_type = None
+        self.mappable_machine_count_per_type = None
+        self.total_count_per_type = None
 
         self.action_space = spaces.Discrete(self.len_machines * self.len_jobs)
         self.observation_space = spaces.Dict({
@@ -132,6 +146,8 @@ class SchedulingEnv(gym.Env):
         super().reset(seed=seed, options=options)
         self._initialize_scheduler()
         self.num_steps = 0
+        self.cal_env_info()
+        self.cal_job_info()
 
         return self._get_observation(), self._get_info()
 
@@ -246,7 +262,6 @@ class SchedulingEnv(gym.Env):
     def visualize_graph(self):
         self.custom_scheduler.visualize_graph()
 
-
     def print_result(self, info, detail_mode = False):
         current_repeats = info['current_repeats']
         print(f"Current Repeats\t\t\t:\t{current_repeats}")
@@ -345,7 +360,12 @@ class SchedulingEnv(gym.Env):
         plt.tight_layout()
         plt.show()
 
-    def show_env_info(self):
+    def cal_env_info(self):
+        self.mean_operation_duration_per_type = []
+        self.std_operation_duration_per_type = []
+        self.mappable_machine_count_per_type = []
+        self.total_count_per_type = []
+
         # Operation Type별로 필요한 정보를 저장할 딕셔너리 생성
         operation_stats = defaultdict(lambda: {'count': 0, 'total_duration': [], 'machine_count': 0})
 
@@ -375,6 +395,17 @@ class SchedulingEnv(gym.Env):
                 'Machine Count': stats['machine_count']
             })
 
+            self.mean_operation_duration_per_type.append(avg_duration) 
+            self.std_operation_duration_per_type.append(std_duration)
+            self.mappable_machine_count_per_type.append(stats['machine_count'])
+            self.total_count_per_type.append(stats['count'])
+
+
+        return data
+
+    def show_env_info(self):
+        data = self.cal_env_info()
+
         # DataFrame으로 변환하여 표 형식으로 출력
         df = pd.DataFrame(data)
 
@@ -389,9 +420,14 @@ class SchedulingEnv(gym.Env):
         print(styled_df)
         return styled_df
 
-    def show_job_info(self):
-        # Job별 통계 정보 수집
-        job_data = []      
+    def cal_job_info(self):
+        job_data = []
+
+        self.mean_deadline_per_job = []
+        self.std_deadline_per_job = []
+        self.mean_duration_per_job = []
+        self.std_duration_per_job = []
+        self.num_operations_per_job = []
 
         for job_info, repeat in zip(self.jobs, self.current_repeats):
             durations = [op["duration"] // 100 for op in job_info["operations"]]
@@ -411,6 +447,18 @@ class SchedulingEnv(gym.Env):
                 'Std Deadline': std_deadline,
                 'Repeats': repeat
             })
+            
+            self.mean_deadline_per_job.append(mean_deadline)
+            self.std_deadline_per_job.append(std_deadline)
+            self.mean_duration_per_job.append(mean_duration)
+            self.std_duration_per_job.append(std_duration)
+            self.num_operations_per_job.append(num_operations)
+
+        return job_data
+
+    def show_job_info(self):
+        # Job별 통계 정보 수집
+        job_data = self.cal_job_info()
 
         # DataFrame으로 변환하여 표 형식으로 출력
         job_df = pd.DataFrame(job_data)
