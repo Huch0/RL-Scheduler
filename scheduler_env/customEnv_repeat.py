@@ -408,7 +408,7 @@ class SchedulingEnv(gym.Env):
                 'Std Duration': std_duration,
                 '# of Ops': num_operations,
                 'Mean Deadline': mean_deadline,
-                'Std Variance': std_deadline,
+                'Std Deadline': std_deadline,
                 'Repeats': repeat
             })
 
