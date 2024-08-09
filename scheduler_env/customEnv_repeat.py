@@ -183,8 +183,8 @@ class SchedulingEnv(gym.Env):
         #observation["schedule_image"] = self.custom_scheduler.render_image_to_array(num_steps = self.num_steps)[:, :, :3]
         return observation
     
-    def set_test_mode(self):
-        self.test_mode = True
+    def set_test_mode(self, test_mode):
+        self.test_mode = test_mode
         self.reset()
 
     # For MaskablePPO
@@ -351,14 +351,14 @@ class SchedulingEnv(gym.Env):
 
         # Job의 Operation을 순회하며 통계 정보 수집
         for job_info, repeat in zip(self.jobs, self.current_repeats):
-            for operation in job_info.operation_queue:
-                op_type = operation.type
+            for operation in job_info["operations"]:
+                op_type = operation["type"]
                 operation_stats[op_type]['count'] += repeat  # 반복 횟수만큼 count 증가
-                operation_stats[op_type]['total_duration'].extend([operation.duration // 100] * repeat)
+                operation_stats[op_type]['total_duration'].extend([operation["duration"] // 100] * repeat)
 
         # 각 Operation Type을 처리할 수 있는 머신의 수 계산
-        for machine in self.machines:
-            for ability in machine.ability:
+        for machine in self.machine_config:
+            for ability in machine["ability"]:
                 operation_stats[ability]['machine_count'] += 1
 
         # 통계 정보 계산
@@ -377,38 +377,56 @@ class SchedulingEnv(gym.Env):
 
         # DataFrame으로 변환하여 표 형식으로 출력
         df = pd.DataFrame(data)
-        print(df)
-        
-        return df        
-    
+
+        # 스타일링 적용
+        styled_df = df.style.format({
+            'Total Count': '{:,.0f}',
+            'Avg Duration': '{:.2f}',
+            'Std Duration': '{:.2f}',
+            'Machine Count': '{:,.0f}'
+        }).background_gradient(cmap='Blues')
+
+        print(styled_df)
+        return styled_df
+
     def show_job_info(self):
         # Job별 통계 정보 수집
-        job_data = []
+        job_data = []      
 
-        for job_info, repeat in zip(self.jobs, env.current_repeats):
-            durations = [op.duration // 100 for op in job_info.operation_queue]
+        for job_info, repeat in zip(self.jobs, self.current_repeats):
+            durations = [op["duration"] // 100 for op in job_info["operations"]]
             mean_duration = np.mean(durations)
             std_duration = np.std(durations)
-            num_operations = len(job_info.operation_queue)
-            deadlines = np.array(job_info.operation_queue[0].job.deadline[:repeat]) // 100
+            num_operations = len(job_info["operations"])
+            deadlines = np.array(job_info["deadline"][:repeat]) // 100
             mean_deadline = np.mean(deadlines)
-            var_deadline = np.var(deadlines)
+            std_deadline = np.std(deadlines)
 
             job_data.append({
-                'Job Name': job_info.name,
+                'Job Name': job_info["name"],
                 'Mean Duration': mean_duration,
                 'Std Duration': std_duration,
-                'Number of Operations': num_operations,
+                '# of Ops': num_operations,
                 'Mean Deadline': mean_deadline,
-                'Deadline Variance': var_deadline,
-                'Repetitions': repeat
+                'Std Variance': std_deadline,
+                'Repeats': repeat
             })
 
         # DataFrame으로 변환하여 표 형식으로 출력
         job_df = pd.DataFrame(job_data)
-        print(job_df)
-        
-        return job_df
+
+        # 스타일링 적용
+        styled_job_df = job_df.style.format({
+            'Mean Duration': '{:.2f}',
+            'Std Duration': '{:.2f}',
+            '# of Ops': '{:,.0f}',
+            'Mean Deadline': '{:.2f}',
+            'Std Variance': '{:.2f}',
+            'Repeats': '{:,.0f}'
+        }).background_gradient(cmap='Greens')
+
+        print(styled_job_df)
+        return styled_job_df
 
 if __name__ == "__main__":
     env_5_8_8_2 = SchedulingEnv(machine_config_path= "instances/Machines/v0-5.json", job_config_path = "instances/Jobs/v0-8x12-deadline.json", job_repeats_params = [(8, 2)] * 8)
