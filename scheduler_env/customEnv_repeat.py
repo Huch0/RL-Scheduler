@@ -1,11 +1,13 @@
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
+import pandas as pd
 import json
 from stable_baselines3.common.env_checker import check_env
 from scheduler_env.customScheduler_repeat import customRepeatableScheduler
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches  # 필요한 모듈을 가져옵니다.
+from collections import defaultdict
 
 class SchedulingEnv(gym.Env):
     def _load_machines(self, file_path):
@@ -107,7 +109,7 @@ class SchedulingEnv(gym.Env):
             'std_operation_duration_per_job': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.float64),
             # 현 scheduling 상황 관련 지표
             'last_finish_time_per_machine': spaces.Box(low=0, high=max_time, shape=(self.len_machines, ), dtype=np.int64),
-            "schedule_heatmap": spaces.Box(low=0, high=1, shape=(self.len_machines, max_time), dtype=np.int8),
+            "schedule_heatmap": spaces.Box(low=-1, high=1, shape=(self.len_machines, max_time), dtype=np.int8),
             "mean_real_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
             "std_real_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
             'remaining_repeats': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
@@ -342,6 +344,71 @@ class SchedulingEnv(gym.Env):
         
         plt.tight_layout()
         plt.show()
+
+    def show_env_info(self):
+        # Operation Type별로 필요한 정보를 저장할 딕셔너리 생성
+        operation_stats = defaultdict(lambda: {'count': 0, 'total_duration': [], 'machine_count': 0})
+
+        # Job의 Operation을 순회하며 통계 정보 수집
+        for job_info, repeat in zip(self.jobs, self.current_repeats):
+            for operation in job_info.operation_queue:
+                op_type = operation.type
+                operation_stats[op_type]['count'] += repeat  # 반복 횟수만큼 count 증가
+                operation_stats[op_type]['total_duration'].extend([operation.duration // 100] * repeat)
+
+        # 각 Operation Type을 처리할 수 있는 머신의 수 계산
+        for machine in self.machines:
+            for ability in machine.ability:
+                operation_stats[ability]['machine_count'] += 1
+
+        # 통계 정보 계산
+        data = []
+        for op_type, stats in sorted(operation_stats.items()):
+            total_duration_array = np.array(stats['total_duration'])
+            avg_duration = np.mean(total_duration_array)
+            std_duration = np.std(total_duration_array)
+            data.append({
+                'Operation Type': op_type,
+                'Total Count': stats['count'],
+                'Avg Duration': avg_duration,
+                'Std Duration': std_duration,
+                'Machine Count': stats['machine_count']
+            })
+
+        # DataFrame으로 변환하여 표 형식으로 출력
+        df = pd.DataFrame(data)
+        print(df)
+        
+        return df        
+    
+    def show_job_info(self):
+        # Job별 통계 정보 수집
+        job_data = []
+
+        for job_info, repeat in zip(self.jobs, env.current_repeats):
+            durations = [op.duration // 100 for op in job_info.operation_queue]
+            mean_duration = np.mean(durations)
+            std_duration = np.std(durations)
+            num_operations = len(job_info.operation_queue)
+            deadlines = np.array(job_info.operation_queue[0].job.deadline[:repeat]) // 100
+            mean_deadline = np.mean(deadlines)
+            var_deadline = np.var(deadlines)
+
+            job_data.append({
+                'Job Name': job_info.name,
+                'Mean Duration': mean_duration,
+                'Std Duration': std_duration,
+                'Number of Operations': num_operations,
+                'Mean Deadline': mean_deadline,
+                'Deadline Variance': var_deadline,
+                'Repetitions': repeat
+            })
+
+        # DataFrame으로 변환하여 표 형식으로 출력
+        job_df = pd.DataFrame(job_data)
+        print(job_df)
+        
+        return job_df
 
 if __name__ == "__main__":
     env_5_8_8_2 = SchedulingEnv(machine_config_path= "instances/Machines/v0-5.json", job_config_path = "instances/Jobs/v0-8x12-deadline.json", job_repeats_params = [(8, 2)] * 8)
