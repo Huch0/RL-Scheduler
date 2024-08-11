@@ -100,6 +100,8 @@ class SchedulingEnv(gym.Env):
 
         self.num_steps = 0
 
+        self.max_time = max_time
+
         self.mean_duration_per_job = None
         self.std_duration_per_job = None
         self.mean_deadline_per_job = None
@@ -123,7 +125,9 @@ class SchedulingEnv(gym.Env):
             'std_operation_duration_per_job': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.float64),
             # 현 scheduling 상황 관련 지표
             'last_finish_time_per_machine': spaces.Box(low=0, high=max_time, shape=(self.len_machines, ), dtype=np.int64),
-            "schedule_heatmap": spaces.Box(low=-1, high=1, shape=(self.len_machines, max_time), dtype=np.int8),
+            "machine_ability": spaces.Box(low=-1, high=100, shape=(self.len_machines, ), dtype=np.int64),
+            "hole_length_per_machine": spaces.Box(low=0, high=max_time, shape=(self.len_machines, ), dtype=np.int64),
+            "schedule_heatmap": spaces.Box(low=-1, high=2, shape=(self.len_machines, max_time), dtype=np.int8),
             "mean_real_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
             "std_real_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
             'remaining_repeats': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
@@ -244,7 +248,7 @@ class SchedulingEnv(gym.Env):
             random_jobs.append(random_job_info)
 
         # 랜덤 Job 인스턴스를 사용하여 customScheduler 초기화
-        self.custom_scheduler = customRepeatableScheduler(jobs=random_jobs, machines=self.machine_config, cost_deadline_per_time= self.cost_deadline_per_time, cost_hole_per_time = self.cost_hole_per_time, cost_processing_per_time = self.cost_processing_per_time, cost_makespan_per_time = self.cost_makespan_per_time, profit_per_time = self.profit_per_time, current_repeats=self.current_repeats)
+        self.custom_scheduler = customRepeatableScheduler(jobs=random_jobs, machines=self.machine_config, cost_deadline_per_time= self.cost_deadline_per_time, cost_hole_per_time = self.cost_hole_per_time, cost_processing_per_time = self.cost_processing_per_time, cost_makespan_per_time = self.cost_makespan_per_time, profit_per_time = self.profit_per_time, current_repeats=self.current_repeats, max_time=self.max_time)
         self.custom_scheduler.reset()
 
     def _calculate_target_time(self):
