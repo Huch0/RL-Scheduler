@@ -40,14 +40,18 @@ def train_model(env, env_name, version = "v1"):
     # Create the evaluation environment
     eval_env = env
 
+    policy_kwargs = dict(
+        net_arch=[256, 64]
+    )
+    
     # Create the MaskablePPO model first
     model = MaskablePPO('MultiInputPolicy', env, verbose=1,
-                        n_steps=4096)
+                        policy_kwargs=policy_kwargs)
     model.set_logger(new_logger)
 
     # Create the MaskableEvalCallback
     maskable_eval_callback = MaskableEvalCallback(eval_env, best_model_save_path=log_path,
-                                                  log_path=log_path, eval_freq=100000,
+                                                  log_path=log_path, eval_freq=10000,
                                                   deterministic=True, render=False)
     
     # Now that the model is created, pass it to the TrainEveryNEpisodesCallback
@@ -55,6 +59,7 @@ def train_model(env, env_name, version = "v1"):
 
     # Combine the callbacks into a CallbackList
     #callback = CallbackList([maskable_eval_callback, train_every_n_episodes_callback])
+    
 
     # Start the learning process
     model.learn(1000000, callback=maskable_eval_callback)
