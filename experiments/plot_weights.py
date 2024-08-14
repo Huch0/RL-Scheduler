@@ -31,7 +31,7 @@ def plot_input_weights(model_path, env, save_img=False):
     previous_end_index = -1
     for key, space in env.observation_space.spaces.items():
         # Make sure the feature names match the model feature names
-        assert model_feature_names[feature_index] == key
+        assert model_feature_names[feature_index] == key, f"Assertion failed: {model_feature_names[feature_index]} != {key}"
         feature_index += 1
 
         if isinstance(space, spaces.Box):
@@ -49,20 +49,22 @@ def plot_input_weights(model_path, env, save_img=False):
     weights = input_layer.weight.detach().numpy()
     print(f"Input shape: {weights.shape}")
 
-    # Calculate the average absolute weight for each input feature
-    feature_importance = np.mean(np.abs(weights), axis=0)
-    print(f"Feature importance shape: {feature_importance.shape}")
-
     # Make sure the number of input features matches the number of weights
-    assert previous_end_index == weights.shape[1] - 1
+    assert previous_end_index == weights.shape[1] - 1, \
+        f"Assertion failed: {previous_end_index} != {weights.shape[1] - 1}"
 
     # Function to plot and print feature importance
-    def plot_and_print_all_features(importance, feature_groups, title, filename):
-        plt.figure(figsize=(15, 10))
-        plt.bar(range(len(importance)), importance)
+    def plot_and_print_all_features(weights, feature_groups):
+        # Create the plot
+        fig, ax = plt.subplots(figsize=(15, 10))
+
+        # Plot all points
+        for idx in range(weights.shape[1]):
+            ax.plot([idx] * weights.shape[0], weights[:, idx], alpha=0.5)
+
         plt.xlabel('Input Features')
-        plt.ylabel('Average Absolute Weight')
-        plt.title(title)
+        plt.ylabel('Absolute Weight')
+        plt.title('Input Feature Weights')
 
         # Set xticks and xtick labels
         xticks = []
@@ -78,70 +80,55 @@ def plot_input_weights(model_path, env, save_img=False):
         plt.tight_layout()
 
         if save_img:
-            plt.savefig(filename)
+            plt.savefig("input_feature_weights.png", bbox_inches='tight', dpi=100)
         plt.show()
 
     # Plot and print the feature importance
-    plot_and_print_all_features(feature_importance, feature_groups,
-                                "Input Feature Importance", "input_feature_importance.png")
+    plot_and_print_all_features(weights, feature_groups)
 
-    # Aggregate feature importance and standard deviation by group
-    group_stats = {}
-    for group, (start_idx, end_idx) in feature_groups.items():
-        group_stats[group] = {
-            'avg': np.mean(feature_importance[start_idx:end_idx]),
-            'std': np.std(feature_importance[start_idx:end_idx]),
-            'min': np.min(feature_importance[start_idx:end_idx]),
-            'max': np.max(feature_importance[start_idx:end_idx])
-        }
+    # Calculate the average absolute weight for each input feature
+    feature_importance = np.mean(np.abs(weights), axis=0)
+    print(f"Feature importance shape: {feature_importance.shape}")
 
-    # Function to plot and print group importance with error bars
-    def plot_and_print_groups(group_stats, title, filename, num_to_plot=20):
-        # Sort groups by average importance
-        sorted_groups = sorted(group_stats.items(), key=lambda x: x[1]['avg'], reverse=True)
+    # Function to plot and print group importance with box plots
 
-        # Extract data for plotting
-        groups = [group for group, _ in sorted_groups[:num_to_plot]]
-        avg_importance = [stats['avg'] for _, stats in sorted_groups[:num_to_plot]]
-        errors = [[stats['avg'] - stats['min'], stats['max'] - stats['avg']]
-                  for _, stats in sorted_groups[:num_to_plot]]
+    def plot_and_print_groups(feature_groups):
+        # Extract importance data for each group
+        importance_data = [(group, feature_importance[start_idx:end_idx])
+                           for group, (start_idx, end_idx) in feature_groups.items()]
+
+        # Sort the groups by average importance
+        importance_data.sort(key=lambda x: np.mean(x[1]), reverse=True)
+
+        # Separate the sorted groups and their importance data
+        sorted_groups = [group for group, _ in importance_data]
+        sorted_importance_data = [data for _, data in importance_data]
 
         # Create the plot
         fig, ax = plt.subplots(figsize=(12, 6))
-        bars = ax.bar(range(len(groups)), avg_importance, yerr=np.array(errors).T, capsize=5)
+        ax.boxplot(sorted_importance_data, vert=True, patch_artist=True,
+                   tick_labels=sorted_groups)
 
         # Customize the plot
         ax.set_xlabel('Input Feature Groups')
-        ax.set_ylabel('Average Absolute Weight')
-        ax.set_title(title)
-        ax.set_xticks(range(len(groups)))
-        ax.set_xticklabels(groups, rotation=45, ha='right')
-
-        # Add value labels on top of each bar
-        for bar in bars:
-            height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width()/2., height,
-                    f'{height:.2f}',
-                    ha='center', va='bottom')
+        ax.set_ylabel('Importance Distribution')
+        ax.set_title("Input Feature Group Importance")
+        ax.set_xticklabels(sorted_groups, rotation=45, ha='right')
 
         # Adjust layout and save as PNG
         plt.tight_layout()
         if save_img:
-            plt.savefig(filename, bbox_inches='tight', dpi=100)
+            plt.savefig("Input Feature Group Importance.png", bbox_inches='tight', dpi=100)
         plt.show()
 
     # Plot and print the group importance
-    plot_and_print_groups(group_stats, "Input Feature Group Importance", "input_feature_group_avg.png")
-
-    return
+    plot_and_print_groups(feature_groups)
 
 
 if __name__ == "__main__":
     # model_path = "./experiments/tmp/2/run_0-{'clip_range': 0.1, 'learning_rate': 0.0005}/best_model.zip"
-    model_path = "./logs/tmp/1/best_model.zip"
+    model_path = "./logs/tmp/seojun/MP_Env_8_12_3_1_v10.zip"
     env = SchedulingEnv(machine_config_path="instances/Machines/v0-8.json",
-                        job_config_path="instances/Jobs/v0-12-repeat-hard.json",
-                        job_repeats_params=[(3, 1)] * 12,
-                        test_mode=True)
+                        job_config_path="instances/Jobs/v0-12-repeat-easy.json", job_repeats_params=[(3, 1)] * 12)
     env.reset()
     plot_input_weights(model_path, env, save_img=False)
