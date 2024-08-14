@@ -70,7 +70,7 @@ class SchedulingEnv(gym.Env):
 
         return jobs
 
-    def __init__(self, machine_config_path, job_config_path, job_repeats_params, render_mode="seaborn", cost_deadline_per_time = 5, cost_hole_per_time = 1, cost_processing_per_time = 2, cost_makespan_per_time = 10, profit_per_time = 10, target_time = None, test_mode=False, max_time = 150):
+    def __init__(self, machine_config_path, job_config_path, job_repeats_params, render_mode="seaborn", cost_deadline_per_time = 5, cost_hole_per_time = 1, cost_processing_per_time = 2, cost_makespan_per_time = 10, profit_per_time = 10, target_time = None, test_mode=False, max_time = 150, num_of_types = 4):
         super(SchedulingEnv, self).__init__()
 
         # cost 관련 변수
@@ -112,17 +112,26 @@ class SchedulingEnv(gym.Env):
         self.std_operation_duration_per_type = None
         self.mappable_machine_count_per_type = None
         self.total_count_per_type = None
+        self.num_of_types = num_of_types
 
         self.action_space = spaces.Discrete(self.len_machines * self.len_jobs)
         self.observation_space = spaces.Dict({
             # Vaild 행동, Invalid 행동 관련 지표
             "action_masks": spaces.Box(low=0, high=1, shape=(self.len_machines * self.len_jobs, ), dtype=np.int8),
-            # Instance 특징에 대한 지표
+            # Instance 특징에 대한 지표            
+            # Operation Type별 지표
+            "total_count_per_type": spaces.Box(low=-1, high=100, shape=(num_of_types, ), dtype=np.int64),
+            "mappable_machine_count_per_type": spaces.Box(low=0, high=self.len_machines, shape=(num_of_types, ), dtype=np.int64),
+            "mean_operation_duration_per_type": spaces.Box(low=0, high=20, shape=(num_of_types, ), dtype=np.float64),
+            "std_operation_duration_per_type": spaces.Box(low=0, high=20, shape=(num_of_types, ), dtype=np.float64),
+            # Job별 지표
             "current_repeats": spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
-            'total_durations_per_job' : spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
+            'total_length_per_job' : spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
             'num_operations_per_job': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
             'mean_operation_duration_per_job': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.float64),
             'std_operation_duration_per_job': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.float64),
+            "mean_deadline_per_job": spaces.Box(low=-1, high=max_time, shape=(self.len_jobs, ), dtype=np.float64),
+            "std_deadline_per_job": spaces.Box(low=-1, high=max_time, shape=(self.len_jobs, ), dtype=np.float64),
             # 현 scheduling 상황 관련 지표
             'last_finish_time_per_machine': spaces.Box(low=0, high=max_time, shape=(self.len_machines, ), dtype=np.int64),
             "machine_ability": spaces.Box(low=-1, high=100, shape=(self.len_machines, ), dtype=np.int64),
@@ -141,6 +150,7 @@ class SchedulingEnv(gym.Env):
             # 추정 tardiness 관련 지표
             "mean_estimated_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
             "std_estimated_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
+            'cur_estimated_tardiness_per_job': spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
             # cost 관련 지표
             "cost_factor_per_time": spaces.Box(low=-100, high=100, shape=(4, ), dtype=np.float64),
             "current_costs": spaces.Box(low=0, high=50000, shape=(4, ), dtype=np.float64),
@@ -154,6 +164,12 @@ class SchedulingEnv(gym.Env):
         self.cal_job_info()
 
         return self._get_observation(), self._get_info()
+    
+    # def test_cal_best_finish_time(self):
+    #     self.custom_scheduler.test_cal_best_finish_time()
+
+    # def test_cal_estimated_tardiness(self):
+    #     self.custom_scheduler.test_cal_estimated_tardiness()
 
     def step(self, action):
         # Map the action to the corresponding machine and job
@@ -200,7 +216,21 @@ class SchedulingEnv(gym.Env):
 
     def _get_observation(self):
         observation = self.custom_scheduler.get_observation()
-        #observation["schedule_image"] = self.custom_scheduler.render_image_to_array(num_steps = self.num_steps)[:, :, :3]
+        #추가
+        observation["total_count_per_type"] = np.array(self.total_count_per_type)
+        observation["mappable_machine_count_per_type"] = np.array(self.mappable_machine_count_per_type)
+        observation["mean_deadline_per_job"] = np.array(self.mean_deadline_per_job)
+        observation["std_deadline_per_job"] = np.array(self.std_deadline_per_job)
+        observation["mean_operation_duration_per_type"] = np.array(self.mean_operation_duration_per_type)
+        observation["std_operation_duration_per_type"] = np.array(self.std_operation_duration_per_type)
+        
+        #기존 정보 계산 최적화
+        observation["mean_operation_duration_per_job"] = np.array(self.mean_operation_duration_per_job)
+        observation["std_operation_duration_per_job"] = np.array(self.std_operation_duration_per_job)
+        observation["current_repeats"] = np.array(self.current_repeats)
+        observation["num_operations_per_job"] = np.array(self.num_operations_per_job)
+        observation["total_length_per_job"] = np.array([int(num * mean) for num, mean in zip(self.num_operations_per_job, self.mean_operation_duration_per_job)])
+
         return observation
     
     def set_test_mode(self, test_mode):
@@ -429,8 +459,8 @@ class SchedulingEnv(gym.Env):
 
         self.mean_deadline_per_job = []
         self.std_deadline_per_job = []
-        self.mean_duration_per_job = []
-        self.std_duration_per_job = []
+        self.mean_operation_duration_per_job = []
+        self.std_operation_duration_per_job = []
         self.num_operations_per_job = []
 
         for job_info, repeat in zip(self.jobs, self.current_repeats):
@@ -444,8 +474,8 @@ class SchedulingEnv(gym.Env):
 
             job_data.append({
                 'Job Name': job_info["name"],
-                'Mean Duration': mean_duration,
-                'Std Duration': std_duration,
+                'Mean Ops Duration': mean_duration,
+                'Std Ops Duration': std_duration,
                 '# of Ops': num_operations,
                 'Mean Deadline': mean_deadline,
                 'Std Deadline': std_deadline,
@@ -454,8 +484,8 @@ class SchedulingEnv(gym.Env):
             
             self.mean_deadline_per_job.append(mean_deadline)
             self.std_deadline_per_job.append(std_deadline)
-            self.mean_duration_per_job.append(mean_duration)
-            self.std_duration_per_job.append(std_duration)
+            self.mean_operation_duration_per_job.append(mean_duration)
+            self.std_operation_duration_per_job.append(std_duration)
             self.num_operations_per_job.append(num_operations)
 
         return job_data

@@ -370,7 +370,7 @@ class customRepeatableScheduler():
         for job_list in self.jobs:
             for job in job_list:
                 remaining_operations = [op for op in job.operation_queue if op.finish is None]
-                
+
                 if not remaining_operations:
                     job.tardiness = job.operation_queue[-1].finish - job.deadline
                     job.time_exceeded = max(0, job.operation_queue[-1].finish - job.deadline)
@@ -404,10 +404,26 @@ class customRepeatableScheduler():
                 scaled_operation_deadline = scaled_rate * job.deadline
                 job.estimated_tardiness = approx_best_finish_time - scaled_operation_deadline
                 
-        # Rebuild the heap based on the updated estimated tardiness values
-        for job_list in self.jobs:
+            # Rebuild the heap based on the updated estimated tardiness values
             heapq.heapify(job_list)
 
+    # job 8번의 estimated가 잘 계산되고 있는지 test
+    def test_cal_estimated_tardiness(self):
+        for job in self.jobs[7]:
+            remaining_operations = [op for op in job.operation_queue if op.finish is None]
+            if remaining_operations:
+                earliest_operation = remaining_operations[0]
+                print(f"Job 8 repeat {job.index} - Operation {earliest_operation.index} - Earliest Start : {earliest_operation.earliest_start}")
+                best_finish_times = [
+                        machine.cal_best_finish_time(op_earliest_start=earliest_operation.earliest_start, op_type = earliest_operation.type, op_duration = earliest_operation.duration)
+                        for machine in self.machines
+                    ]
+                print(best_finish_times)
+            else:
+                print(f"Job 8 repeat {job.index} - Operation {job.operation_queue[-1].index} - Finish Time : {job.operation_queue[-1].finish}")
+            print(f"Job 8 repeat {job.index} - Estimated Tardiness : {job.estimated_tardiness}")
+
+    
 
     def _schedule_to_array(self, operation_schedule):
         operation_schedule.sort(key = lambda x: x.start)
@@ -534,27 +550,22 @@ class customRepeatableScheduler():
 
     def get_observation(self):
         remaining_repeats = []
+        cur_estimated_tardiness_per_job = []
         mean_estimated_tardiness_per_job = []
         std_estimated_tardiness_per_job = []
         real_tardiness_per_job = []
         for job_list in self.jobs:
             # 아래 공식 분모 제거
             estimated_tardiness = [job.estimated_tardiness // 100 for job in job_list]
+            cur_estimated_tardiness_per_job.append(job_list[0].estimated_tardiness // 100)
             mean_estimated_tardiness_per_job.append(np.mean(estimated_tardiness))
             std_estimated_tardiness_per_job.append(np.std(estimated_tardiness))
             real_tardiness_per_job.append([job.tardiness // 100 for job in job_list])
             remaining_repeats.append(sum([not job.is_done for job in job_list]))
-        
+
         mean_tardiness_per_job = [np.mean(job_tardiness) for job_tardiness in real_tardiness_per_job]
         std_tardiness_per_job = [np.std(job_tardiness) for job_tardiness in real_tardiness_per_job]
-        # 각 Job의 Total Duration 계산
-        total_durations_per_job = [job_list[0].total_duration // 100 for job_list in self.jobs]
-        # 각 Job의 operation 개수 계산
-        num_operations_per_job = [len(job_list[0].operation_queue) for job_list in self.jobs]
-        # 각 Job의 operation duration 평균, 표준편차 계산
-        mean_operation_duration_per_job = [np.mean([op.duration // 100 for op in job_list[0].operation_queue]) for job_list in self.jobs]
-        std_operation_duration_per_job = [np.std([op.duration // 100 for op in job_list[0].operation_queue]) for job_list in self.jobs]
-
+        
         # 스케줄 버퍼에 올라와있는 작업의 정보 계산
         job_deadline = []
         op_duration = []
@@ -588,17 +599,10 @@ class customRepeatableScheduler():
         observation = {
             # Vaild 행동, Invalid 행동 관련 지표
             'action_masks': self.action_mask,
-            # Instance 특징에 대한 지표
-            'current_repeats': np.array(self.current_repeats),
-            'total_durations_per_job' : np.array(total_durations_per_job),
-            'num_operations_per_job' : np.array(num_operations_per_job),
-            'mean_operation_duration_per_job' : np.array(mean_operation_duration_per_job),
-            'std_operation_duration_per_job' : np.array(std_operation_duration_per_job),
             # 현 scheduling 상황 관련 지표
             'last_finish_time_per_machine' : np.array([machine.cal_last_finish_time()//100 for machine in self.machines]),
             'machine_ability' : np.array(machine_ability),
             'hole_length_per_machine' : np.array(hole_length_per_machine),
-            # heatmap 잠시 제거
             'schedule_heatmap': self.schedule_heatmap,
             'mean_real_tardiness_per_job': np.array(mean_tardiness_per_job),
             'std_real_tardiness_per_job': np.array(std_tardiness_per_job),
@@ -613,12 +617,20 @@ class customRepeatableScheduler():
             # 추정 tardiness 관련 지표
             'mean_estimated_tardiness_per_job': np.array(mean_estimated_tardiness_per_job),
             'std_estimated_tardiness_per_job' : np.array(std_estimated_tardiness_per_job),
+            'cur_estimated_tardiness_per_job' : np.array(cur_estimated_tardiness_per_job),
             # cost 관련 지표
             'cost_factor_per_time': np.array([self.cost_deadline_per_time, self.cost_hole_per_time, self.cost_processing_per_time, self.cost_makespan_per_time]),
             'current_costs' : np.array([self.cost_deadline, self.cost_hole, self.cost_processing, self.cost_makespan])
         }
         
         return observation
+
+    def test_cal_best_finish_time(self):
+        # machine 0에 대해서만 테스트
+        machine = self.machines[0]
+        for i, elem in enumerate(self.schedule_buffer):
+            operation = self.jobs[i][0].operation_queue[elem[1]]
+            print(f"Job {i} - Operation {elem[1]} Best Finish Time : {machine.cal_best_finish_time(operation.duration, operation.type, operation.earliest_start)}")
 
     def get_info(self):
         return {
