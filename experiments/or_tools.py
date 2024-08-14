@@ -214,6 +214,10 @@ def solve_with_ortools(env,
         model.Minimize(cost_weights['tard'] * total_tardiness
                        + cost_weights['idle_time'] * total_idle_time
                        + cost_weights['makespan'] * makespan)
+    elif objective == 'tard':
+        model.Minimize(total_tardiness)
+    elif objective == 'idle_time':
+        model.Minimize(total_idle_time)
     else:
         raise ValueError(f"Objective {objective} not supported")
 
@@ -233,10 +237,10 @@ def solve_with_ortools(env,
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
         if verbose:
             print(f'Time elapsed: {elapsed_time} | Status: {solver.StatusName(status)}')
-            
+
         for m in range(len(machines)):
             print(f'Machine {m} start: {solver.Value(machine_starts[m])}, end: {solver.Value(machine_ends[m])}')
-            
+
         print(f'Total operation time: {solver.Value(total_operation_time)}')
         print(f'Total machine time: {solver.Value(total_machine_time)}')
         print(f'Total idle time: {solver.Value(total_idle_time)}')
@@ -290,9 +294,9 @@ if __name__ == '__main__':
     }
     # Create environment
     env = SchedulingEnv(machine_config_path="instances/Machines/v0-8.json", job_config_path="instances/Jobs/v0-12-repeat-hard.json",
-                        job_repeats_params=[(8, 1)] * 12, test_mode=True)
+                        job_repeats_params=[(3, 1)] * 12, test_mode=True)
     env.reset()
-    objective='cost'
+    objective = 'tard'
     copy_env = False
     solution, objs, status, elapsed_time = solve_with_ortools(
         env, objective=objective, cost_weights=cost_weights, copy_env=copy_env, time_limit=600.0)
@@ -323,7 +327,8 @@ if __name__ == '__main__':
                 tard_cost = total_tardiness * cost_weights['tard']
                 makespan_cost = objs['makespan'] * cost_weights['makespan']
                 total_cost = tard_cost + idle_time_cost + makespan_cost
-                print(f'\ttard_cost {tard_cost} | idle_time_cost {idle_time_cost} | makespan_cost {makespan_cost} | total_cost {total_cost}')
+                print(
+                    f'\ttard_cost {tard_cost} | idle_time_cost {idle_time_cost} | makespan_cost {makespan_cost} | total_cost {total_cost}')
 
             print('job_deadline', info['job_deadline'])
             print(f'job_tardiness {tardiness} | total {total_tardiness}')
