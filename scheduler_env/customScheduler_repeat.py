@@ -48,11 +48,23 @@ class Machine():
         last_finish = self.operation_schedule[-1].finish
         total_duration = sum(op.duration for op in self.operation_schedule)
         hole_time = last_finish - first_start - total_duration
-        return hole_time > 0
+        return hole_time
+    
+    def encode_ability(self):
+        # 각 머신의 능력을 encoding 한다
+        # [0, 1, 3]이 ablity라고 치면 해당 머신이 0, 1, 3 type의 operation을 처리할 수 있다는 것 이므로
+        # 이를 [True, True, False, True, False, ...]로 간주하고
+        # 1011 -> 7로 encoding한다
+
+        ability = 0
+        for i in self.ability:
+            ability += 2**i
+        return ability
 
     def can_process_operation(self, operation_type):
         return operation_type in self.ability
     
+    # 코드 검증 필요
     def cal_best_finish_time(self, op_duration, op_type, op_earliest_start):
         if not self.can_process_operation(op_type):
             return -1
@@ -63,20 +75,32 @@ class Machine():
         operation_schedule = self.operation_schedule[::]
         operation_schedule.sort(key=lambda x: x.start)
 
-        for i in range(len(operation_schedule)):
-            if i == 0:
-                if operation_schedule[i].start >= op_earliest_start + op_duration:
-                    return op_earliest_start + op_duration
-                else:
-                    return operation_schedule[i].finish + op_earliest_start + op_duration 
+        best_start_time = 0
+        if len(operation_schedule) == 1:
+            if operation_schedule[0].start >= op_earliest_start + op_duration:
+                best_start_time = op_earliest_start
             else:
+                best_start_time = max(operation_schedule[0].finish, op_earliest_start)
+            return best_start_time + op_duration
+        else:
+            for i in range(1, len(operation_schedule)):
+                # 이러면 고민할 게 없어진다. 이후 hole을 찾고 들어갈 수 있는지 판단한다.
                 if op_earliest_start <= operation_schedule[i-1].finish:
+                    #아래는 i-1과 i 사이에 들어갈 수 있다는 의미
                     if operation_schedule[i].start - operation_schedule[i-1].finish >= op_duration:
-                        return operation_schedule[i-1].finish + op_duration
+                        best_start_time = operation_schedule[i-1].finish
+                        return best_start_time + op_duration
+                    else:
+                        continue
                 else:
+                    # hole이 있다고 해도 earliest_start로 검증이 필요하다.
                     if operation_schedule[i].start - op_earliest_start >= op_duration:
-                        return op_earliest_start + op_duration
-            return max(operation_schedule[-1].finish, op_earliest_start) + op_duration
+                        best_start_time = op_earliest_start
+                        return best_start_time + op_duration
+                    else: 
+                        continue
+        best_start_time = max(operation_schedule[-1].finish, op_earliest_start)
+        return best_start_time + op_duration
             
 
 class JobInfo:
@@ -147,7 +171,7 @@ class Operation():
         return f"job : {self.job}, index : {self.index} | ({self.start}, {self.finish})"
     
 class customRepeatableScheduler():
-    def __init__(self, jobs, machines, cost_deadline_per_time, cost_hole_per_time, cost_processing_per_time, cost_makespan_per_time, profit_per_time, current_repeats) -> None:
+    def __init__(self, jobs, machines, cost_deadline_per_time, cost_hole_per_time, cost_processing_per_time, cost_makespan_per_time, profit_per_time, current_repeats, max_time = 150) -> None:
         self.machines = [Machine(machine_info)
                           for machine_info in machines]
         self.job_infos = [JobInfo(job_info["name"], job_info["color"], job_info["operations"]) for job_info in jobs]
@@ -179,6 +203,7 @@ class customRepeatableScheduler():
         self.current_repeats = current_repeats
         
         self.schedule_buffer = [[-1, -1] for _ in range(len_jobs)]
+        self.max_time = max_time
         
         # 4 : 각 리소스별 operation 수 최댓값
         # self.original_job_details = np.ones(
@@ -191,7 +216,7 @@ class customRepeatableScheduler():
         #             self.job_infos[j].operation_queue[o].type)
 
         self.job_state = None
-        self.machine_types = None
+        # self.machine_types = None
         self.schedule_heatmap = None
         # self.action_space = spaces.MultiDiscrete([len_machines, len_jobs])
         
@@ -238,10 +263,10 @@ class customRepeatableScheduler():
         # 3. 다음으로 수행할 Operation의 earliest_start
         # 4. 다음으로 수행할 Operation의 duration
         # self.job_state = np.zeros((len(self.jobs), 4), dtype=np.int32)
-        self.machine_types = np.zeros(
-            (len(self.machines), 25), dtype=np.int8)
+        # self.machine_types = np.zeros(
+        #     (len(self.machines), 25), dtype=np.int8)
         self.schedule_heatmap = np.zeros(
-            (len(self.machines), 150), dtype=np.int8)
+            (len(self.machines), self.max_time), dtype=np.int8)
 
         self.legal_actions = np.ones(
             (len(self.machines), len(self.jobs)), dtype=bool)
@@ -295,40 +320,39 @@ class customRepeatableScheduler():
 
 
     def _update_legal_actions(self, action = None):
-        if action:
-            for machine_index in range(len(self.machines)):
-                machine = self.machines[machine_index]
-                job_index = action[1]
+        # if action:
+        #     for machine_index in range(len(self.machines)):
+        #         machine = self.machines[machine_index]
+        #         job_index = action[1]
+        #         if self.schedule_buffer[job_index] == [-1, -1]:
+        #             self.legal_actions[:, job_index] = False
+        #             break
+            
+        #         operation_index = self.schedule_buffer[job_index][1]
+        #         operation = self.job_infos[job_index].operation_queue[operation_index]
+        #         if machine.can_process_operation(operation.type):
+        #             self.legal_actions[machine_index, job_index] = True
+        #         else:
+        #             self.legal_actions[machine_index, job_index] = False
+        # else:
+        for machine_index in range(len(self.machines)):
+            machine = self.machines[machine_index]
+            for job_index in range(len(self.jobs)):
                 if self.schedule_buffer[job_index] == [-1, -1]:
                     self.legal_actions[:, job_index] = False
-                    break
-            
+                    continue
                 operation_index = self.schedule_buffer[job_index][1]
                 operation = self.job_infos[job_index].operation_queue[operation_index]
                 if machine.can_process_operation(operation.type):
                     self.legal_actions[machine_index, job_index] = True
                 else:
                     self.legal_actions[machine_index, job_index] = False
-        else:
-            for machine_index in range(len(self.machines)):
-                # 2. 선택된 Machine가 선택된 Job의 Operation의 Type을 처리할 수 없는 경우
-                machine = self.machines[machine_index]
-                for job_index in range(len(self.jobs)):
-                    if self.schedule_buffer[job_index] == [-1, -1]:
-                        self.legal_actions[:, job_index] = False
-                        continue
-                    operation_index = self.schedule_buffer[job_index][1]
-                    operation = self.job_infos[job_index].operation_queue[operation_index]
-                    if machine.can_process_operation(operation.type):
-                        self.legal_actions[machine_index, job_index] = True
-                    else:
-                        self.legal_actions[machine_index, job_index] = False
 
     def _update_machine_state(self, action=None):
         if action is None:
-            for i, machine in enumerate(self.machines):
-                self.machine_types[i] = [
-                    1 if i in machine.ability else 0 for i in range(25)]
+            # for i, machine in enumerate(self.machines):
+            #     self.machine_types[i] = [
+            #         1 if i in machine.ability else 0 for i in range(25)]
             return
         
         machine = self.machines[action[0]]
@@ -346,7 +370,7 @@ class customRepeatableScheduler():
         for job_list in self.jobs:
             for job in job_list:
                 remaining_operations = [op for op in job.operation_queue if op.finish is None]
-                
+
                 if not remaining_operations:
                     job.tardiness = job.operation_queue[-1].finish - job.deadline
                     job.time_exceeded = max(0, job.operation_queue[-1].finish - job.deadline)
@@ -367,16 +391,41 @@ class customRepeatableScheduler():
                     approx_best_finish_time = 0
 
                 remaining_durations = [op.duration for op in remaining_operations[1:]]
-                operation_deadline = job.deadline - sum(remaining_durations)
                 
-                job.estimated_tardiness = (approx_best_finish_time - operation_deadline) 
+                #v0 : Best_finish_time (mean 사용) - Operation deadline
+                # operation_deadline = job.deadline - sum(remaining_durations)
+                #job.estimated_tardiness = (approx_best_finish_time - operation_deadline) 
+                #v1 : Best_finish_time (min 사용) - Operation deadline : V0보다 더 안 좋아서 삭제
+
+                #v2 : Best_finish_time (mean 사용) + Scaled Operation deadline
+                # scaled operation deadline 추가
+                # (지금까지 걸린 시간 + 자기 duration) / total duration 을 deadline에 곱한다
+                scaled_rate = (job.total_duration - sum(remaining_durations)) / job.total_duration
+                scaled_operation_deadline = scaled_rate * job.deadline
+                job.estimated_tardiness = approx_best_finish_time - scaled_operation_deadline
                 
-        # Rebuild the heap based on the updated estimated tardiness values
-        for job_list in self.jobs:
+            # Rebuild the heap based on the updated estimated tardiness values
             heapq.heapify(job_list)
 
+    # job 8번의 estimated가 잘 계산되고 있는지 test
+    def test_cal_estimated_tardiness(self):
+        for job in self.jobs[7]:
+            remaining_operations = [op for op in job.operation_queue if op.finish is None]
+            if remaining_operations:
+                earliest_operation = remaining_operations[0]
+                print(f"Job 8 repeat {job.index} - Operation {earliest_operation.index} - Earliest Start : {earliest_operation.earliest_start}")
+                best_finish_times = [
+                        machine.cal_best_finish_time(op_earliest_start=earliest_operation.earliest_start, op_type = earliest_operation.type, op_duration = earliest_operation.duration)
+                        for machine in self.machines
+                    ]
+                print(best_finish_times)
+            else:
+                print(f"Job 8 repeat {job.index} - Operation {job.operation_queue[-1].index} - Finish Time : {job.operation_queue[-1].finish}")
+            print(f"Job 8 repeat {job.index} - Estimated Tardiness : {job.estimated_tardiness}")
 
-    def _schedule_to_array(self, operation_schedule, max_time = 150):
+    
+
+    def _schedule_to_array(self, operation_schedule):
         operation_schedule.sort(key = lambda x: x.start)
         finished_time = operation_schedule[-1].finish // 100
         def is_in_idle_time(time):
@@ -387,10 +436,18 @@ class customRepeatableScheduler():
             # 머신이 일하고 있는 시간에는 True 반환
             return False
 
-        result = [-1 for _ in range(max_time)]
+        result = [0 for _ in range(self.max_time)]
+        # result = [0 for _ in range(max_time + max_time%8)]
         
-        for i in range(min(finished_time, max_time)):
+        for i in range(self.max_time):
             result[i] = is_in_idle_time(i*100)
+
+        # result encoding
+        # 8칸씩 끊어서 00010000 -> 16으로 encoding
+        # max time을 8로 나눈 것을 올림 할것
+        # result_encoded = [sum([result[i*8+j] * 2**j for j in range(8)]) for i in range((max_time+7)//8)]
+        # return result_encoded
+        result[-1] = -1
 
         return result
 
@@ -493,27 +550,22 @@ class customRepeatableScheduler():
 
     def get_observation(self):
         remaining_repeats = []
+        cur_estimated_tardiness_per_job = []
         mean_estimated_tardiness_per_job = []
         std_estimated_tardiness_per_job = []
         real_tardiness_per_job = []
         for job_list in self.jobs:
             # 아래 공식 분모 제거
             estimated_tardiness = [job.estimated_tardiness // 100 for job in job_list]
+            cur_estimated_tardiness_per_job.append(job_list[0].estimated_tardiness // 100)
             mean_estimated_tardiness_per_job.append(np.mean(estimated_tardiness))
             std_estimated_tardiness_per_job.append(np.std(estimated_tardiness))
             real_tardiness_per_job.append([job.tardiness // 100 for job in job_list])
             remaining_repeats.append(sum([not job.is_done for job in job_list]))
-        
+
         mean_tardiness_per_job = [np.mean(job_tardiness) for job_tardiness in real_tardiness_per_job]
         std_tardiness_per_job = [np.std(job_tardiness) for job_tardiness in real_tardiness_per_job]
-        # 각 Job의 Total Duration 계산
-        total_durations_per_job = [job_list[0].total_duration // 100 for job_list in self.jobs]
-        # 각 Job의 operation 개수 계산
-        num_operations_per_job = [len(job_list[0].operation_queue) for job_list in self.jobs]
-        # 각 Job의 operation duration 평균, 표준편차 계산
-        mean_operation_duration_per_job = [np.mean([op.duration // 100 for op in job_list[0].operation_queue]) for job_list in self.jobs]
-        std_operation_duration_per_job = [np.std([op.duration // 100 for op in job_list[0].operation_queue]) for job_list in self.jobs]
-
+        
         # 스케줄 버퍼에 올라와있는 작업의 정보 계산
         job_deadline = []
         op_duration = []
@@ -539,17 +591,18 @@ class customRepeatableScheduler():
         self.cal_machine_cost()
         self.cal_entire_cost()
 
+        # 머신 별 hole의 길이 계산
+        hole_length_per_machine = [machine.cal_idle_time() // 100 for machine in self.machines]
+        # 머신 별 ablity_encode
+        machine_ability = [machine.encode_ability() for machine in self.machines]
+
         observation = {
             # Vaild 행동, Invalid 행동 관련 지표
             'action_masks': self.action_mask,
-            # Instance 특징에 대한 지표
-            'current_repeats': np.array(self.current_repeats),
-            'total_durations_per_job' : np.array(total_durations_per_job),
-            'num_operations_per_job' : np.array(num_operations_per_job),
-            'mean_operation_duration_per_job' : np.array(mean_operation_duration_per_job),
-            'std_operation_duration_per_job' : np.array(std_operation_duration_per_job),
             # 현 scheduling 상황 관련 지표
             'last_finish_time_per_machine' : np.array([machine.cal_last_finish_time()//100 for machine in self.machines]),
+            'machine_ability' : np.array(machine_ability),
+            'hole_length_per_machine' : np.array(hole_length_per_machine),
             'schedule_heatmap': self.schedule_heatmap,
             'mean_real_tardiness_per_job': np.array(mean_tardiness_per_job),
             'std_real_tardiness_per_job': np.array(std_tardiness_per_job),
@@ -564,12 +617,20 @@ class customRepeatableScheduler():
             # 추정 tardiness 관련 지표
             'mean_estimated_tardiness_per_job': np.array(mean_estimated_tardiness_per_job),
             'std_estimated_tardiness_per_job' : np.array(std_estimated_tardiness_per_job),
+            'cur_estimated_tardiness_per_job' : np.array(cur_estimated_tardiness_per_job),
             # cost 관련 지표
             'cost_factor_per_time': np.array([self.cost_deadline_per_time, self.cost_hole_per_time, self.cost_processing_per_time, self.cost_makespan_per_time]),
             'current_costs' : np.array([self.cost_deadline, self.cost_hole, self.cost_processing, self.cost_makespan])
         }
         
         return observation
+
+    def test_cal_best_finish_time(self):
+        # machine 0에 대해서만 테스트
+        machine = self.machines[0]
+        for i, elem in enumerate(self.schedule_buffer):
+            operation = self.jobs[i][0].operation_queue[elem[1]]
+            print(f"Job {i} - Operation {elem[1]} Best Finish Time : {machine.cal_best_finish_time(operation.duration, operation.type, operation.earliest_start)}")
 
     def get_info(self):
         return {
@@ -588,7 +649,8 @@ class customRepeatableScheduler():
             'cost_deadline': self.cost_deadline,
             'cost_hole': self.cost_hole,
             'cost_processing': self.cost_processing,
-            'cost_makespan': self.cost_makespan
+            'cost_makespan': self.cost_makespan,
+            'heatmap': self.schedule_heatmap,
         }
     
     def render(self, mode="seaborn", num_steps=0):
@@ -650,8 +712,9 @@ class customRepeatableScheduler():
     def is_done(self):
         # 모든 Job의 Operation가 종료된 경우 Terminated를 True로 설정한다
         # 또한 legal_actions가 전부 False인 경우도 Terminated를 True로 설정한다
+        return all([job.is_done for job_list in self.jobs for job in job_list])
         return not np.any(self.action_mask) or all([job.operation_queue[-1].finish is not None for job_list in self.jobs for job in job_list])
-    
+
     def _get_final_operation_finish(self):
         if self.current_schedule:
             return max(self.current_schedule, key=lambda x: x.finish).finish

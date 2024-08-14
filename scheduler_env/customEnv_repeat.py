@@ -1,11 +1,13 @@
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
+import pandas as pd
 import json
 from stable_baselines3.common.env_checker import check_env
 from scheduler_env.customScheduler_repeat import customRepeatableScheduler
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches  # 필요한 모듈을 가져옵니다.
+from collections import defaultdict
 
 class SchedulingEnv(gym.Env):
     def _load_machines(self, file_path):
@@ -68,18 +70,21 @@ class SchedulingEnv(gym.Env):
 
         return jobs
 
-    def __init__(self, machine_config_path, job_config_path, job_repeats_params, render_mode="seaborn", cost_deadline_per_time = 5, cost_hole_per_time = 1, cost_processing_per_time = 2, cost_makespan_per_time = 10, profit_per_time = 10, target_time = None, test_mode=False, max_time = 150):
+    def __init__(self, machine_config_path, job_config_path, job_repeats_params, render_mode="seaborn", cost_deadline_per_time = 5, cost_hole_per_time = 1, cost_processing_per_time = 2, cost_makespan_per_time = 10, profit_per_time = 10, target_time = None, test_mode=False, max_time = 150, num_of_types = 4):
         super(SchedulingEnv, self).__init__()
-        # self.weight_final_time = weight_final_time
-        # self.weight_job_deadline = weight_job_deadline
-        # self.weight_op_rate = weight_op_rate
+
+        # cost 관련 변수
         self.cost_deadline_per_time = cost_deadline_per_time
         self.cost_hole_per_time = cost_hole_per_time
         self.cost_processing_per_time = cost_processing_per_time
         self.cost_makespan_per_time = cost_makespan_per_time
+
+        # profit 관련 변수
         self.profit_per_time = profit_per_time
+
         self.target_time = target_time
         self.total_durations = 0
+        
         self.job_repeats_params = job_repeats_params  # 각 Job의 반복 횟수에 대한 평균과 표준편차
         self.current_repeats = [job_repeat[0] for job_repeat in job_repeats_params]
         self.test_mode = test_mode
@@ -95,19 +100,43 @@ class SchedulingEnv(gym.Env):
 
         self.num_steps = 0
 
+        self.max_time = max_time
+
+        self.mean_duration_per_job = None
+        self.std_duration_per_job = None
+        self.mean_deadline_per_job = None
+        self.std_deadline_per_job = None
+        self.num_operations_per_job = None
+
+        self.mean_operation_duration_per_type = None
+        self.std_operation_duration_per_type = None
+        self.mappable_machine_count_per_type = None
+        self.total_count_per_type = None
+        self.num_of_types = num_of_types
+
         self.action_space = spaces.Discrete(self.len_machines * self.len_jobs)
         self.observation_space = spaces.Dict({
             # Vaild 행동, Invalid 행동 관련 지표
             "action_masks": spaces.Box(low=0, high=1, shape=(self.len_machines * self.len_jobs, ), dtype=np.int8),
-            # Instance 특징에 대한 지표
+            # Instance 특징에 대한 지표            
+            # Operation Type별 지표
+            "total_count_per_type": spaces.Box(low=-1, high=100, shape=(num_of_types, ), dtype=np.int64),
+            "mappable_machine_count_per_type": spaces.Box(low=0, high=self.len_machines, shape=(num_of_types, ), dtype=np.int64),
+            "mean_operation_duration_per_type": spaces.Box(low=0, high=20, shape=(num_of_types, ), dtype=np.float64),
+            "std_operation_duration_per_type": spaces.Box(low=0, high=20, shape=(num_of_types, ), dtype=np.float64),
+            # Job별 지표
             "current_repeats": spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
-            'total_durations_per_job' : spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
+            'total_length_per_job' : spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
             'num_operations_per_job': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
             'mean_operation_duration_per_job': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.float64),
             'std_operation_duration_per_job': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.float64),
+            "mean_deadline_per_job": spaces.Box(low=-1, high=max_time, shape=(self.len_jobs, ), dtype=np.float64),
+            "std_deadline_per_job": spaces.Box(low=-1, high=max_time, shape=(self.len_jobs, ), dtype=np.float64),
             # 현 scheduling 상황 관련 지표
             'last_finish_time_per_machine': spaces.Box(low=0, high=max_time, shape=(self.len_machines, ), dtype=np.int64),
-            "schedule_heatmap": spaces.Box(low=0, high=1, shape=(self.len_machines, max_time), dtype=np.int8),
+            "machine_ability": spaces.Box(low=-1, high=100, shape=(self.len_machines, ), dtype=np.int64),
+            "hole_length_per_machine": spaces.Box(low=0, high=max_time, shape=(self.len_machines, ), dtype=np.int64),
+            "schedule_heatmap": spaces.Box(low=-1, high=2, shape=(self.len_machines, max_time), dtype=np.int8),
             "mean_real_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
             "std_real_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
             'remaining_repeats': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
@@ -121,6 +150,7 @@ class SchedulingEnv(gym.Env):
             # 추정 tardiness 관련 지표
             "mean_estimated_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
             "std_estimated_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
+            'cur_estimated_tardiness_per_job': spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
             # cost 관련 지표
             "cost_factor_per_time": spaces.Box(low=-100, high=100, shape=(4, ), dtype=np.float64),
             "current_costs": spaces.Box(low=0, high=50000, shape=(4, ), dtype=np.float64),
@@ -130,8 +160,16 @@ class SchedulingEnv(gym.Env):
         super().reset(seed=seed, options=options)
         self._initialize_scheduler()
         self.num_steps = 0
+        self.cal_env_info()
+        self.cal_job_info()
 
         return self._get_observation(), self._get_info()
+    
+    # def test_cal_best_finish_time(self):
+    #     self.custom_scheduler.test_cal_best_finish_time()
+
+    # def test_cal_estimated_tardiness(self):
+    #     self.custom_scheduler.test_cal_estimated_tardiness()
 
     def step(self, action):
         # Map the action to the corresponding machine and job
@@ -178,11 +216,25 @@ class SchedulingEnv(gym.Env):
 
     def _get_observation(self):
         observation = self.custom_scheduler.get_observation()
-        #observation["schedule_image"] = self.custom_scheduler.render_image_to_array(num_steps = self.num_steps)[:, :, :3]
+        #추가
+        observation["total_count_per_type"] = np.array(self.total_count_per_type)
+        observation["mappable_machine_count_per_type"] = np.array(self.mappable_machine_count_per_type)
+        observation["mean_deadline_per_job"] = np.array(self.mean_deadline_per_job)
+        observation["std_deadline_per_job"] = np.array(self.std_deadline_per_job)
+        observation["mean_operation_duration_per_type"] = np.array(self.mean_operation_duration_per_type)
+        observation["std_operation_duration_per_type"] = np.array(self.std_operation_duration_per_type)
+        
+        #기존 정보 계산 최적화
+        observation["mean_operation_duration_per_job"] = np.array(self.mean_operation_duration_per_job)
+        observation["std_operation_duration_per_job"] = np.array(self.std_operation_duration_per_job)
+        observation["current_repeats"] = np.array(self.current_repeats)
+        observation["num_operations_per_job"] = np.array(self.num_operations_per_job)
+        observation["total_length_per_job"] = np.array([int(num * mean) for num, mean in zip(self.num_operations_per_job, self.mean_operation_duration_per_job)])
+
         return observation
     
-    def set_test_mode(self):
-        self.test_mode = True
+    def set_test_mode(self, test_mode):
+        self.test_mode = test_mode
         self.reset()
 
     # For MaskablePPO
@@ -226,7 +278,7 @@ class SchedulingEnv(gym.Env):
             random_jobs.append(random_job_info)
 
         # 랜덤 Job 인스턴스를 사용하여 customScheduler 초기화
-        self.custom_scheduler = customRepeatableScheduler(jobs=random_jobs, machines=self.machine_config, cost_deadline_per_time= self.cost_deadline_per_time, cost_hole_per_time = self.cost_hole_per_time, cost_processing_per_time = self.cost_processing_per_time, cost_makespan_per_time = self.cost_makespan_per_time, profit_per_time = self.profit_per_time, current_repeats=self.current_repeats)
+        self.custom_scheduler = customRepeatableScheduler(jobs=random_jobs, machines=self.machine_config, cost_deadline_per_time= self.cost_deadline_per_time, cost_hole_per_time = self.cost_hole_per_time, cost_processing_per_time = self.cost_processing_per_time, cost_makespan_per_time = self.cost_makespan_per_time, profit_per_time = self.profit_per_time, current_repeats=self.current_repeats, max_time=self.max_time)
         self.custom_scheduler.reset()
 
     def _calculate_target_time(self):
@@ -243,7 +295,6 @@ class SchedulingEnv(gym.Env):
 
     def visualize_graph(self):
         self.custom_scheduler.visualize_graph()
-
 
     def print_result(self, info, detail_mode = False):
         current_repeats = info['current_repeats']
@@ -342,6 +393,122 @@ class SchedulingEnv(gym.Env):
         
         plt.tight_layout()
         plt.show()
+
+    def cal_env_info(self):
+        self.mean_operation_duration_per_type = []
+        self.std_operation_duration_per_type = []
+        self.mappable_machine_count_per_type = []
+        self.total_count_per_type = []
+
+        # Operation Type별로 필요한 정보를 저장할 딕셔너리 생성
+        operation_stats = defaultdict(lambda: {'count': 0, 'total_duration': [], 'machine_count': 0})
+
+        # Job의 Operation을 순회하며 통계 정보 수집
+        for job_info, repeat in zip(self.jobs, self.current_repeats):
+            for operation in job_info["operations"]:
+                op_type = operation["type"]
+                operation_stats[op_type]['count'] += repeat  # 반복 횟수만큼 count 증가
+                operation_stats[op_type]['total_duration'].extend([operation["duration"] // 100] * repeat)
+
+        # 각 Operation Type을 처리할 수 있는 머신의 수 계산
+        for machine in self.machine_config:
+            for ability in machine["ability"]:
+                operation_stats[ability]['machine_count'] += 1
+
+        # 통계 정보 계산
+        data = []
+        for op_type, stats in sorted(operation_stats.items()):
+            total_duration_array = np.array(stats['total_duration'])
+            avg_duration = np.mean(total_duration_array)
+            std_duration = np.std(total_duration_array)
+            data.append({
+                'Operation Type': op_type,
+                'Total Count': stats['count'],
+                'Avg Duration': avg_duration,
+                'Std Duration': std_duration,
+                'Machine Count': stats['machine_count']
+            })
+
+            self.mean_operation_duration_per_type.append(avg_duration) 
+            self.std_operation_duration_per_type.append(std_duration)
+            self.mappable_machine_count_per_type.append(stats['machine_count'])
+            self.total_count_per_type.append(stats['count'])
+
+
+        return data
+
+    def show_env_info(self):
+        data = self.cal_env_info()
+
+        # DataFrame으로 변환하여 표 형식으로 출력
+        df = pd.DataFrame(data)
+
+        # 스타일링 적용
+        styled_df = df.style.format({
+            'Total Count': '{:,.0f}',
+            'Avg Duration': '{:.2f}',
+            'Std Duration': '{:.2f}',
+            'Machine Count': '{:,.0f}'
+        }).background_gradient(cmap='Blues')
+
+        print(styled_df)
+        return styled_df
+
+    def cal_job_info(self):
+        job_data = []
+
+        self.mean_deadline_per_job = []
+        self.std_deadline_per_job = []
+        self.mean_operation_duration_per_job = []
+        self.std_operation_duration_per_job = []
+        self.num_operations_per_job = []
+
+        for job_info, repeat in zip(self.jobs, self.current_repeats):
+            durations = [op["duration"] // 100 for op in job_info["operations"]]
+            mean_duration = np.mean(durations)
+            std_duration = np.std(durations)
+            num_operations = len(job_info["operations"])
+            deadlines = np.array(job_info["deadline"][:repeat]) // 100
+            mean_deadline = np.mean(deadlines)
+            std_deadline = np.std(deadlines)
+
+            job_data.append({
+                'Job Name': job_info["name"],
+                'Mean Ops Duration': mean_duration,
+                'Std Ops Duration': std_duration,
+                '# of Ops': num_operations,
+                'Mean Deadline': mean_deadline,
+                'Std Deadline': std_deadline,
+                'Repeats': repeat
+            })
+            
+            self.mean_deadline_per_job.append(mean_deadline)
+            self.std_deadline_per_job.append(std_deadline)
+            self.mean_operation_duration_per_job.append(mean_duration)
+            self.std_operation_duration_per_job.append(std_duration)
+            self.num_operations_per_job.append(num_operations)
+
+        return job_data
+
+    def show_job_info(self):
+        # Job별 통계 정보 수집
+        job_data = self.cal_job_info()
+
+        # DataFrame으로 변환하여 표 형식으로 출력
+        job_df = pd.DataFrame(job_data)
+
+        # 스타일링 적용
+        styled_job_df = job_df.style.format({
+            'Mean Duration': '{:.2f}',
+            'Std Duration': '{:.2f}',
+            '# of Ops': '{:,.0f}',
+            'Mean Deadline': '{:.2f}',
+            'Std Variance': '{:.2f}',
+            'Repeats': '{:,.0f}'
+        }).background_gradient(cmap='Greens')
+
+        print(styled_job_df)
+        return styled_job_df
 
 if __name__ == "__main__":
     env_5_8_8_2 = SchedulingEnv(machine_config_path= "instances/Machines/v0-5.json", job_config_path = "instances/Jobs/v0-8x12-deadline.json", job_repeats_params = [(8, 2)] * 8)
