@@ -443,7 +443,10 @@ class customRepeatableScheduler():
         job_repeat_schedule = [0 for _ in range(self.max_time)]
         # result = [0 for _ in range(max_time + max_time%8)]
         for operation in operation_schedule:
-            for i in range(operation.start // 100, operation.finish // 100):
+            start = min(self.max_time, operation.start // 100)
+            finish = min(self.max_time, operation.finish // 100)
+
+            for i in range(start, finish):
                 binary_schedule[i] = 1
                 op_index_schedule[i] = operation.index+1
                 op_job_schedule[i] = int(operation.job)+1
@@ -619,7 +622,7 @@ class customRepeatableScheduler():
             'last_finish_time_per_machine' : np.array([machine.cal_last_finish_time()//100 for machine in self.machines]),
             'machine_ability' : np.array(machine_ability),
             'hole_length_per_machine' : np.array(hole_length_per_machine),
-            'schedule_heatmap': self.schedule_heatmap.transpose(2, 0, 1).reshape(4, 8, 150),
+            'schedule_heatmap': self.schedule_heatmap.transpose(2, 0, 1).reshape(4, len(self.machines), self.max_time),
             'mean_real_tardiness_per_job': np.array(mean_tardiness_per_job),
             'std_real_tardiness_per_job': np.array(std_tardiness_per_job),
             'remaining_repeats': np.array(remaining_repeats),
