@@ -3,7 +3,7 @@
     "jobs": [
         {
             "name": "Job 1",
-            "color": "#1f77b4",
+            "color": "#FF9999",
             "earliest_start": 0,
             "operations": [
                 {
@@ -19,11 +19,11 @@
                     "predecessor": 0
                 }
             ],
-            "deadline": [450, 700, 1000, 1300, 1600, 1900]
+            "deadline": [7, 12]
         },
         {
             "name": "Job 2",
-            "color": "#ff7f0e",
+            "color": "#B9E0A5",
             "earliest_start": 0,
             "operations": [
                 {
@@ -39,11 +39,11 @@
                     "predecessor": 2
                 }
             ],
-            "deadline": [500, 800, 1100, 1400, 1700, 2000]
+            "deadline": [6, 9]
         },
         {
             "name": "Job 3",
-            "color": "#2ca02c",
+            "color": "#66B2FF",
             "earliest_start": 0,
             "operations": [
                 {
@@ -65,7 +65,7 @@
                     "predecessor": 5
                 }
             ],
-            "deadline": [400, 650, 900, 1150, 1400, 1650]
+            "deadline": [6, 10]
         }
     ]
 }
