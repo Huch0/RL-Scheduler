@@ -269,9 +269,9 @@ def solve_with_ortools(env,
                         env.custom_scheduler.last_finish_time, solver.Value(task_ends[(job.name, job.index, op.index)]))
 
                     env.custom_scheduler.current_schedule.append(op)
-        tard_cost = solver.Value(total_tardiness) * cost_weights['tard']
-        idle_time_cost = solver.Value(total_idle_time) * cost_weights['idle_time']
-        makespan_cost = solver.Value(makespan) * cost_weights['makespan']
+        tard_cost = solver.Value(total_tardiness) * cost_weights['tard'] / 100
+        idle_time_cost = solver.Value(total_idle_time) * cost_weights['idle_time'] / 100
+        makespan_cost = solver.Value(makespan) * cost_weights['makespan'] / 100
         objs = {
             'makespan': solver.Value(makespan),
             'deadline_compliance': solver.Value(deadline_compliance),
@@ -293,13 +293,21 @@ if __name__ == '__main__':
         'makespan': 10
     }
     # Create environment
-    env = SchedulingEnv(machine_config_path="instances/Machines/v0-8.json", job_config_path="instances/Jobs/v0-12-repeat-hard.json",
-                        job_repeats_params=[(3, 1)] * 12, test_mode=True)
+    from train.make_env import make_env
+
+    cost_list = [5, 2, 1, 10]
+    profit_per_time = 10
+    max_time = 150
+
+    env, env_name = make_env(num_machines=8, num_jobs=12, max_repeats=12,
+                              repeat_means=[3] * 12, repeat_stds=[1] * 12,
+                              test_mode=True, cost_list=cost_list,
+                              profit_per_time=profit_per_time, max_time=max_time)
     env.reset()
-    objective = 'tard'
+    objective = 'cost'
     copy_env = False
     solution, objs, status, elapsed_time = solve_with_ortools(
-        env, objective=objective, cost_weights=cost_weights, copy_env=copy_env, time_limit=600.0)
+        env, objective=objective, cost_weights=cost_weights, copy_env=copy_env, time_limit=60.0)
     print(f"Status: {status}, Elapsed time: {elapsed_time}")
     if solution:
         print(f"Objective values: {objs}")

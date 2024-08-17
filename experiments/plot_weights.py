@@ -7,11 +7,7 @@ from scheduler_env.customEnv_repeat import SchedulingEnv
 import torch
 
 
-def plot_input_weights(model_path, env, save_img=False):
-    # Load the model
-    model = MaskablePPO.load(model_path)
-    # print(dir(model))
-
+def plot_input_weights(model, env, save_img=False):
     # Get the policy network
     policy = model.policy
     # print(f"Policy network: {policy}")
@@ -126,9 +122,22 @@ def plot_input_weights(model_path, env, save_img=False):
 
 
 if __name__ == "__main__":
-    # model_path = "./experiments/tmp/2/run_0-{'clip_range': 0.1, 'learning_rate': 0.0005}/best_model.zip"
-    model_path = "./logs/tmp/seojun/MP_Env_8_12_3_1_v10.zip"
-    env = SchedulingEnv(machine_config_path="instances/Machines/v0-8.json",
-                        job_config_path="instances/Jobs/v0-12-repeat-easy.json", job_repeats_params=[(3, 1)] * 12)
+    from train.make_env import make_env
+
+    cost_list = [5, 2, 1, 10]
+    profit_per_time = 10
+    max_time = 150
+
+    env, env_name = make_env(num_machines=8, num_jobs=12, max_repeats=12,
+                   repeat_means=[3] * 12, repeat_stds=[1] * 12, test_mode=False, cost_list=cost_list, profit_per_time=profit_per_time, max_time=max_time)
+
+    model_path = "./logs/tmp/seojun/MP_Env4_v4.zip"
+    policy_kwargs = dict(
+        net_arch=[256, 64]
+    )
+    # Load the model
+    model = MaskablePPO.load(model_path, env=env, policy_kwargs=policy_kwargs)
+    # print(dir(model))
+
     env.reset()
-    plot_input_weights(model_path, env, save_img=False)
+    plot_input_weights(model, env, save_img=False)
