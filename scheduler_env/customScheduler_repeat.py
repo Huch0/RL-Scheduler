@@ -266,7 +266,7 @@ class customRepeatableScheduler():
         # self.machine_types = np.zeros(
         #     (len(self.machines), 25), dtype=np.int8)
         self.schedule_heatmap = np.zeros(
-            (len(self.machines), self.max_time, 4), dtype=np.uint8)
+            (len(self.machines), self.max_time, 1), dtype=np.uint8)
 
         self.legal_actions = np.ones(
             (len(self.machines), len(self.jobs)), dtype=bool)
@@ -358,6 +358,7 @@ class customRepeatableScheduler():
         machine = self.machines[action[0]]
         operation_schedule = machine.operation_schedule
         # 4x150 -> 150x4로 변경
+        # 위에껀 무시, 1x150 -> 150x1로 변경
         self.schedule_heatmap[action[0]] = np.array(self._schedule_to_array(operation_schedule)).transpose()
 
         # 선택된 리소스의 스케줄링된 Operation들
@@ -386,10 +387,10 @@ class customRepeatableScheduler():
                 ]
                 best_finish_times = [time for time in best_finish_times if time != -1]
 
-                if best_finish_times:
-                    approx_best_finish_time = int(np.mean(best_finish_times))
-                else:
-                    approx_best_finish_time = 0
+                # if best_finish_times:
+                approx_best_finish_time = int(np.mean(best_finish_times))
+                # else:
+                #     approx_best_finish_time = 0
 
                 remaining_durations = [op.duration for op in remaining_operations[1:]]
                 
@@ -466,6 +467,9 @@ class customRepeatableScheduler():
         op_index_schedule = np.array(op_index_schedule)
         op_job_schedule = np.array(op_job_schedule)
         job_repeat_schedule = np.array(job_repeat_schedule)
+
+        # 4->1차원으로 축소
+        return [op_index_schedule]
 
         return [binary_schedule, op_index_schedule, op_job_schedule, job_repeat_schedule]
 
@@ -622,7 +626,7 @@ class customRepeatableScheduler():
             'last_finish_time_per_machine' : np.array([machine.cal_last_finish_time()//100 for machine in self.machines]),
             'machine_ability' : np.array(machine_ability),
             'hole_length_per_machine' : np.array(hole_length_per_machine),
-            'schedule_heatmap': self.schedule_heatmap.transpose(2, 0, 1).reshape(4, len(self.machines), self.max_time),
+            'schedule_heatmap': self.schedule_heatmap.transpose(2, 0, 1).reshape(1, len(self.machines), self.max_time),
             'mean_real_tardiness_per_job': np.array(mean_tardiness_per_job),
             'std_real_tardiness_per_job': np.array(std_tardiness_per_job),
             'remaining_repeats': np.array(remaining_repeats),
