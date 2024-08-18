@@ -45,9 +45,52 @@ def CR(env):
 
 def FDD_over_MWKR(env):
     """
-    Flow Due Data / Most Work Remaining
+    Flow Due Date / Most Work Remaining
     """
-    pass
+    min_fdd_mwkr = np.inf
+    selected_job = None
+    jobs = env.custom_scheduler.jobs
+    for job_list in jobs:
+        for job in job_list:
+            scheduled_time = 0
+            remaining_time = 0
+            current_time = 0
+            for op in job.operation_queue:
+                if op.finish is not None:
+                    scheduled_time += op.duration
+                else:
+                    if current_time == 0:
+                        current_time = op.duration
+                    remaining_time += op.duration
+
+            if remaining_time == 0:
+                continue
+
+            # Calculate the FDD
+            r = 0  # arrival time
+            fdd = r + scheduled_time + current_time
+            # Calculate the MWKR
+            mwkr = remaining_time
+            fdd_mwkr = fdd / mwkr
+
+            if fdd_mwkr < min_fdd_mwkr:
+                min_fdd_mwkr = fdd_mwkr
+                selected_job = job
+
+    selected_op = None
+    for op in selected_job.operation_queue:
+        if op.finish is None:
+            selected_op = op
+            break
+
+    # Find the first available machine to schedule the job
+    selected_machine = select_machine(env.custom_scheduler.machines, selected_job, selected_op)
+
+    return {
+        'selected_machine': selected_machine,
+        'selected_job': selected_job,
+        'selected_op': selected_op,
+    }
 
 
 def MWKR(env):
@@ -299,16 +342,23 @@ def plot_pdr_comparison(pdrs, log_dir='./experiments/tmp/1'):
         ax = axs[i // 4, i % 4]
         data = []
         for pdr in pdrs:
-            column_name = f'{pdr.__name__}/{obj}'
+            pdr_name = pdr.__name__
+
+            column_name = f'{pdr_name}/{obj}'
             pdr_data = df[column_name]
-            pdr_df = pd.DataFrame({obj: pdr_data, 'PDR': pdr.__name__})
+
+            pdr_name = pdr_name.replace('_over_', '/')
+            pdr_name = pdr_name.replace('_', '+')
+            pdr_df = pd.DataFrame({obj: pdr_data, 'PDR': pdr_name})
             data.append(pdr_df)
 
         combined_data = pd.concat(data)
         sns.boxplot(x='PDR', y=obj, data=combined_data, ax=ax)
-        ax.set_title(obj)
-        ax.set_xlabel('PDRs')
+        ax.set_title(obj.replace('_', ' ').title())
         ax.set_ylabel(obj.replace('_', ' ').title())
+
+        # Tilt x-axis tick labels
+        ax.tick_params(axis='x', rotation=45)
 
     plt.tight_layout()
     plt.show()
@@ -439,11 +489,11 @@ if __name__ == "__main__":
     envs = [make_env(repeat) for repeat in repeats]
 
     # # Evaluate the PDR
-    pdr = LWKR_MOD
+    pdr = FDD_over_MWKR
     # results = eval_pdr(pdr, envs, render=True, verbose=True)
 
     # Compare the PDRs
-    pdrs = [MWKR, CR, LWKR_MOD, LWKR_SPT]
+    pdrs = [MWKR, CR, FDD_over_MWKR, LWKR_MOD, LWKR_SPT]
     log_dir = './experiments/tmp/1'
     # compare_pdrs(pdrs, envs, log_dir=log_dir, verbose=True)
 
