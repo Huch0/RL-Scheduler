@@ -7,7 +7,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from matplotlib.figure import Figure
 from stable_baselines3.common.env_checker import check_env
 import matplotlib.colors as mcolors
-import seaborn as sns
+import seaborn as sns # type: ignore
 import heapq
 from PIL import Image
 import io
@@ -266,7 +266,7 @@ class customRepeatableScheduler():
         # self.machine_types = np.zeros(
         #     (len(self.machines), 25), dtype=np.int8)
         self.schedule_heatmap = np.zeros(
-            (len(self.machines), self.max_time), dtype=np.int8)
+            (len(self.machines), self.max_time), dtype=np.uint8)
 
         self.legal_actions = np.ones(
             (len(self.machines), len(self.jobs)), dtype=bool)
@@ -374,7 +374,7 @@ class customRepeatableScheduler():
                 if not remaining_operations:
                     job.tardiness = job.operation_queue[-1].finish - job.deadline
                     job.time_exceeded = max(0, job.operation_queue[-1].finish - job.deadline)
-                    job.estimated_tardiness = job.tardiness
+                    job.estimated_tardiness = float(job.tardiness)
                     job.is_done = True
                     continue
                 
@@ -385,10 +385,10 @@ class customRepeatableScheduler():
                 ]
                 best_finish_times = [time for time in best_finish_times if time != -1]
 
-                if best_finish_times:
-                    approx_best_finish_time = int(np.mean(best_finish_times))
-                else:
-                    approx_best_finish_time = 0
+                # if best_finish_times:
+                approx_best_finish_time = int(np.mean(best_finish_times))
+                # else:
+                #     approx_best_finish_time = 0
 
                 remaining_durations = [op.duration for op in remaining_operations[1:]]
                 
@@ -426,30 +426,53 @@ class customRepeatableScheduler():
     
 
     def _schedule_to_array(self, operation_schedule):
+        # sort 할 필요는 없으나 미래를 위해 보험을 들어놨다고 보면됨.
         operation_schedule.sort(key = lambda x: x.start)
-        finished_time = operation_schedule[-1].finish // 100
-        def is_in_idle_time(time):
-            for operation in operation_schedule:
-                # 머신이 일하고 있는 시간에는 True 반환
-                if operation.start <= time < operation.finish:
-                    return True
-            # 머신이 일하고 있는 시간에는 True 반환
-            return False
+        # def is_in_idle_time(time):
+        #     for operation in operation_schedule:
+        #         # 머신이 일하고 있는 시간에는 True 반환
+        #         if operation.start <= time < operation.finish:
+        #             return True
+        #     # 머신이 일하고 있는 시간에는 True 반환
+        #     return False
 
-        result = [0 for _ in range(self.max_time)]
+        # binary_schedule = [0 for _ in range(self.max_time)]
+        # op_index_schedule = [0 for _ in range(self.max_time)]
+        # op_job_schedule = [0 for _ in range(self.max_time)]
+        # job_repeat_schedule = [0 for _ in range(self.max_time)]
+        encoded_job_repeat_schedule = [0 for _ in range(self.max_time)]
         # result = [0 for _ in range(max_time + max_time%8)]
+        for operation in operation_schedule:
+            start = min(self.max_time, operation.start // 100)
+            finish = min(self.max_time, operation.finish // 100)
+
+            for i in range(start, finish):
+                # binary_schedule[i] = 1
+                # op_index_schedule[i] = operation.index+1
+                # op_job_schedule[i] = int(operation.job)+1
+                # job_repeat_schedule[i] = int(operation.job_index)+1
+                encoded_job_repeat_schedule[i] = int(operation.job)+1 + int(operation.job_index)*len(self.jobs)
         
-        for i in range(self.max_time):
-            result[i] = is_in_idle_time(i*100)
+        # for i in range(self.max_time):
+        #     binary_schedule[i] = is_in_idle_time(i*100)
 
         # result encoding
         # 8칸씩 끊어서 00010000 -> 16으로 encoding
         # max time을 8로 나눈 것을 올림 할것
         # result_encoded = [sum([result[i*8+j] * 2**j for j in range(8)]) for i in range((max_time+7)//8)]
         # return result_encoded
-        result[-1] = -1
 
-        return result
+        # 4차원으로 만들기
+        # binary_schedule = np.array(binary_schedule)
+        # op_index_schedule = np.array(op_index_schedule)
+        # op_job_schedule = np.array(op_job_schedule)
+        # job_repeat_schedule = np.array(job_repeat_schedule)
+        encoded_job_repeat_schedule = np.array(encoded_job_repeat_schedule)
+
+        # 4->1차원으로 축소
+        return encoded_job_repeat_schedule
+
+        return [binary_schedule, op_index_schedule, op_job_schedule, job_repeat_schedule]
 
     def _update_schedule_buffer(self):
         # Clear the current schedule buffer
@@ -556,11 +579,11 @@ class customRepeatableScheduler():
         real_tardiness_per_job = []
         for job_list in self.jobs:
             # 아래 공식 분모 제거
-            estimated_tardiness = [job.estimated_tardiness // 100 for job in job_list]
-            cur_estimated_tardiness_per_job.append(job_list[0].estimated_tardiness // 100)
+            estimated_tardiness = [job.estimated_tardiness / 100 for job in job_list]
+            cur_estimated_tardiness_per_job.append(job_list[0].estimated_tardiness / 100)
             mean_estimated_tardiness_per_job.append(np.mean(estimated_tardiness))
             std_estimated_tardiness_per_job.append(np.std(estimated_tardiness))
-            real_tardiness_per_job.append([job.tardiness // 100 for job in job_list])
+            real_tardiness_per_job.append([job.tardiness / 100 for job in job_list])
             remaining_repeats.append(sum([not job.is_done for job in job_list]))
 
         mean_tardiness_per_job = [np.mean(job_tardiness) for job_tardiness in real_tardiness_per_job]
@@ -592,10 +615,11 @@ class customRepeatableScheduler():
         self.cal_entire_cost()
 
         # 머신 별 hole의 길이 계산
-        hole_length_per_machine = [machine.cal_idle_time() // 100 for machine in self.machines]
+        hole_length_per_machine = [machine.cal_idle_time() // 100 + min(machine.operation_schedule, key = lambda x : x.start).start // 100 if machine.operation_schedule else 0 for machine in self.machines]
         # 머신 별 ablity_encode
         machine_ability = [machine.encode_ability() for machine in self.machines]
 
+        
         observation = {
             # Vaild 행동, Invalid 행동 관련 지표
             'action_masks': self.action_mask,

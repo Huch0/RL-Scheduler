@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches  # 필요한 모듈을 가져옵니다.
 from collections import defaultdict
 
+from stable_baselines3.common.preprocessing import get_flattened_obs_dim, is_image_space
+
 class SchedulingEnv(gym.Env):
     def _load_machines(self, file_path):
         machines = []
@@ -87,6 +89,7 @@ class SchedulingEnv(gym.Env):
         
         self.job_repeats_params = job_repeats_params  # 각 Job의 반복 횟수에 대한 평균과 표준편차
         self.current_repeats = [job_repeat[0] for job_repeat in job_repeats_params]
+        self.current_repeats_std = [job_repeat[1] for job_repeat in job_repeats_params]
         self.test_mode = test_mode
         self.best_makespan = float('inf')  # 최적 makespan
 
@@ -136,7 +139,7 @@ class SchedulingEnv(gym.Env):
             'last_finish_time_per_machine': spaces.Box(low=0, high=max_time, shape=(self.len_machines, ), dtype=np.int64),
             "machine_ability": spaces.Box(low=-1, high=100, shape=(self.len_machines, ), dtype=np.int64),
             "hole_length_per_machine": spaces.Box(low=0, high=max_time, shape=(self.len_machines, ), dtype=np.int64),
-            "schedule_heatmap": spaces.Box(low=-1, high=2, shape=(self.len_machines, max_time), dtype=np.int8),
+            "schedule_heatmap": spaces.Box(low=0, high=255, shape=(self.len_machines, max_time), dtype=np.uint8),
             "mean_real_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
             "std_real_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
             'remaining_repeats': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
@@ -155,6 +158,8 @@ class SchedulingEnv(gym.Env):
             "cost_factor_per_time": spaces.Box(low=-100, high=100, shape=(4, ), dtype=np.float64),
             "current_costs": spaces.Box(low=0, high=50000, shape=(4, ), dtype=np.float64),
         })
+    def is_image(self):
+        print(is_image_space(self.observation_space["schedule_heatmap"]))
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed, options=options)
@@ -213,6 +218,9 @@ class SchedulingEnv(gym.Env):
 
     def _update_state(self, action):
         self.custom_scheduler.update_state(action)
+
+    def update_repeat_stds(self, new_std):
+        self.job_repeats_params = [(mean, new_std) for mean, _ in self.job_repeats_params]
 
     def _get_observation(self):
         observation = self.custom_scheduler.get_observation()
