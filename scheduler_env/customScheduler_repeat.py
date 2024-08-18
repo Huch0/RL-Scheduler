@@ -266,7 +266,7 @@ class customRepeatableScheduler():
         # self.machine_types = np.zeros(
         #     (len(self.machines), 25), dtype=np.int8)
         self.schedule_heatmap = np.zeros(
-            (len(self.machines), self.max_time), dtype=np.uint8)
+            (len(self.machines), self.max_time), dtype=np.int8)
 
         self.legal_actions = np.ones(
             (len(self.machines), len(self.jobs)), dtype=bool)
@@ -436,7 +436,7 @@ class customRepeatableScheduler():
         #     # 머신이 일하고 있는 시간에는 True 반환
         #     return False
 
-        # binary_schedule = [0 for _ in range(self.max_time)]
+        binary_schedule = [0 for _ in range(self.max_time)]
         # op_index_schedule = [0 for _ in range(self.max_time)]
         # op_job_schedule = [0 for _ in range(self.max_time)]
         # job_repeat_schedule = [0 for _ in range(self.max_time)]
@@ -447,7 +447,7 @@ class customRepeatableScheduler():
             finish = min(self.max_time, operation.finish // 100)
 
             for i in range(start, finish):
-                # binary_schedule[i] = 1
+                binary_schedule[i] = 1
                 # op_index_schedule[i] = operation.index+1
                 # op_job_schedule[i] = int(operation.job)+1
                 # job_repeat_schedule[i] = int(operation.job_index)+1
@@ -463,13 +463,15 @@ class customRepeatableScheduler():
         # return result_encoded
 
         # 4차원으로 만들기
-        # binary_schedule = np.array(binary_schedule)
+        binary_schedule[-1] = -1
+        binary_schedule = np.array(binary_schedule)
         # op_index_schedule = np.array(op_index_schedule)
         # op_job_schedule = np.array(op_job_schedule)
         # job_repeat_schedule = np.array(job_repeat_schedule)
         encoded_job_repeat_schedule = np.array(encoded_job_repeat_schedule)
 
         # 4->1차원으로 축소
+        return binary_schedule
         return encoded_job_repeat_schedule
 
         return [binary_schedule, op_index_schedule, op_job_schedule, job_repeat_schedule]

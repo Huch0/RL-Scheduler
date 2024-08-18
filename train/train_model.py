@@ -106,20 +106,14 @@ if __name__ == "__main__":
     # Add additional checks or functionality as needed
 
 
-def train_model(env, env_name, version = "v1", total_steps = 1000000, initial_std = 1.0, final_std = 0.0):
+def train_model(env, env_name, eval_env, version = "v1", total_steps = 1000000, net_arch = [256, 64]):
     log_path = "./logs/tmp/" + env_name
     # set up logger
     new_logger = configure(log_path, ["stdout", "csv", "tensorboard"])
     # Create the evaluation environment
 
-    cost_list = [5, 2, 1, 10]
-    profit_per_time = 10
-    max_time = 50
-
-    eval_env, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = True, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
-
     policy_kwargs = dict(
-        net_arch=[256, 64]
+        net_arch = net_arch
     )
 
     # 표준편차 스케줄러 초기화
