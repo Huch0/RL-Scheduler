@@ -266,7 +266,7 @@ class customRepeatableScheduler():
         # self.machine_types = np.zeros(
         #     (len(self.machines), 25), dtype=np.int8)
         self.schedule_heatmap = np.zeros(
-            (len(self.machines), self.max_time, 1), dtype=np.uint8)
+            (len(self.machines), self.max_time), dtype=np.uint8)
 
         self.legal_actions = np.ones(
             (len(self.machines), len(self.jobs)), dtype=bool)
@@ -357,9 +357,7 @@ class customRepeatableScheduler():
         
         machine = self.machines[action[0]]
         operation_schedule = machine.operation_schedule
-        # 4x150 -> 150x4로 변경
-        # 위에껀 무시, 1x150 -> 150x1로 변경
-        self.schedule_heatmap[action[0]] = np.array(self._schedule_to_array(operation_schedule)).transpose()
+        self.schedule_heatmap[action[0]] = np.array(self._schedule_to_array(operation_schedule))
 
         # 선택된 리소스의 스케줄링된 Operation들
         if machine.operation_schedule:
@@ -438,20 +436,22 @@ class customRepeatableScheduler():
         #     # 머신이 일하고 있는 시간에는 True 반환
         #     return False
 
-        binary_schedule = [0 for _ in range(self.max_time)]
-        op_index_schedule = [0 for _ in range(self.max_time)]
-        op_job_schedule = [0 for _ in range(self.max_time)]
-        job_repeat_schedule = [0 for _ in range(self.max_time)]
+        # binary_schedule = [0 for _ in range(self.max_time)]
+        # op_index_schedule = [0 for _ in range(self.max_time)]
+        # op_job_schedule = [0 for _ in range(self.max_time)]
+        # job_repeat_schedule = [0 for _ in range(self.max_time)]
+        encoded_job_repeat_schedule = [0 for _ in range(self.max_time)]
         # result = [0 for _ in range(max_time + max_time%8)]
         for operation in operation_schedule:
             start = min(self.max_time, operation.start // 100)
             finish = min(self.max_time, operation.finish // 100)
 
             for i in range(start, finish):
-                binary_schedule[i] = 1
-                op_index_schedule[i] = operation.index+1
-                op_job_schedule[i] = int(operation.job)+1
-                job_repeat_schedule[i] = int(operation.job_index)+1
+                # binary_schedule[i] = 1
+                # op_index_schedule[i] = operation.index+1
+                # op_job_schedule[i] = int(operation.job)+1
+                # job_repeat_schedule[i] = int(operation.job_index)+1
+                encoded_job_repeat_schedule[i] = int(operation.job)+1 + int(operation.job_index)*len(self.jobs)
         
         # for i in range(self.max_time):
         #     binary_schedule[i] = is_in_idle_time(i*100)
@@ -463,13 +463,14 @@ class customRepeatableScheduler():
         # return result_encoded
 
         # 4차원으로 만들기
-        binary_schedule = np.array(binary_schedule)
-        op_index_schedule = np.array(op_index_schedule)
-        op_job_schedule = np.array(op_job_schedule)
-        job_repeat_schedule = np.array(job_repeat_schedule)
+        # binary_schedule = np.array(binary_schedule)
+        # op_index_schedule = np.array(op_index_schedule)
+        # op_job_schedule = np.array(op_job_schedule)
+        # job_repeat_schedule = np.array(job_repeat_schedule)
+        encoded_job_repeat_schedule = np.array(encoded_job_repeat_schedule)
 
         # 4->1차원으로 축소
-        return [op_index_schedule]
+        return encoded_job_repeat_schedule
 
         return [binary_schedule, op_index_schedule, op_job_schedule, job_repeat_schedule]
 
@@ -626,7 +627,7 @@ class customRepeatableScheduler():
             'last_finish_time_per_machine' : np.array([machine.cal_last_finish_time()//100 for machine in self.machines]),
             'machine_ability' : np.array(machine_ability),
             'hole_length_per_machine' : np.array(hole_length_per_machine),
-            'schedule_heatmap': self.schedule_heatmap.transpose(2, 0, 1).reshape(1, len(self.machines), self.max_time),
+            'schedule_heatmap': self.schedule_heatmap,
             'mean_real_tardiness_per_job': np.array(mean_tardiness_per_job),
             'std_real_tardiness_per_job': np.array(std_tardiness_per_job),
             'remaining_repeats': np.array(remaining_repeats),
