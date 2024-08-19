@@ -52,43 +52,26 @@ class UpdateStdCallback(BaseCallback):
         return True
 
 
-def train_model(env, env_name, eval_env, version = "v1", total_steps = 1000000, net_arch = [256, 64], algorithm = "MaskablePPO"):
+def train_model(env, env_name, eval_env, params, version = "v1", total_steps = 1000000, algorithm = "MaskablePPO"):
     log_path = "./logs/tmp/" + env_name
     # set up logger
     new_logger = configure(log_path, ["stdout", "csv", "tensorboard"])
     # Create the evaluation environment
 
-    policy_kwargs = dict(
-        net_arch = net_arch
-    )
-    # 표준편차 스케줄러 초기화
-    # std_scheduler = LinearStdDecayScheduler(initial_std, final_std, total_steps)
-
-    # Create the MaskablePPO model first
-    model_mp = MaskablePPO('MultiInputPolicy', env, verbose=1, policy_kwargs=policy_kwargs)
-    model_ppo = PPO('MultiInputPolicy', env, verbose=1, policy_kwargs=policy_kwargs)
-    model_dqn = DQN('MultiInputPolicy', env, verbose=1, policy_kwargs=policy_kwargs)
-    model_a2c = A2C('MultiInputPolicy', env, verbose=1, policy_kwargs=policy_kwargs)
-
-    models = [model_mp, model_ppo, model_dqn, model_a2c]
-
-    model_index = 0
     model_name = ""
     if algorithm == "MaskablePPO":
         model_name = "MP_"
-        model_index = 0
+        model = MaskablePPO('MultiInputPolicy', env, verbose=1, **params)
+
     elif algorithm == "PPO":
         model_name = "PPO_"
-        model_index = 1
+        model = PPO('MultiInputPolicy', env, verbose=1, **params)
     elif algorithm == "DQN":
         model_name = "DQN_"
-        model_index = 2
+        model = DQN('MultiInputPolicy', env, verbose=1, **params)
     elif algorithm == "A2C":
         model_name = "A2C_"
-        model_index = 3
-
-    model = models[model_index]
-
+        model = A2C('MultiInputPolicy', env, verbose=1, **params)
     model.set_logger(new_logger)
 
     # Create the MaskableEvalCallback
@@ -105,7 +88,7 @@ def train_model(env, env_name, eval_env, version = "v1", total_steps = 1000000, 
     # Create the custom callback for updating standard deviation
     # update_std_callback = UpdateStdCallback(std_scheduler)
 
-    if model_index == 0:
+    if algorithm == "MaskablePPO":
         callback = maskable_eval_callback
     else:
         callback = eval_callback

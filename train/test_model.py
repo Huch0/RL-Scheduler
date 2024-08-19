@@ -21,12 +21,12 @@ def random_tardiness_simulation(test_env, repeats):
             test_env.render()
             break
 
-def test_model(env, model, detail_mode = False):
+def test_model(env, model, detail_mode = False, deterministic = True, render = True, random_simulation = False):
     obs, info = env.reset()
     
     while True:
         action_masks = env.action_masks()
-        action, _states = model.predict(obs, action_masks=action_masks, deterministic = True)
+        action, _states = model.predict(obs, action_masks=action_masks, deterministic = deterministic)
         obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
 
@@ -35,12 +35,16 @@ def test_model(env, model, detail_mode = False):
             info["env"] = env
             info["profit_ratio"] = env.profit_per_time
 
-            env.print_result(info, detail_mode = detail_mode)
-            env.render()
+            if render:
+                env.print_result(info, detail_mode = detail_mode)
+                env.render()
             break
+    
+    if random_simulation:
+        print()
+        print()
+        print()
+        print("---------------------------Random Simmulation---------------------------")
+        random_tardiness_simulation(env, info["current_repeats"])
 
-    print()
-    print()
-    print()
-    print("---------------------------Random Simmulation---------------------------")
-    random_tardiness_simulation(env, info["current_repeats"])
+    return info
