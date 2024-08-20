@@ -3,8 +3,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
+from sb3_contrib import MaskablePPO
 from utils.tb_logger import CustomLogger
-from scheduler_env.pdr_env import SchedulingEnv
+from scheduler_env.pdr_env import SchedulingEnv as PDRenv
+from scheduler_env.benchmark_rl_env import SchedulingEnv as RLenv
 
 
 def CR(env):
@@ -306,7 +308,7 @@ def find_first_start_time(machine, job, operation):
     return min_earliest_start
 
 
-def compare_pdrs(pdrs, evns, log_dir='./experiments/tmp/1', verbose=False):
+def compare_pdr_model(pdrs, pdr_envs, model, model_envs, log_dir='./experiments/tmp/1', verbose=False):
     """
     Compare the given PDRs on the given environments.
     """
@@ -317,17 +319,89 @@ def compare_pdrs(pdrs, evns, log_dir='./experiments/tmp/1', verbose=False):
 
     # Log the results for each PDR
     for pdr in pdrs:
-        results = eval_pdr(pdr, envs, render=False, verbose=verbose)
+        results = eval_pdr(pdr, pdr_envs, render=False, verbose=verbose)
 
         for key, values in results.items():
             for i, value in enumerate(values):
                 writer.add_scalar(f'{pdr.__name__}/{key}', value, i)
 
+    if model is not None:
+        results = eval_model(model, model_envs, writer, verbose=verbose)
+
+        for key, values in results.items():
+            for i, value in enumerate(values):
+                writer.add_scalar(f'PPO/{key}', value, i)
+
     writer.close()
     return
 
 
-def plot_pdr_comparison(pdrs, log_dir='./experiments/tmp/1'):
+def eval_model(model, envs, writer, verbose=False, render=False):
+    if verbose:
+        print(f'Evaluating Model')
+
+    makespan_list = []
+    tardiness_list = []
+    processing_time_list = []
+    idle_time_list = []
+
+    makespan_cost_list = []
+    tardiness_cost_list = []
+    processing_time_cost_list = []
+    idle_time_cost_list = []
+
+    total_cost_list = []
+
+    for env in envs:
+        obs, info = env.reset()
+        done = False
+        while not done:
+            action, _ = model.predict(obs, deterministic=True, action_masks=env.action_masks())
+            obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+
+        makespan = info['makespan']
+        total_tardiness = sum(info['job_tardiness'])
+        total_processing_time = info['sum_of_processing_time']
+        total_idle_time = info['sum_of_hole_time']
+
+        makespan_cost = info['cost_makespan']
+        tardiness_cost = info['cost_deadline']
+        processing_time_cost = info['cost_processing']
+        idlet_time_cost = info['cost_hole']
+        total_cost = info['total_cost']
+
+        makespan_list.append(makespan)
+        tardiness_list.append(total_tardiness)
+        processing_time_list.append(total_processing_time)
+        idle_time_list.append(total_idle_time)
+
+        makespan_cost_list.append(makespan_cost)
+        tardiness_cost_list.append(tardiness_cost)
+        processing_time_cost_list.append(processing_time_cost)
+        idle_time_cost_list.append(idlet_time_cost)
+        total_cost_list.append(total_cost)
+
+        if verbose:
+            print(f'Repeat: {env.custom_scheduler.current_repeats}')
+            print(
+                f'makespan: {makespan}, total tardiness: {total_tardiness}, processing time: {total_processing_time}, idle time: {total_idle_time}')
+            print(f'makespan cost: {makespan_cost}, tardiness cost: {tardiness_cost}, processing time cost: {processing_time_cost}, idle time cost: {idlet_time_cost}, total cost: {total_cost}')
+        if render:
+            env.render()
+    return {
+        'makespan': makespan_list,
+        'total_tardiness': tardiness_list,
+        'processing_time': processing_time_list,
+        'idle_time': idle_time_list,
+        'makespan_cost': makespan_cost_list,
+        'tard_cost': tardiness_cost_list,
+        'idle_time_cost': idle_time_cost_list,
+        'total_cost': total_cost_list
+    }
+
+
+def plot_pdr_comparison(pdrs, with_model=True, log_dir='./experiments/tmp/1'):
     # Read the CSV file
     csv_file_path = os.path.join(log_dir, 'results.csv')
     df = pd.read_csv(csv_file_path)
@@ -349,11 +423,15 @@ def plot_pdr_comparison(pdrs, log_dir='./experiments/tmp/1'):
 
             pdr_name = pdr_name.replace('_over_', '/')
             pdr_name = pdr_name.replace('_', '+')
-            pdr_df = pd.DataFrame({obj: pdr_data, 'PDR': pdr_name})
+            pdr_df = pd.DataFrame({obj: pdr_data, 'Algo': pdr_name})
             data.append(pdr_df)
+        if with_model:
+            model_data = df[f'PPO/{obj}']
+            model_df = pd.DataFrame({obj: model_data, 'Algo': 'PPO'})
+            data.append(model_df)
 
         combined_data = pd.concat(data)
-        sns.boxplot(x='PDR', y=obj, data=combined_data, ax=ax)
+        sns.boxplot(x='Algo', y=obj, data=combined_data, ax=ax)
         ax.set_title(obj.replace('_', ' ').title())
         ax.set_ylabel(obj.replace('_', ' ').title())
 
@@ -455,14 +533,17 @@ if __name__ == "__main__":
     # mean, std = 3, 1
 
     # # Get 12 integers from Gaussian Distribution / mean : 3 std : 1
-    # repeats = [[[max(1, int(np.random.normal(mean, std)))] for _ in range(12)] for _ in range(eval_instances)]
+    # repeats = [[[max(1, int(np.random.normal(mean, std))), 1] for _ in range(12)] for _ in range(eval_instances)]
     # print(repeats)
 
-    repeats = [[[3] for _ in range(12)],
-               [[4], [3], [3], [5], [4], [2], [3], [2], [2], [3], [3], [4]], [[3], [3], [3], [3], [4], [2], [3], [2], [1], [3], [3], [2]], [[5], [1], [3], [2], [4], [4], [3], [3], [2], [1], [2], [3]], [[4], [4], [2], [2], [1], [1], [1], [4], [2], [2], [1], [3]], [[1], [2], [2], [3], [2], [1], [2], [3], [3], [3], [2], [
-                   2]], [[2], [2], [2], [1], [3], [2], [1], [3], [2], [3], [3], [3]], [[4], [1], [3], [2], [2], [2], [2], [3], [1], [3], [3], [1]], [[4], [4], [4], [2], [1], [4], [2], [4], [3], [3], [3], [3]], [[3], [4], [3], [3], [4], [1], [1], [3], [1], [4], [2], [2]], [[4], [4], [4], [3], [2], [4], [2], [3], [3], [2], [3], [3]]]
+    # repeats = [[[3] for _ in range(12)],
+    #            [[4], [3], [3], [5], [4], [2], [3], [2], [2], [3], [3], [4]], [[3], [3], [3], [3], [4], [2], [3], [2], [1], [3], [3], [2]], [[5], [1], [3], [2], [4], [4], [3], [3], [2], [1], [2], [3]], [[4], [4], [2], [2], [1], [1], [1], [4], [2], [2], [1], [3]], [[1], [2], [2], [3], [2], [1], [2], [3], [3], [3], [2], [
+    #                2]], [[2], [2], [2], [1], [3], [2], [1], [3], [2], [3], [3], [3]], [[4], [1], [3], [2], [2], [2], [2], [3], [1], [3], [3], [1]], [[4], [4], [4], [2], [1], [4], [2], [4], [3], [3], [3], [3]], [[3], [4], [3], [3], [4], [1], [1], [3], [1], [4], [2], [2]], [[4], [4], [4], [3], [2], [4], [2], [3], [3], [2], [3], [3]]]
 
-    def make_env(repeat):
+    repeats = [[[3, 1] for _ in range(12)],
+               [[4, 1], [3, 1], [3, 1], [5, 1], [4, 1], [2, 1], [3, 1], [2, 1], [2, 1], [3, 1], [3, 1], [4, 1]], [[3, 1], [3, 1], [3, 1], [3, 1], [4, 1], [2, 1], [3, 1], [2, 1], [1, 1], [3, 1], [3, 1], [2, 1]], [[5, 1], [1, 1], [3, 1], [2, 1], [4, 1], [4, 1], [3, 1], [3, 1], [2, 1], [1, 1], [2, 1], [3, 1]], [[4, 1], [4, 1], [2, 1], [2, 1], [1, 1], [1, 1], [1, 1], [4, 1], [2, 1], [2, 1], [1, 1], [3, 1]], [[1, 1], [2, 1], [2, 1], [3, 1], [2, 1], [1, 1], [2, 1], [3, 1], [3, 1], [3, 1], [2, 1], [2, 1]], [[2, 1], [2, 1], [2, 1], [1, 1], [3, 1], [2, 1], [1, 1], [3, 1], [2, 1], [3, 1], [3, 1], [3, 1]], [[4, 1], [1, 1], [3, 1], [2, 1], [2, 1], [2, 1], [2, 1], [3, 1], [1, 1], [3, 1], [3, 1], [1, 1]], [[4, 1], [4, 1], [4, 1], [2, 1], [1, 1], [4, 1], [2, 1], [4, 1], [3, 1], [3, 1], [3, 1], [3, 1]], [[3, 1], [4, 1], [3, 1], [3, 1], [4, 1], [1, 1], [1, 1], [3, 1], [1, 1], [4, 1], [2, 1], [2, 1]], [[4, 1], [4, 1], [4, 1], [3, 1], [2, 1], [4, 1], [2, 1], [3, 1], [3, 1], [2, 1], [3, 1], [3, 1]]]
+
+    def make_env(repeat, env_fn):
         # Create the environment
         num_machines = 8
         num_jobs = 12
@@ -471,7 +552,7 @@ if __name__ == "__main__":
         profit_per_time = 10
         max_time = 150
 
-        return SchedulingEnv(
+        return env_fn(
             machine_config_path="instances/Machines/v0-" + str(num_machines) + ".json",
             job_config_path="instances/Jobs/v0-" + str(num_jobs) + "x" + str(max_repeats) + ".json",
             job_repeats_params=repeat,
@@ -486,15 +567,21 @@ if __name__ == "__main__":
             max_time=max_time
         )
 
-    envs = [make_env(repeat) for repeat in repeats]
+    pdr_envs = [make_env(repeat, PDRenv) for repeat in repeats]
+    rl_envs = [make_env(repeat, RLenv) for repeat in repeats]
 
     # # Evaluate the PDR
-    pdr = FDD_over_MWKR
-    # results = eval_pdr(pdr, envs, render=True, verbose=True)
+    pdr = LWKR_MOD
+    # results = eval_pdr(pdr, pdr_envs, render=True, verbose=True)
 
     # Compare the PDRs
     pdrs = [MWKR, CR, FDD_over_MWKR, LWKR_MOD, LWKR_SPT]
     log_dir = './experiments/tmp/1'
-    # compare_pdrs(pdrs, envs, log_dir=log_dir, verbose=True)
+    model_path = './logs/tmp/256-64-std2-1m/best_model.zip'
 
-    plot_pdr_comparison(pdrs, log_dir=log_dir)
+    policy_kwargs = dict(net_arch=dict(pi=[256, 64], vf=[256, 64]))
+    model = MaskablePPO.load(model_path, policy_kwargs=policy_kwargs)
+
+    # compare_pdr_model(pdrs, pdr_envs, model, rl_envs, log_dir=log_dir, verbose=True)
+
+    plot_pdr_comparison(pdrs, with_model=True, log_dir=log_dir)
