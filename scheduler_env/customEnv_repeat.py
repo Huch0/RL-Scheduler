@@ -72,7 +72,7 @@ class SchedulingEnv(gym.Env):
 
         return jobs
 
-    def __init__(self, machine_config_path, job_config_path, job_repeats_params, render_mode="seaborn", cost_deadline_per_time = 5, cost_hole_per_time = 1, cost_processing_per_time = 2, cost_makespan_per_time = 10, profit_per_time = 10, target_time = None, test_mode=False, max_time = 150, num_of_types = 4):
+    def __init__(self, machine_config_path, job_config_path, job_repeats_params, render_mode="seaborn", cost_deadline_per_time = 5, cost_hole_per_time = 1, cost_processing_per_time = 2, cost_makespan_per_time = 10, profit_per_time = 10, target_time = None, test_mode=False, max_time = 150, num_of_types = 4, sample_mode = "normal"):
         super(SchedulingEnv, self).__init__()
 
         # cost 관련 변수
@@ -103,7 +103,7 @@ class SchedulingEnv(gym.Env):
 
         self.num_steps = 0
         self.reset_count = 0
-
+        self.sample_mode = sample_mode
         self.max_time = max_time
 
         self.mean_duration_per_job = None
@@ -164,9 +164,9 @@ class SchedulingEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed, options=options)
-        self.reset_count += 1
-        if self.reset_count % 10 == 0:
-            self.reset_count = 0
+        # self.reset_count += 1
+        # if self.reset_count % 10 == 0:
+        #     self.reset_count = 0
         self._initialize_scheduler()
         self.num_steps = 0
         self.cal_env_info()
@@ -243,6 +243,8 @@ class SchedulingEnv(gym.Env):
         observation["num_operations_per_job"] = np.array(self.num_operations_per_job)
         observation["total_length_per_job"] = np.array([int(num * mean) for num, mean in zip(self.num_operations_per_job, self.mean_operation_duration_per_job)])
 
+        # heatmap = observation["schedule_heatmap"]
+        # observation["schedule_heatmap"] = heatmap
         return observation
     
     def set_test_mode(self, test_mode):
@@ -265,18 +267,51 @@ class SchedulingEnv(gym.Env):
     def _calculate_step_reward(self, action):
         return self.custom_scheduler.calculate_step_reward(action)
 
+    def sample_job_repeats(self, mode = "normal"):
+        if mode == "normal":
+            repeats_list = []
+            for mean, std in self.job_repeats_params:
+                repeats = max(1, int(np.random.normal(mean, std)))
+                repeats_list.append(repeats)
+            self.current_repeats = repeats_list[::]
+        elif mode == "uniform":
+            repeats_list = []
+            for mean, std in self.job_repeats_params:
+                repeats = max(1, np.random.randint(mean - 3*std, mean + 3*std + 1))
+                repeats_list.append(repeats)
+            self.current_repeats = repeats_list[::]
+        elif mode == "tiny_normal":
+            previous_repeats = self.current_repeats[::]
+            random_index = np.random.randint(0, len(self.current_repeats))
+            mean = self.job_repeats_params[random_index][0]
+            std = self.job_repeats_params[random_index][1]
+            repeat = max(1, int(np.random.normal(mean, std)))
+            previous_repeats[random_index] = repeat
+            self.current_repeats = previous_repeats[::]
+        elif mode == "tiny_stairs":
+            previous_repeats = self.current_repeats[::]
+            random_index = np.random.randint(0, len(self.current_repeats))
+            previous_repeats[random_index] += np.random.choice([-1, 1])
+            if previous_repeats[random_index] < 1:
+                previous_repeats[random_index] = 1
+            self.current_repeats = previous_repeats[::]
+
+        elif mode == "test":
+            pass
+
     def _initialize_scheduler(self):
         if self.test_mode:
-            repeats_list = self.current_repeats[::]
+            self.sample_job_repeats(mode = "test")
         # 각 Job의 반복 횟수를 랜덤하게 설정
         # 랜덤 반복 횟수에 따라 Job 인스턴스를 생성
         else:
-            if self.reset_count % 10 == 0:
-                repeats_list = []
-                for mean, std in self.job_repeats_params:
-                    repeats = max(1, int(np.random.normal(mean, std)))
-                    repeats_list.append(repeats)
-                self.current_repeats = repeats_list[::]
+            # if self.reset_count % 10 == 0:
+                # repeats_list = []
+                # for mean, std in self.job_repeats_params:
+                #     repeats = max(1, int(np.random.normal(mean, std)))
+                #     repeats_list.append(repeats)
+                # self.current_repeats = repeats_list[::]
+            self.sample_job_repeats(mode = self.sample_mode)
         
         random_jobs = []
         for job, repeat in zip(self.jobs, self.current_repeats):
