@@ -267,6 +267,8 @@ class customRepeatableScheduler():
         #     (len(self.machines), 25), dtype=np.int8)
         self.schedule_heatmap = np.zeros(
             (len(self.machines), self.max_time), dtype=np.int8)
+        # schedule_heatmap의 각 행의 맨 끝 값은 -1로 세팅
+        self.schedule_heatmap[:, -1] = -1
 
         self.legal_actions = np.ones(
             (len(self.machines), len(self.jobs)), dtype=bool)
