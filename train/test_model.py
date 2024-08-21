@@ -63,15 +63,15 @@ def plot_policy_function(model, obs, action_masks):
 
     fig, ax = plt.subplots(figsize=(10, 6))
     cax = ax.imshow(action_probs_2d, cmap='Reds', aspect='auto', vmin=0, vmax=1)  # vmin, vmax 설정
-    ax.set_xticks(np.arange(-0.5, 12, 1), minor=True)
-    ax.set_yticks(np.arange(-0.5, 8, 1), minor=True)
+    ax.set_xticks(np.arange(-0.5, len_jobs, 1), minor=True)
+    ax.set_yticks(np.arange(-0.5, len_machine, 1), minor=True)
     ax.grid(which='minor', color='black', linestyle='-', linewidth=1)
     ax.tick_params(which='minor', size=0)
 
     # Valid하지 않은 행동을 회색으로 표시
-    for i in range(8):
-        for j in range(12):
-            action_index = i * 12 + j
+    for i in range(len_machine):
+        for j in range(len_jobs):
+            action_index = i * len_jobs + j
             if action_masks[action_index] == 0:  # Valid하지 않은 경우
                 ax.add_patch(Rectangle((j - 0.5, i - 0.5), 1, 1, color='gray', alpha=0.5))
 
