@@ -36,6 +36,9 @@ def plot_policy_function(model, obs, action_masks):
     - obs: 현재 상태(Observation)
     - action_masks: 행동 마스크(Action Masks)
     """
+    # 2차원으로 변환 (8x12)
+    len_machine = obs.get("schedule_heatmap").shape[0]
+    len_jobs = obs.get("action_masks").shape[0] // len_machine
     obs_tensor = convert_obs_to_tensor(obs)
     action_prob = model.policy.get_distribution(obs=obs_tensor, action_masks=action_masks)
     action_probs = action_prob.distribution.probs.detach().numpy()
@@ -44,11 +47,11 @@ def plot_policy_function(model, obs, action_masks):
     valid_actions = np.where(action_masks == 1)[0]
     valid_action_probs = action_probs[0, valid_actions]  # 실행 가능한 액션들에 대한 확률 선택
 
-    # 2차원으로 변환 (8x12)
-    action_probs_2d = np.zeros((8, 12))  # 0으로 초기화된 8x12 배열 생성
+    
+    action_probs_2d = np.zeros((len_machine, len_jobs))  # 0으로 초기화된 8x12 배열 생성
     for idx, action in enumerate(valid_actions):
-        row = action // 12  # machine (row)
-        col = action % 12   # job (col)
+        row = action // len_jobs  # machine (row)
+        col = action % len_jobs   # job (col)
         action_probs_2d[row, col] = valid_action_probs[idx]
 
     # 최선의 행동 찾기 (최대 확률을 가진 행동의 위치)
@@ -77,7 +80,7 @@ def plot_policy_function(model, obs, action_masks):
 
     ax.set_xlabel('Job Index')
     ax.set_ylabel('Machine Index')
-    ax.set_title('Valid Action Probability Distribution (8x12)')
+    ax.set_title(f"Valid Action Probability Distribution ({len_machine}x{len_jobs})")
     plt.show()
 
 def convert_obs_to_tensor(obs):
