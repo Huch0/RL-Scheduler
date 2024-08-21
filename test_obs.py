@@ -129,13 +129,45 @@ if __name__ == "__main__":
     env1, env_name = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
     env2, env_name = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = True, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
     
-    model_path = "./models/Env4/MP_Multi_Env4_binary_heatmap_v3"
-
-    policy_kwargs = dict(
+    params = {
+    "policy_kwargs": dict(
         net_arch=[256, 128, 64]
-    )
-    # Load the model
-    model = MaskablePPO.load(model_path, policy_kwargs=policy_kwargs)
+    ),
+    "learning_rate": 0.00005,
+}
+    
+    model_path = "MP_Quad_Env4_all_normalv1"
+    params = {
+        "policy_kwargs": dict(
+            net_arch=[256, 128, 64]
+        ),
+        "learning_rate": 0.00005,
+    }
+    # params = {
+    #     "env": env1,
+    #     "n_steps": 2048,
+    #     "batch_size": 64,
+    #     "ent_coef": 0.01,
+    #     "learning_rate": 0.00025,
+    #     "n_epochs": 10,
+    #     "gamma": 0.99,
+    #     "gae_lambda": 0.95,
+    #     "clip_range": 0.2,
+    #     "vf_coef": 0.5,
+    #     "max_grad_norm": 0.5,
+    #     "n_episodes_rollout": 1,
+    #     "use_sde": False,
+    #     "sde_sample_freq": -1,
+    #     "normalize": True,
+    #     "create_eval_env": False,
+    #     "policy_kwargs": dict(
+    #         net_arch=[64, 64],
+    #         activation_fn=nn.ReLU
+    #     ),
+    #     "verbose": 1
+    # }
+    # # Load the model
+    model = MaskablePPO.load(model_path, **params)
 
     env2.reset()
     plot_input_weights(model, env2, save_img=False)
