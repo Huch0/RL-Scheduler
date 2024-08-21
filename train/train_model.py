@@ -52,7 +52,7 @@ class UpdateStdCallback(BaseCallback):
         return True
 
 
-def train_model(env, env_name, eval_env, params, version = "v1", total_steps = 1000000, algorithm = "MaskablePPO"):
+def train_model(env, env_name, eval_env, params, version = "v1", total_steps = 1000000, algorithm = "MaskablePPO", deterministic = True):
     log_path = "./logs/tmp/" + env_name
     # set up logger
     new_logger = configure(log_path, ["stdout", "csv", "tensorboard"])
@@ -80,10 +80,10 @@ def train_model(env, env_name, eval_env, params, version = "v1", total_steps = 1
 
     maskable_eval_callback = MaskableEvalCallback(eval_env, best_model_save_path=log_path,
                                                   log_path=log_path, eval_freq=10000,
-                                                  deterministic=True, render=False)
+                                                  deterministic=deterministic, render=False)
     
     eval_callback = EvalCallback(eval_env, best_model_save_path=log_path, log_path=log_path, 
-                                eval_freq=10000, deterministic=True, render=False)
+                                eval_freq=10000, deterministic=deterministic, render=False)
     
     # Create the custom callback for updating standard deviation
     # update_std_callback = UpdateStdCallback(std_scheduler)

@@ -12,7 +12,8 @@ def make_env(
     cost_list=None,
     profit_per_time=10,
     max_time=150,
-    has_heatmap=True
+    has_heatmap=True,
+    sample_mode="normal"
 ):
     if cost_list is None:
         cost_list = [5, 1, 2, 10]  # Default costs: [cost_deadline_per_time, cost_hole_per_time, cost_processing_per_time, cost_makespan_per_time]
@@ -35,7 +36,8 @@ def make_env(
         profit_per_time=profit_per_time,
         target_time=None,
         test_mode=test_mode,
-        max_time=max_time
+        max_time=max_time,
+        sample_mode=sample_mode
     )
 
     if not has_heatmap:
