@@ -1,24 +1,24 @@
 {
-    "machines": [
-      {
-        "name": "machine 1",
-        "type": "A, B"
-      },
-      {
-        "name": "machine 2",
-        "type": "C, D"
-      },
-      {
-        "name": "machine 3",
-        "type": "A, D"
-      },
-      {
-        "name": "machine 4",
-        "type": "B, C"
-      },
-      {
-        "name": "machine 5",
-        "type": "A, C, D"
-      }
-    ]
+  "machines": [
+    {
+      "name": "machine 1",
+      "type": "A, D"
+    },
+    {
+      "name": "machine 2",
+      "type": "B"
+    },
+    {
+      "name": "machine 3",
+      "type": "C"
+    },
+    {
+      "name": "machine 4",
+      "type": "A, B"
+    },
+    {
+      "name": "machine 5",
+      "type": "C, D"
+    }
+  ]
 }
