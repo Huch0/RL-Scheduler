@@ -262,8 +262,10 @@ def ETD(env):
 
             remaining_durations = [op.duration for op in remaining_operations[1:]]
             scaled_rate = (job.total_duration - sum(remaining_durations)) / job.total_duration
-            scaled_operation_deadline = scaled_rate * job.deadline
-            job.estimated_tardiness = approx_best_finish_time - scaled_operation_deadline
+            # scaled_operation_deadline = scaled_rate * job.deadline
+            # job.estimated_tardiness = approx_best_finish_time - scaled_operation_deadline
+            tardiness = approx_best_finish_time - job.deadline
+            job.estimated_tardiness = tardiness * scaled_rate
 
             if job.estimated_tardiness > max_etd:
                 max_etd = job.estimated_tardiness
@@ -361,7 +363,7 @@ def find_first_start_time(machine, job, operation):
     return min_earliest_start
 
 
-def compare_pdr_model(pdrs, pdr_envs, model, model_envs, log_dir='./experiments/tmp/1', verbose=False):
+def compare_pdr_model(pdrs, pdr_envs, model, model_envs, deterministic=True, sample_times=100, log_dir='./experiments/tmp/1', verbose=False):
     """
     Compare the given PDRs on the given environments.
     """
@@ -379,7 +381,7 @@ def compare_pdr_model(pdrs, pdr_envs, model, model_envs, log_dir='./experiments/
                 writer.add_scalar(f'{pdr.__name__}/{key}', value, i)
 
     if model is not None:
-        results = eval_model(model, model_envs, writer, verbose=verbose)
+        results = eval_model(model, model_envs, writer, deterministic=deterministic, sample_times=sample_times, verbose=verbose)
 
         for key, values in results.items():
             for i, value in enumerate(values):
@@ -389,7 +391,7 @@ def compare_pdr_model(pdrs, pdr_envs, model, model_envs, log_dir='./experiments/
     return
 
 
-def eval_model(model, envs, writer, verbose=False, render=False):
+def eval_model(model, envs, writer, deterministic=True, sample_times=100, verbose=False, render=False):
     if verbose:
         print(f'Evaluating Model')
 
@@ -406,12 +408,30 @@ def eval_model(model, envs, writer, verbose=False, render=False):
     total_cost_list = []
 
     for env in envs:
-        obs, info = env.reset()
-        done = False
-        while not done:
-            action, _ = model.predict(obs, deterministic=False, action_masks=env.action_masks())
-            obs, reward, terminated, truncated, info = env.step(action)
-            done = terminated or truncated
+        if deterministic:
+            obs, info = env.reset()
+            done = False
+            while not done:
+                action, _ = model.predict(obs, deterministic=True, action_masks=env.action_masks())
+                obs, reward, terminated, truncated, info = env.step(action)
+                done = terminated or truncated
+        else:
+            # Find the best result in (sample_times) episodes
+            best_result = None
+            best_reward = -np.inf
+            for _ in range(sample_times):
+                obs, info = env.reset()
+                done = False
+                while not done:
+                    action, _ = model.predict(obs, deterministic=False, action_masks=env.action_masks())
+                    obs, reward, terminated, truncated, info = env.step(action)
+                    done = terminated or truncated
+
+                if reward > best_reward:
+                    best_result = info
+                    best_reward = reward
+
+            info = best_result
 
         makespan = info['makespan']
         total_tardiness = sum(info['job_tardiness'])
@@ -703,12 +723,12 @@ if __name__ == "__main__":
 
     # Compare the PDRs
     pdrs = [MWKR, CR, FDD_over_MWKR, LWKR_MOD, LWKR_SPT, ETD]
-    log_dir = './experiments/tmp/1'
-    model_path = './logs/tmp/1/best_model.zip'
+    log_dir = "./experiments/tmp/1"
+    model_path = './logs/tmp/1/final_model.zip'
 
-    # policy_kwargs = dict(net_arch=dict(pi=[256, 128, 64], vf=[256, 128, 64]))
-    # model = MaskablePPO.load(model_path, policy_kwargs=policy_kwargs)
+    policy_kwargs = dict(net_arch=dict(pi=[256, 128, 64], vf=[256, 128, 64]))
+    model = MaskablePPO.load(model_path, policy_kwargs=policy_kwargs)
 
-    # compare_pdr_model(pdrs, pdr_envs, None, rl_envs, log_dir=log_dir, verbose=False)
+    compare_pdr_model(pdrs, pdr_envs, model, rl_envs, deterministic=False, sample_times=100, log_dir=log_dir, verbose=False)
 
-    plot_pdr_comparison(pdrs, with_model=False, log_dir=log_dir, pie=False)
+    plot_pdr_comparison(pdrs, with_model=True, log_dir=log_dir, pie=False)
