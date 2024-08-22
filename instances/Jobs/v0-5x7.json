@@ -1,0 +1,212 @@
+{
+    "jobs": [
+      {
+        "name": "Job 1",
+        "color": "#1f77b4",
+        "earliest_start": 0,
+        "operations": [
+          {
+            "index": 0,
+            "type": "A",
+            "duration": 300,
+            "predecessor": null
+          },
+          {
+            "index": 1,
+            "type": "B",
+            "duration": 100,
+            "predecessor": 0
+          },
+          {
+            "index": 2,
+            "type": "B",
+            "duration": 100,
+            "predecessor": 1
+          },
+          {
+            "index": 3,
+            "type": "C",
+            "duration": 200,
+            "predecessor": 2
+          }
+        ],
+        "deadline": [
+          1000, 2000, 3000, 3800, 4500
+        ]
+      },
+      {
+        "name": "Job 2",
+        "color": "#ff7f0e",
+        "earliest_start": 0,
+        "operations": [
+          {
+            "index": 4,
+            "type": "B",
+            "duration": 200,
+            "predecessor": null
+          },
+          {
+            "index": 5,
+            "type": "C",
+            "duration": 100,
+            "predecessor": 4
+          },
+          {
+            "index": 6,
+            "type": "B",
+            "duration": 300,
+            "predecessor": 5
+          }
+        ],
+        "deadline": [
+          1000, 2000, 3000, 3800, 4500
+        ]
+      },
+      {
+        "name": "Job 3",
+        "color": "#2ca02c",
+        "earliest_start": 0,
+        "operations": [
+          {
+            "index": 7,
+            "type": "C",
+            "duration": 100,
+            "predecessor": null
+          },
+          {
+            "index": 8,
+            "type": "B",
+            "duration": 200,
+            "predecessor": 7
+          },
+          {
+            "index": 9,
+            "type": "C",
+            "duration": 300,
+            "predecessor": 8
+          },
+          {
+            "index": 10,
+            "type": "A",
+            "duration": 100,
+            "predecessor": 9
+          }
+        ],
+        "deadline": [
+          1000, 2000, 3000, 3800, 4500
+        ]
+      },
+      {
+        "name": "Job 4",
+        "color": "#d62728",
+        "earliest_start": 0,
+        "operations": [
+          {
+            "index": 11,
+            "type": "B",
+            "duration": 100,
+            "predecessor": null
+          },
+          {
+            "index": 12,
+            "type": "D",
+            "duration": 200,
+            "predecessor": 11
+          },
+          {
+            "index": 13,
+            "type": "B",
+            "duration": 100,
+            "predecessor": 12
+          }
+        ],
+        "deadline": [
+          600, 1200, 1800, 2200, 2600
+        ]
+      },
+      {
+        "name": "Job 5",
+        "color": "#9467bd",
+        "earliest_start": 0,
+        "operations": [
+          {
+            "index": 14,
+            "type": "D",
+            "duration": 200,
+            "predecessor": null
+          },
+          {
+            "index": 15,
+            "type": "A",
+            "duration": 300,
+            "predecessor": 14
+          },
+          {
+            "index": 16,
+            "type": "B",
+            "duration": 200,
+            "predecessor": 15
+          }
+        ],
+        "deadline": [
+          1000, 2000, 3000, 3800, 4500
+        ]
+      },
+      {
+        "name": "Job 6",
+        "color": "#8c564b",
+        "earliest_start": 0,
+        "operations": [
+          {
+            "index": 17,
+            "type": "C",
+            "duration": 200,
+            "predecessor": null
+          },
+          {
+            "index": 18,
+            "type": "D",
+            "duration": 300,
+            "predecessor": 17
+          },
+          {
+            "index": 19,
+            "type": "C",
+            "duration": 200,
+            "predecessor": 18
+          }
+        ],
+        "deadline": [
+          1000, 2000, 3000, 3800, 4500
+        ]
+      },
+      {
+        "name": "Job 7",
+        "color": "#e377c2",
+        "earliest_start": 0,
+        "operations": [
+          {
+            "index": 20,
+            "type": "A",
+            "duration": 300,
+            "predecessor": null
+          },
+          {
+            "index": 21,
+            "type": "B",
+            "duration": 100,
+            "predecessor": 20
+          },
+          {
+            "index": 22,
+            "type": "D",
+            "duration": 300,
+            "predecessor": 21
+          }
+        ],
+        "deadline": [
+          1000, 2000, 3000, 3800, 4500
+        ]
+      }
+    ]
+  }
