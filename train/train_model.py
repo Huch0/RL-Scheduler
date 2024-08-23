@@ -79,7 +79,7 @@ def train_model(env, env_name, eval_env, params, version = "v1", total_steps = 1
     eval_env = Monitor(eval_env)
 
     maskable_eval_callback = MaskableEvalCallback(eval_env, best_model_save_path=log_path,
-                                                  log_path=log_path, eval_freq=10000,
+                                                  log_path=log_path, eval_freq=50000,
                                                   deterministic=deterministic, render=False)
     
     eval_callback = EvalCallback(eval_env, best_model_save_path=log_path, log_path=log_path, 

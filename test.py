@@ -31,8 +31,8 @@ if __name__ == "__main__":
     # nsteps = [2048, 4096, 8192]
     # results = {}
 
-    cost_list = [5, 1, 2, 10]
-    profit_per_time = 10
+    cost_list = [3, 2, 4, 16]
+    profit_per_time = 15
     max_time = 50
 
     # ---------No Heatmap Test---------------------------------------------
@@ -43,29 +43,52 @@ if __name__ == "__main__":
     # test_model(env=env2_no_heatmap, model=model_no_heatmap)
 
     # ---------Heatmap Test---------------------------------------------
-    env_normal, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
-    env_test, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = True, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
-    env_tiny_normal, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time, sample_mode="tiny_normal")
-    env_tiny_stairs, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time, sample_mode="tiny_stairs")
+    # env_normal, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
+    # env_test, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = True, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
+    # env_tiny_normal, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time, sample_mode="tiny_normal")
+    # env_tiny_stairs, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time, sample_mode="tiny_stairs")
     
-    env_normal_2, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [2] * 12, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
-    env_normal_1_5, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1.5] * 12, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
-    env_normal_0_5, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [0.5] * 12, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
+    # env_normal_2, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [2] * 12, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
+    # env_normal_1_5, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1.5] * 12, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
+    # env_normal_0_5, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [0.5] * 12, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
 
-    env_list = [lambda : env_normal, lambda: env_normal_2, lambda: env_normal_1_5, lambda : env_normal_0_5]
-    vec_env = SubprocVecEnv(env_list)
+    # env_list = [lambda : env_normal, lambda: env_normal_2, lambda: env_normal_1_5, lambda : env_normal_0_5]
+    # vec_env = SubprocVecEnv(env_list)
 
+    # params = {
+    #     "policy_kwargs": dict(
+    #         net_arch=[256, 128, 64]
+    #     ),
+    #     "learning_rate": 0.00005,
+    #     "gamma": 1.0,
+    # }
+
+    # model = train_model(env = vec_env, env_name= "Quad_Env4_all_normal", eval_env= env_normal, params=params,version= "v3", total_steps= 2000000, deterministic = False)
+    # test_model(env=env_test, model=model, deterministic=True)
+    
+    # ---------5x5 Test---------------------------------------------
+    env_normal, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
+    env_test, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 5, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = True, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
     params = {
         "policy_kwargs": dict(
             net_arch=[256, 128, 64]
         ),
-        "learning_rate": 0.00005,
-        "gamma": 1.0,
+        "learning_rate": 0.000025,
+        "gamma": 0.9,
+        "n_steps": 4096,
     }
 
-    model = train_model(env = vec_env, env_name= "Quad_Env4_all_normal", eval_env= env_normal, params=params,version= "v3", total_steps= 2000000, deterministic = False)
-    test_model(env=env_test, model=model, deterministic=True, plot_policy=True)
-    
+    # env_normal_2, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [2] * 12, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
+    # env_fix_3, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1.5] * 12, test_mode = True, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
+    # env_fix_1, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [1] * 12, repeat_stds = [0.5] * 12, test_mode = True, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
+
+    # env_list = [lambda : env_normal, lambda: env_normal_2, lambda: env_fix_3, lambda : env_fix_1]
+    # vec_env = SubprocVecEnv(env_list)
+
+
+    model = train_model(env = env_normal, env_name= "Single_Env4_cost_3_2_4_16", eval_env= env_test, params=params,version= "v3", total_steps= 4000000, deterministic = False)
+    test_model(env=env_test, model=model, deterministic=True)
+
     # for nstep in nsteps:
     #     print(f"Testing learning rate: {nstep}")
     #     eval_env = env_test
