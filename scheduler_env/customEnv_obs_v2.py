@@ -191,7 +191,7 @@ class SchedulingEnv(gym.Env):
         reward = 0.0
 
         if self._is_legal(action):
-            # reward += self._calculate_step_reward(action)
+            #reward += self._calculate_step_reward(action)
             self._update_state(action)
         else:  # Illegal action
             reward = -0.5
@@ -200,7 +200,7 @@ class SchedulingEnv(gym.Env):
         if terminated:
             final_makespan = self.custom_scheduler._get_final_operation_finish()
             self.best_makespan = min(self.best_makespan, final_makespan)  # Update the best makespan
-            reward += self._calculate_final_reward()
+            reward = self._calculate_final_reward()
 
         truncated = bool(self.num_steps == 10000)
         if truncated:
@@ -243,8 +243,6 @@ class SchedulingEnv(gym.Env):
         observation["num_operations_per_job"] = np.array(self.num_operations_per_job)
         observation["total_length_per_job"] = np.array([int(num * mean) for num, mean in zip(self.num_operations_per_job, self.mean_operation_duration_per_job)])
 
-        # heatmap = observation["schedule_heatmap"]
-        # observation["schedule_heatmap"] = heatmap
         return observation
     
     def set_test_mode(self, test_mode):

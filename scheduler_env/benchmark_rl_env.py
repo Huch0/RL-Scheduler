@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import json
 from stable_baselines3.common.env_checker import check_env
-from scheduler_env.customScheduler_repeat import customRepeatableScheduler
+from scheduler_env.benchmark_rl_scheduler import customRepeatableScheduler
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches  # 필요한 모듈을 가져옵니다.
 from collections import defaultdict
@@ -72,7 +72,7 @@ class SchedulingEnv(gym.Env):
 
         return jobs
 
-    def __init__(self, machine_config_path, job_config_path, job_repeats_params, render_mode="seaborn", cost_deadline_per_time = 5, cost_hole_per_time = 1, cost_processing_per_time = 2, cost_makespan_per_time = 10, profit_per_time = 10, target_time = None, test_mode=False, max_time = 150, num_of_types = 4, sample_mode = "normal"):
+    def __init__(self, machine_config_path, job_config_path, job_repeats_params, render_mode="seaborn", cost_deadline_per_time = 5, cost_hole_per_time = 1, cost_processing_per_time = 2, cost_makespan_per_time = 10, profit_per_time = 10, target_time = None, test_mode=False, max_time = 150, num_of_types = 4):
         super(SchedulingEnv, self).__init__()
 
         # cost 관련 변수
@@ -102,8 +102,7 @@ class SchedulingEnv(gym.Env):
         self.len_jobs = len(self.jobs)
 
         self.num_steps = 0
-        self.reset_count = 0
-        self.sample_mode = sample_mode
+
         self.max_time = max_time
 
         self.mean_duration_per_job = None
@@ -140,7 +139,7 @@ class SchedulingEnv(gym.Env):
             'last_finish_time_per_machine': spaces.Box(low=0, high=max_time, shape=(self.len_machines, ), dtype=np.int64),
             "machine_ability": spaces.Box(low=-1, high=100, shape=(self.len_machines, ), dtype=np.int64),
             "hole_length_per_machine": spaces.Box(low=0, high=max_time, shape=(self.len_machines, ), dtype=np.int64),
-            "schedule_heatmap": spaces.Box(low=-1, high=2, shape=(self.len_machines, max_time), dtype=np.int8),
+            "schedule_heatmap": spaces.Box(low=0, high=255, shape=(self.len_machines, max_time), dtype=np.uint8),
             "mean_real_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
             "std_real_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
             'remaining_repeats': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
@@ -164,9 +163,6 @@ class SchedulingEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed, options=options)
-        # self.reset_count += 1
-        # if self.reset_count % 10 == 0:
-        #     self.reset_count = 0
         self._initialize_scheduler()
         self.num_steps = 0
         self.cal_env_info()
@@ -191,7 +187,7 @@ class SchedulingEnv(gym.Env):
         reward = 0.0
 
         if self._is_legal(action):
-            # reward += self._calculate_step_reward(action)
+            #reward += self._calculate_step_reward(action)
             self._update_state(action)
         else:  # Illegal action
             reward = -0.5
@@ -200,7 +196,7 @@ class SchedulingEnv(gym.Env):
         if terminated:
             final_makespan = self.custom_scheduler._get_final_operation_finish()
             self.best_makespan = min(self.best_makespan, final_makespan)  # Update the best makespan
-            reward += self._calculate_final_reward()
+            reward = self._calculate_final_reward()
 
         truncated = bool(self.num_steps == 10000)
         if truncated:
@@ -243,8 +239,6 @@ class SchedulingEnv(gym.Env):
         observation["num_operations_per_job"] = np.array(self.num_operations_per_job)
         observation["total_length_per_job"] = np.array([int(num * mean) for num, mean in zip(self.num_operations_per_job, self.mean_operation_duration_per_job)])
 
-        # heatmap = observation["schedule_heatmap"]
-        # observation["schedule_heatmap"] = heatmap
         return observation
     
     def set_test_mode(self, test_mode):
@@ -267,54 +261,22 @@ class SchedulingEnv(gym.Env):
     def _calculate_step_reward(self, action):
         return self.custom_scheduler.calculate_step_reward(action)
 
-    def sample_job_repeats(self, mode = "normal"):
-        if mode == "normal":
+    def _initialize_scheduler(self):
+        if self.test_mode:
+            repeats_list = self.current_repeats[::]
+        # 각 Job의 반복 횟수를 랜덤하게 설정
+        # 랜덤 반복 횟수에 따라 Job 인스턴스를 생성
+        else:
             repeats_list = []
             for mean, std in self.job_repeats_params:
                 repeats = max(1, int(np.random.normal(mean, std)))
                 repeats_list.append(repeats)
             self.current_repeats = repeats_list[::]
-        elif mode == "uniform":
-            repeats_list = []
-            for mean, std in self.job_repeats_params:
-                repeats = max(1, np.random.randint(mean - 3*std, mean + 3*std + 1))
-                repeats_list.append(repeats)
-            self.current_repeats = repeats_list[::]
-        elif mode == "tiny_normal":
-            previous_repeats = self.current_repeats[::]
-            random_index = np.random.randint(0, len(self.current_repeats))
-            mean = self.job_repeats_params[random_index][0]
-            std = self.job_repeats_params[random_index][1]
-            repeat = max(1, int(np.random.normal(mean, std)))
-            previous_repeats[random_index] = repeat
-            self.current_repeats = previous_repeats[::]
-        elif mode == "tiny_stairs":
-            previous_repeats = self.current_repeats[::]
-            random_index = np.random.randint(0, len(self.current_repeats))
-            previous_repeats[random_index] += np.random.choice([-1, 1])
-            if previous_repeats[random_index] < 1:
-                previous_repeats[random_index] = 1
-            self.current_repeats = previous_repeats[::]
+            
+        self._calculate_target_time()
 
-        elif mode == "test":
-            pass
-
-    def _initialize_scheduler(self):
-        if self.test_mode:
-            self.sample_job_repeats(mode = "test")
-        # 각 Job의 반복 횟수를 랜덤하게 설정
-        # 랜덤 반복 횟수에 따라 Job 인스턴스를 생성
-        else:
-            # if self.reset_count % 10 == 0:
-                # repeats_list = []
-                # for mean, std in self.job_repeats_params:
-                #     repeats = max(1, int(np.random.normal(mean, std)))
-                #     repeats_list.append(repeats)
-                # self.current_repeats = repeats_list[::]
-            self.sample_job_repeats(mode = self.sample_mode)
-        
         random_jobs = []
-        for job, repeat in zip(self.jobs, self.current_repeats):
+        for job, repeat in zip(self.jobs, repeats_list):
             random_job_info = {
                 'name': job['name'],
                 'color': job['color'],
@@ -325,9 +287,6 @@ class SchedulingEnv(gym.Env):
 
         # 랜덤 Job 인스턴스를 사용하여 customScheduler 초기화
         self.custom_scheduler = customRepeatableScheduler(jobs=random_jobs, machines=self.machine_config, cost_deadline_per_time= self.cost_deadline_per_time, cost_hole_per_time = self.cost_hole_per_time, cost_processing_per_time = self.cost_processing_per_time, cost_makespan_per_time = self.cost_makespan_per_time, profit_per_time = self.profit_per_time, current_repeats=self.current_repeats, max_time=self.max_time)
-            
-        self._calculate_target_time()
-
         self.custom_scheduler.reset()
 
     def _calculate_target_time(self):
