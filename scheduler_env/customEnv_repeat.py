@@ -229,12 +229,12 @@ class SchedulingEnv(gym.Env):
     def _get_observation(self):
         observation = self.custom_scheduler.get_observation()
         #추가
-        observation["total_count_per_type"] = np.array(self.total_count_per_type)
+        # observation["total_count_per_type"] = np.array(self.total_count_per_type)
         observation["mappable_machine_count_per_type"] = np.array(self.mappable_machine_count_per_type)
         observation["mean_deadline_per_job"] = np.array(self.mean_deadline_per_job)
         observation["std_deadline_per_job"] = np.array(self.std_deadline_per_job)
-        observation["mean_operation_duration_per_type"] = np.array(self.mean_operation_duration_per_type)
-        observation["std_operation_duration_per_type"] = np.array(self.std_operation_duration_per_type)
+        # observation["mean_operation_duration_per_type"] = np.array(self.mean_operation_duration_per_type)
+        # observation["std_operation_duration_per_type"] = np.array(self.std_operation_duration_per_type)
         
         #기존 정보 계산 최적화
         observation["mean_operation_duration_per_job"] = np.array(self.mean_operation_duration_per_job)

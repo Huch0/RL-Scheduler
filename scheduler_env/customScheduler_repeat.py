@@ -171,7 +171,7 @@ class Operation():
         return f"job : {self.job}, index : {self.index} | ({self.start}, {self.finish})"
     
 class customRepeatableScheduler():
-    def __init__(self, jobs, machines, cost_deadline_per_time, cost_hole_per_time, cost_processing_per_time, cost_makespan_per_time, profit_per_time, current_repeats, max_time = 150) -> None:
+    def __init__(self, jobs, machines, cost_deadline_per_time, cost_hole_per_time, cost_processing_per_time, cost_makespan_per_time, profit_per_time, current_repeats, max_time = 150, num_of_types = 4) -> None:
         self.machines = [Machine(machine_info)
                           for machine_info in machines]
         self.job_infos = [JobInfo(job_info["name"], job_info["color"], job_info["operations"]) for job_info in jobs]
@@ -184,14 +184,15 @@ class customRepeatableScheduler():
             heapq.heapify(job_list)
             self.jobs.append(job_list)
 
-        self.operations = [operation for job in self.job_infos for operation in job.operation_queue]
+        self.operations = [operation for job_list in self.jobs for job in job_list for operation in job.operation_queue]
         
         len_jobs = len(self.jobs)
         # Reset 할 때 DeepCopy를 위해 원본을 저장해둠
         self.original_jobs = copy.deepcopy(self.jobs)
         self.original_machines = copy.deepcopy(self.machines)
         self.original_operations = copy.deepcopy(
-            [operation for job in self.job_infos for operation in job.operation_queue])
+             [operation for job_list in self.jobs for job in job_list for operation in job.operation_queue]
+        )
         
 
         self.cost_deadline_per_time = cost_deadline_per_time
@@ -241,6 +242,10 @@ class customRepeatableScheduler():
         self.cost_hole = 0
         self.cost_processing = 0
         self.cost_makespan = 0
+        
+        # type별 지표 추가
+        self.num_of_types = num_of_types
+        self.remain_op_duration_per_type = [[] for _ in range(self.num_of_types)]
 
     def reset(self, seed=None, options=None):
         """
@@ -278,6 +283,10 @@ class customRepeatableScheduler():
         self.machine_operation_rate = np.zeros(
             len(self.machines), dtype=np.float32)
 
+        # type별 지표 추가
+        self.remain_op_duration_per_type = [[] for _ in range(self.num_of_types)]
+
+
         self.update_state(None)
 
         # 기록을 위한 변수들
@@ -292,6 +301,7 @@ class customRepeatableScheduler():
         self.cost_processing = 0
         self.cost_makespan = 0
 
+        
         return self.get_observation(), self.get_info() 
 
     def action_masks(self):
@@ -308,6 +318,7 @@ class customRepeatableScheduler():
     def update_state(self, action=None):
         if action is not None:
             self.valid_count += 1
+            self._update_operation_state(action)
             self._schedule_operation(action)
             self._update_job_state()
             self._update_schedule_buffer()
@@ -315,11 +326,28 @@ class customRepeatableScheduler():
             self._update_machine_state(action)
             self.last_finish_time = self._get_final_operation_finish()
         else:
+            self._update_operation_state(action)
             self._update_schedule_buffer()
             self._update_machine_state(action)
             self._update_job_state()
             self._update_action_masks(action)
 
+    def _update_operation_state(self, action):
+        # action이 없다면 초기화
+        if action is None:
+            for op in self.operations:
+                self.remain_op_duration_per_type[op.type].append(op.duration // 100)
+            
+            # # test
+            # print(self.remain_op_duration_per_type)
+        else:
+            # self.remain_op_duration_per_type에서 선택된 Job의 operation의 type에서 선택된 operation의 duration을 제거
+            selected_job = self.jobs[action[1]][0]
+            selected_operation = selected_job.operation_queue[self.schedule_buffer[action[1]][1]]
+            self.remain_op_duration_per_type[selected_operation.type].remove(selected_operation.duration // 100)
+
+            # # test
+            # print(self.remain_op_duration_per_type)
 
     def _update_legal_actions(self, action = None):
         # if action:
@@ -624,10 +652,18 @@ class customRepeatableScheduler():
         # 머신 별 ablity_encode
         machine_ability = [machine.encode_ability() for machine in self.machines]
 
-        
+        total_count_per_type = [len(self.remain_op_duration_per_type[i]) for i in range(self.num_of_types)]
+        # 아래 두 지표에서 empty list 예외 처리 필요
+        mean_operation_duration_per_type = [np.mean(self.remain_op_duration_per_type[i]) if self.remain_op_duration_per_type[i] else 0 for i in range(self.num_of_types)]
+        std_operation_duration_per_type = [np.std(self.remain_op_duration_per_type[i]) if self.remain_op_duration_per_type[i] else 0 for i in range(self.num_of_types)]
+
         observation = {
             # Vaild 행동, Invalid 행동 관련 지표
             'action_masks': self.action_mask,
+            # Operation Type별 지표
+            "total_count_per_type": np.array(total_count_per_type),
+            "mean_operation_duration_per_type": np.array(mean_operation_duration_per_type),
+            "std_operation_duration_per_type": np.array(std_operation_duration_per_type),
             # 현 scheduling 상황 관련 지표
             'last_finish_time_per_machine' : np.array([machine.cal_last_finish_time()//100 for machine in self.machines]),
             'machine_ability' : np.array(machine_ability),
