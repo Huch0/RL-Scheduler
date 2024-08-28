@@ -10,49 +10,10 @@ from stable_baselines3.common.callbacks import EvalCallback
 from sb3_contrib.common.maskable.callbacks import MaskableEvalCallback
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.callbacks import CallbackList
+from stable_baselines3.common.monitor import Monitor
 
 from scheduler_env.customEnv_repeat import SchedulingEnv
 import numpy as np
-
-def make_env(
-    num_machines,
-    num_jobs,
-    max_repeats,
-    repeat_means,
-    repeat_stds,
-    test_mode=False,
-    cost_list=None,
-    profit_per_time=10,
-    max_time=150
-):
-    if cost_list is None:
-        cost_list = [5, 1, 2, 10]  # Default costs: [cost_deadline_per_time, cost_hole_per_time, cost_processing_per_time, cost_makespan_per_time]
-
-    assert len(cost_list) == 4, "cost_list must contain exactly 4 elements."
-
-    # 3. job_repeats_params 생성
-    job_repeats_params = [(repeat_means[i], repeat_stds[i]) for i in range(len(repeat_means))]
-
-    # 4. 환경 생성
-    env = SchedulingEnv(
-        machine_config_path= "instances/Machines/v0-" + str(num_machines) + ".json",  
-        job_config_path= "instances/Jobs/v0-" + str(num_jobs) + "x" + str(max_repeats) + ".json", 
-        job_repeats_params=job_repeats_params,
-        render_mode="seaborn",
-        cost_deadline_per_time=cost_list[0],
-        cost_hole_per_time=cost_list[1],
-        cost_processing_per_time=cost_list[2],
-        cost_makespan_per_time=cost_list[3],
-        profit_per_time=profit_per_time,
-        target_time=None,
-        test_mode=test_mode,
-        max_time=max_time
-    )
-
-    # env 이름 생성
-    env_name = f"Env_{str(num_machines)}_{str(num_jobs)}_{int(np.mean(repeat_means))}_{int(np.mean(repeat_stds))}_p{str(profit_per_time)}"
-
-    return env, env_name
 
 class LinearStdDecayScheduler:
     def __init__(self, initial_std, final_std, total_steps):
@@ -90,60 +51,53 @@ class UpdateStdCallback(BaseCallback):
         
         return True
 
-if __name__ == "__main__":
-    # Test the function
-    env, env_name = make_env(
-        num_machines=5,
-        num_jobs_with_repeats=15,
-        repeat_means=[3] * 5,
-        repeat_stds=[1] * 5,
-        test_mode=False,
-        cost_list=[5, 1, 2, 10],
-        profit_per_time=10
-    )
 
-    print(f"Environment Name: {env_name}")
-    # Add additional checks or functionality as needed
-
-
-def train_model(env, env_name, version = "v1", total_steps = 1000000, initial_std = 1.0, final_std = 0.0):
+def train_model(env, env_name, eval_env, params, version = "v1", total_steps = 1000000, algorithm = "MaskablePPO", deterministic = True):
     log_path = "./logs/tmp/" + env_name
     # set up logger
     new_logger = configure(log_path, ["stdout", "csv", "tensorboard"])
     # Create the evaluation environment
 
-    cost_list = [5, 2, 1, 10]
-    profit_per_time = 10
-    max_time = 50
+    model_name = ""
+    if algorithm == "MaskablePPO":
+        model_name = "MP_"
+        model = MaskablePPO('MultiInputPolicy', env, verbose=1, **params)
 
-    eval_env, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = True, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
-
-    policy_kwargs = dict(
-        net_arch=[256, 64]
-    )
-
-    # 표준편차 스케줄러 초기화
-    # std_scheduler = LinearStdDecayScheduler(initial_std, final_std, total_steps)
-
-    # Create the MaskablePPO model first
-    model = MaskablePPO('MultiInputPolicy', env, verbose=1,
-                        policy_kwargs=policy_kwargs)
+    elif algorithm == "PPO":
+        model_name = "PPO_"
+        model = PPO('MultiInputPolicy', env, verbose=1, **params)
+    elif algorithm == "DQN":
+        model_name = "DQN_"
+        model = DQN('MultiInputPolicy', env, verbose=1, **params)
+    elif algorithm == "A2C":
+        model_name = "A2C_"
+        model = A2C('MultiInputPolicy', env, verbose=1, **params)
     model.set_logger(new_logger)
 
     # Create the MaskableEvalCallback
+    # eval_env Monitor 감싸기
+    eval_env = Monitor(eval_env)
+
     maskable_eval_callback = MaskableEvalCallback(eval_env, best_model_save_path=log_path,
-                                                  log_path=log_path, eval_freq=10000,
-                                                  deterministic=True, render=False)
+                                                  log_path=log_path, eval_freq=50000,
+                                                  deterministic=deterministic, render=False)
+    
+    eval_callback = EvalCallback(eval_env, best_model_save_path=log_path, log_path=log_path, 
+                                eval_freq=10000, deterministic=deterministic, render=False)
     
     # Create the custom callback for updating standard deviation
     # update_std_callback = UpdateStdCallback(std_scheduler)
 
+    if algorithm == "MaskablePPO":
+        callback = maskable_eval_callback
+    else:
+        callback = eval_callback
     # callback = CallbackList([maskable_eval_callback, update_std_callback])
 
     # Start the learning process
-    model.learn(total_steps, callback=maskable_eval_callback)
+    model.learn(total_steps, callback=callback)
 
     # Save the trained model
-    model.save("MP_" + env_name + version)
+    model.save(model_name + env_name + version)
 
     return model
