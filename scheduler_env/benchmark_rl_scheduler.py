@@ -410,8 +410,10 @@ class customRepeatableScheduler():
                 # scaled operation deadline 추가
                 # (지금까지 걸린 시간 + 자기 duration) / total duration 을 deadline에 곱한다
                 scaled_rate = (job.total_duration - sum(remaining_durations)) / job.total_duration
-                scaled_operation_deadline = scaled_rate * job.deadline
-                job.estimated_tardiness = approx_best_finish_time - scaled_operation_deadline
+                # scaled_operation_deadline = scaled_rate * job.deadline
+                # job.estimated_tardiness = approx_best_finish_time - scaled_operation_deadline
+                tardiness = approx_best_finish_time - job.deadline
+                job.estimated_tardiness = tardiness * scaled_rate
 
             # Rebuild the heap based on the updated estimated tardiness values
             heapq.heapify(job_list)
