@@ -8,6 +8,9 @@ from sb3_contrib import MaskablePPO
 from utils.tb_logger import CustomLogger
 from scheduler_env.pdr_env import SchedulingEnv as PDRenv
 from scheduler_env.benchmark_rl_env import SchedulingEnv as RLenv
+import torch.nn as nn
+import math
+
 
 
 def CR(env):
@@ -525,8 +528,8 @@ def plot_pdr_comparison(pdrs, with_model=True, log_dir='./experiments/tmp/1', pi
         for algo in win_rates.keys():
             win_rates[algo] += (best_algo_counts == f'{algo}/{obj}').sum()
 
-        # print(best_algo_counts)
-        # print(win_rates)
+        print(best_algo_counts)
+        print(win_rates)
 
         # Normalize win rates
         total_instances = len(df)
@@ -644,6 +647,30 @@ def eval_pdr(PDR, envs, render=False, verbose=False):
         'total_cost': total_cost_list
     }
 
+def increasing_clip_range(progress_remaining):
+    return 0.1 + 0.2 * (1 - progress_remaining)  # Start with 0.1 and increase towards 0.3
+
+def exp_schedule(progress_remaining):
+    initial_learning_rate = 0.0003
+    final_learning_rate = 0.00003
+    return initial_learning_rate + (final_learning_rate - initial_learning_rate) * math.exp(-5 * progress_remaining)
+    # return 0.00003 + (0.0003 - 0.00003) * math.exp(-5 * (1 - progress_remaining))
+
+def linear_schedule(progress_remaining):
+    initial_learning_rate = 0.0003
+    final_learning_rate = 0.00003
+    return initial_learning_rate + (final_learning_rate - initial_learning_rate) * progress_remaining
+
+
+def custom_linear_schedule(progress_remaining):
+    initial_learning_rate = 0.0003
+    final_learning_rate = 0.00003
+    
+    if progress_remaining < 0.5:
+        return final_learning_rate
+    else:
+        return final_learning_rate + (initial_learning_rate - final_learning_rate) * progress_remaining
+    
 if __name__ == "__main__":
     # # Random seed
     # np.random.seed(0)
@@ -677,6 +704,18 @@ if __name__ == "__main__":
         [4, 4, 4, 3, 2, 4, 2, 3, 3, 2, 3, 3]
     ]
     # repeats = [
+    #     [4, 3, 3, 2, 3, 3, 2, 3],
+    #     [3, 2, 5, 1, 3, 1, 3, 3],
+    #     [4, 3, 3, 2, 1, 2, 3, 2],
+    #     [2, 3, 2, 2, 5, 2, 2, 1],
+    #     [3, 2, 3, 2, 1, 2, 2, 3],
+    #     [3, 3, 4, 4, 4, 4, 3, 2],
+    #     [2, 3, 1, 3, 4, 4, 3, 2],
+    #     [4, 1, 3, 2, 3, 2, 2, 2],
+    #     [3, 1, 3, 2, 1, 4, 2, 3],
+    #     [4, 2, 1, 1, 2, 2, 2, 1]
+    # ]
+    # repeats = [
     #     [4, 3, 3, 5, 4],
     #     [3, 3, 3, 3, 4],
     #     [5, 1, 3, 2, 4],
@@ -697,8 +736,8 @@ if __name__ == "__main__":
         num_machines = 8
         num_jobs = 12
         max_repeats = 12
-        cost_list = [3, 2, 4, 16]
-        profit_per_time = 15    
+        cost_list = [4, 1, 2, 10]
+        profit_per_time = 10
         max_time = 50
 
         return env_fn(
@@ -725,17 +764,27 @@ if __name__ == "__main__":
 
     # Compare the PDRs
     pdrs = [MWKR, CR, FDD_over_MWKR, LWKR_MOD, LWKR_SPT, ETD]
-    log_dir = './experiments/tmp/4'
-    model_path = 'MP_Multi_Env4_cost_3_2_4_16v2'
-
+    log_dir = './experiments/tmp/Env4/gamma_95/obs_v3/clip_1/'
+    model_path = 'MP_Single_Env4_gamma_95_obs_v3_clip_1v1'
     params = {
         "policy_kwargs": dict(
-            net_arch=[256, 128, 64]
+            net_arch=dict(
+                pi=[512, 256, 128, 64],  # 정책 네트워크 아키텍처
+                vf=[256, 128, 64]        # 가치 네트워크 아키텍처
+            ),
+            activation_fn=nn.LeakyReLU
         ),
-        "learning_rate": 0.00005,
-        "gamma": 0.9,
+        "learning_rate" : custom_linear_schedule,
+        "gamma": 0.99,
+        "gae_lambda": 0.99,
+        "n_steps": 4096,
+        "clip_range": increasing_clip_range,
     }
-    model = MaskablePPO.load(model_path, **params)
+    
+    model = MaskablePPO.load(model_path)#, **params)
+    # model 정책, 파라미터 등을 출력하기
+    # print(model.policy)
+
 
     # compare_pdr_model(pdrs, pdr_envs, model, rl_envs, log_dir=log_dir, verbose=True)
 

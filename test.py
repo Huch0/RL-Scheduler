@@ -1,12 +1,61 @@
 from train.train_model import train_model
 from train.test_model import test_model
 from train.make_env import make_env
-from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
 from sb3_contrib import MaskablePPO
 from stable_baselines3.common.evaluation import evaluate_policy
 import numpy as np
 from sb3_contrib.common.maskable.callbacks import MaskableEvalCallback
 from stable_baselines3.common.monitor import Monitor
+# SB3 check_env import
+from stable_baselines3.common.env_checker import check_env
+import torch.nn as nn
+import warnings
+import math
+
+def increasing_clip_range(progress_remaining):
+    return 0.1 + 0.2 * (1 - progress_remaining)  # Start with 0.1 and increase towards 0.3
+
+def exp_schedule(progress_remaining):
+    initial_learning_rate = 0.0003
+    # middle_learning_rate = 0.000165
+    final_learning_rate = 0.00003
+    a = (initial_learning_rate - final_learning_rate) * math.exp(1) / (math.exp(1) - 1)
+    b = initial_learning_rate - a
+
+    return a * math.exp(progress_remaining-1) + b
+    # return 0.00003 + (0.0003 - 0.00003) * math.exp(-5 * (1 - progress_remaining))
+
+def linear_schedule(progress_remaining):
+    initial_learning_rate = 0.0003
+    final_learning_rate = 0.00003
+    return final_learning_rate + (initial_learning_rate - final_learning_rate) * progress_remaining
+
+def custom_linear_schedule(progress_remaining):
+    initial_learning_rate = 0.0003
+    final_learning_rate = 0.00003
+    
+    if progress_remaining < 0.5:
+        return final_learning_rate
+    else:
+        return final_learning_rate + (initial_learning_rate - final_learning_rate) * progress_remaining
+    
+def custom_stairs_schedule(progress_remaining):
+    # 0.0003으로 시작해서 0.00001로 끝나는 10개의 구간
+    initial_learning_rate = 0.0003
+    final_learning_rate = 0.00001
+    interval_count = 10
+    
+    # 구간별 학습률 설정
+    step_size = (initial_learning_rate - final_learning_rate) / (interval_count - 1)
+    
+    # 각 구간에 대한 학습률 계산
+    for i in range(interval_count):
+        if progress_remaining < (i + 1) / interval_count:
+            return initial_learning_rate - i * step_size
+    
+    return final_learning_rate
+
 
 
 # def evaluate_maskable_policy(model, env, n_eval_episodes=5, render=False):
@@ -31,8 +80,10 @@ if __name__ == "__main__":
     # nsteps = [2048, 4096, 8192]
     # results = {}
 
-    cost_list = [3, 2, 4, 16]
-    profit_per_time = 15
+    # 경고 무시
+    warnings.filterwarnings("ignore")
+    cost_list = [4, 1, 2, 10]
+    profit_per_time = 10
     max_time = 50
 
     # ---------No Heatmap Test---------------------------------------------
@@ -67,16 +118,43 @@ if __name__ == "__main__":
     # test_model(env=env_test, model=model, deterministic=True)
     
     # ---------5x5 Test---------------------------------------------
-    env_normal, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
-    env_test, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 5, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = True, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
+    # env_normal, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
+    # env_test, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 5, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = True, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
+    
+    # ---------8x8 Test---------------------------------------------
+    env_normal, _ = make_env(num_machines = 8, num_jobs = 8, max_repeats = 8, repeat_means = [3] * 8, repeat_stds = [1] * 8, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
+    env_test, _ = make_env(num_machines = 8, num_jobs = 8, max_repeats = 8, repeat_means = [3] * 8, repeat_stds = [1] * 8, test_mode = True, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
+
+    check_env(env_normal)
+    # env = SubprocVecEnv([lambda: env_normal])
+    # env = VecNormalize(env, norm_obs=True, norm_reward=True, clip_obs=10.)
+
+    # env_test = SubprocVecEnv([lambda: env_test])
+    # env_test = Monitor(env_test)
+    # env_test = VecNormalize(env_test, norm_obs=True, norm_reward=True, clip_obs=10.)
+
+    # env.save("vec_normalize_env.pkl")
+    # env_test = VecNormalize.load("vec_normalize_env.pkl", env_test)
+# net_arch=[1024, 256, 256, 64]
+            # net_arch=[dict(pi=[1024, 256, 256, 64], vf=[256, 256, 64])]
+            # activation_fn=nn.  # 활성화 함수를 Tanh로 설정
+
+        # "use_sde": True,
+        # "sde_sample_freq": 15,
     params = {
         "policy_kwargs": dict(
-            net_arch=[256, 128, 64]
+            net_arch=dict(
+                pi=[512, 256, 256, 128],  # 정책 네트워크 아키텍처
+                vf=[512, 256, 128, 64]        # 가치 네트워크 아키텍처
+            ),
         ),
-        "learning_rate": 0.000025,
-        "gamma": 0.9,
+        "learning_rate" : exp_schedule,
+        "gamma": 0.95,
+        # "gae_lambda": 0.99,
         "n_steps": 4096,
+        "clip_range": 0.1,
     }
+
 
     # env_normal_2, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [2] * 12, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
     # env_fix_3, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1.5] * 12, test_mode = True, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
@@ -86,8 +164,8 @@ if __name__ == "__main__":
     # vec_env = SubprocVecEnv(env_list)
 
 
-    model = train_model(env = env_normal, env_name= "Single_Env4_cost_3_2_4_16", eval_env= env_test, params=params,version= "v3", total_steps= 4000000, deterministic = False)
-    test_model(env=env_test, model=model, deterministic=True)
+    # model = train_model(env = env_normal, env_name= "Single_Env3_gamma_1_new_obs_clip_1", eval_env= env_test, params=params,version= "v1", total_steps= 5000000, deterministic = False)
+    # test_model(env=env_test, model=model, deterministic=True)
 
     # for nstep in nsteps:
     #     print(f"Testing learning rate: {nstep}")
@@ -137,15 +215,22 @@ if __name__ == "__main__":
     #     [3, 4, 3, 3, 4, 1, 1, 3, 1, 4, 2, 2],
     #     [4, 4, 4, 3, 2, 4, 2, 3, 3, 2, 3, 3]
     # ]
-    
-    # model = MaskablePPO.load("./models/Env4/MP_Multi_Env4_binary_heatmap_v4", **params)
+
+    # model_path = 'MP_Single_Env3_gamma_99_new_obsv1'
+    # model = MaskablePPO.load(model_path)#, **params)
+    # print(model.policy)
+    # print("-----------------")
+    # # 모델의 모든 하이퍼파라미터 확인
+    # for param, value in model.__dict__.items():
+    #     print(f"{param}: {value}")
+
 
 
     # # for repeat in repeats:
         
     # #     env, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = repeat, repeat_stds = [1] * 12, test_mode = True, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
-    # #     test_model(env=env, model=model)
+    # test_model(env=env_normal, model=model)
     
     # repeat = repeats[0]
     # env, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = repeat, repeat_stds = [1] * 12, test_mode = True, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
-    # test_model(env=env, model=model, deterministic=False)
+    # test_model(env=env_normal, model=model, deterministic=True, render=True, debug_step=[10, 14])
