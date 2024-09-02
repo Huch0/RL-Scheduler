@@ -384,17 +384,17 @@ class customRepeatableScheduler():
             #     self.machine_types[i] = [
             #         1 if i in machine.ability else 0 for i in range(25)]
             return
-        
-        machine = self.machines[action[0]]
-        operation_schedule = machine.operation_schedule
-        self.schedule_heatmap[action[0]] = np.array(self._schedule_to_array(operation_schedule))
+    
+        # machine = self.machies[action[0]]
+        # operation_schedule = machine.operation_schedule
+        # self.schedule_heatmap[action[0]] = np.array(self._schedule_to_array(operation_schedule))
 
         # 선택된 리소스의 스케줄링된 Operation들
-        if machine.operation_schedule:
-            operation_time = sum([operation.duration for operation in machine.operation_schedule])
-            machine.operation_rate = operation_time / self._get_final_operation_finish()
-            self.machine_operation_rate[action[0]] = machine.operation_rate
-
+        for machine in self.machines:
+            working_time = sum([operation.duration for operation in machine.operation_schedule])
+            machine.operation_rate = working_time / self._get_final_operation_finish()
+            
+        self.machine_operation_rate = np.array([machine.operation_rate for machine in self.machines])
 
     def _update_job_state(self):
         for job_list in self.jobs:
@@ -664,6 +664,33 @@ class customRepeatableScheduler():
         mean_operation_duration_per_type = [np.mean(self.remain_op_duration_per_type[i]) if self.remain_op_duration_per_type[i] else 0 for i in range(self.num_of_types)]
         std_operation_duration_per_type = [np.std(self.remain_op_duration_per_type[i]) if self.remain_op_duration_per_type[i] else 0 for i in range(self.num_of_types)]
 
+        observation_v3 = {
+            # Operation Type별 지표
+            "total_count_per_type": np.array(total_count_per_type),
+            "mean_operation_duration_per_type": np.array(mean_operation_duration_per_type),
+            "std_operation_duration_per_type": np.array(std_operation_duration_per_type),
+            # 현 scheduling 상황 관련 지표
+            'last_finish_time_per_machine' : np.array([machine.cal_last_finish_time()//100 for machine in self.machines]),
+            'machine_ability' : np.array(machine_ability),
+            'hole_length_per_machine' : np.array(hole_length_per_machine),
+            "machine_utilization_rate": np.array(self.machine_operation_rate),
+            'remaining_repeats': np.array(remaining_repeats),
+            # schedule_buffer 관련 지표
+            'schedule_buffer_job_repeat': np.array(schedule_buffer_job_repeat),
+            'schedule_buffer_operation_index':  np.array(schedule_buffer_operation_index),
+            'cur_op_earliest_start': np.array(earliest_start_per_operation),
+            'cur_job_deadline': np.array(job_deadline),
+            'cur_op_duration': np.array(op_duration),
+            'cur_op_type': np.array(op_type),
+            "cur_remain_working_time" : np.array(remaining_working_time),
+            "cur_remain_num_op" : np.array(num_remaining_op),
+            # 추정 tardiness 관련 지표
+            'mean_estimated_tardiness_per_job': np.array(mean_estimated_tardiness_per_job),
+            'std_estimated_tardiness_per_job' : np.array(std_estimated_tardiness_per_job),
+            'cur_estimated_tardiness_per_job' : np.array(cur_estimated_tardiness_per_job),
+            # cost 관련 지표
+            'current_costs' : np.array([self.cost_deadline, self.cost_hole, self.cost_processing, self.cost_makespan])
+        }
         observation_v2 = {
             # Vaild 행동, Invalid 행동 관련 지표
             'action_masks': self.action_mask,
@@ -824,23 +851,27 @@ class customRepeatableScheduler():
             return 0
 
     def calculate_step_reward(self, action):
-        selected_machine = self.machines[action[0]]
-        selected_job = self.jobs[action[1]][0]
+        # 머신 가동률의 평균을 reward로 사용
+        return np.mean(self.machine_operation_rate)
 
-        reward = 0
+        # 아래 reward 계산은 의미가 없다고 판단
+        # selected_machine = self.machines[action[0]]
+        # selected_job = self.jobs[action[1]][0]
 
-        self.update_state(action)
-        # 선택된 job이 방금 끝난 경우
-        if selected_job.is_done:
-            profit = (selected_job.total_duration) * 10
-            cost = selected_job.time_exceeded * 5
-            reward += (profit - cost) / profit
+        # reward = 0
 
-        # 선택된 machine이 hole이 있는 경우
-        idle_time = selected_machine.cal_idle_time()
-        reward -= idle_time // 100
+        # self.update_state(action)
+        # # 선택된 job이 방금 끝난 경우
+        # if selected_job.is_done:
+        #     profit = (selected_job.total_duration) * 10
+        #     cost = selected_job.time_exceeded * 5
+        #     reward += (profit - cost) / profit
+
+        # # 선택된 machine이 hole이 있는 경우
+        # idle_time = selected_machine.cal_idle_time()
+        # reward -= idle_time // 100
   
-        return reward
+        # return reward
     
         # self.machine_term = 0.0
         # if np.any(self.machine_operation_rate):
@@ -848,14 +879,15 @@ class customRepeatableScheduler():
         # return self.machine_term
 
     def calculate_final_reward(self):
-        total_up_time = 0
-        for i, repeat in enumerate(self.current_repeats):
-            total_duration_per_job = self.jobs[i][0].total_duration // 100
-            total_up_time += total_duration_per_job * repeat
+        # total_up_time = 0
+        # for i, repeat in enumerate(self.current_repeats):
+        #     total_duration_per_job = self.jobs[i][0].total_duration // 100
+        #     total_up_time += total_duration_per_job * repeat
 
-        profit = total_up_time * self.profit_per_time
+        # profit = total_up_time * self.profit_per_time
         cost = self.cal_final_cost()
-        return ((profit - cost) / profit) * 100
+        return -1 * cost
+        # return ((profit - cost) / profit) * 100
 
     def cal_job_deadline_cost(self):
         sum_of_time_exceed = 0

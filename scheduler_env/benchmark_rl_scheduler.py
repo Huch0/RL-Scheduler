@@ -395,15 +395,12 @@ class customRepeatableScheduler():
             #         1 if i in machine.ability else 0 for i in range(25)]
             return
 
-        machine = self.machines[action[0]]
-        operation_schedule = machine.operation_schedule
-        self.schedule_heatmap[action[0]] = np.array(self._schedule_to_array(operation_schedule))
+        for machine in self.machines:
+            working_time = sum([operation.duration for operation in machine.operation_schedule])
+            machine.operation_rate = working_time / self._get_final_operation_finish()
+            
+        self.machine_operation_rate = np.array([machine.operation_rate for machine in self.machines])
 
-        # 선택된 리소스의 스케줄링된 Operation들
-        if machine.operation_schedule:
-            operation_time = sum([operation.duration for operation in machine.operation_schedule])
-            machine.operation_rate = operation_time / self._get_final_operation_finish()
-            self.machine_operation_rate[action[0]] = machine.operation_rate
 
     def _update_job_state(self):
         for job_list in self.jobs:
@@ -843,23 +840,25 @@ class customRepeatableScheduler():
             return 0
 
     def calculate_step_reward(self, action):
-        selected_machine = self.machines[action[0]]
-        selected_job = self.jobs[action[1]][0]
+        return np.mean(self.machine_operation_rate)
 
-        reward = 0
+        # selected_machine = self.machines[action[0]]
+        # selected_job = self.jobs[action[1]][0]
 
-        self.update_state(action)
-        # 선택된 job이 방금 끝난 경우
-        if selected_job.is_done:
-            profit = (selected_job.total_duration) * 10
-            cost = selected_job.time_exceeded * 5
-            reward += (profit - cost) / profit
+        # reward = 0
 
-        # 선택된 machine이 hole이 있는 경우
-        idle_time = selected_machine.cal_idle_time()
-        reward -= idle_time // 100
+        # self.update_state(action)
+        # # 선택된 job이 방금 끝난 경우
+        # if selected_job.is_done:
+        #     profit = (selected_job.total_duration) * 10
+        #     cost = selected_job.time_exceeded * 5
+        #     reward += (profit - cost) / profit
 
-        return reward
+        # # 선택된 machine이 hole이 있는 경우
+        # idle_time = selected_machine.cal_idle_time()
+        # reward -= idle_time // 100
+
+        # return reward
 
         # self.machine_term = 0.0
         # if np.any(self.machine_operation_rate):
