@@ -385,9 +385,9 @@ class customRepeatableScheduler():
             #         1 if i in machine.ability else 0 for i in range(25)]
             return
     
-        # machine = self.machies[action[0]]
-        # operation_schedule = machine.operation_schedule
-        # self.schedule_heatmap[action[0]] = np.array(self._schedule_to_array(operation_schedule))
+        machine = self.machines[action[0]]
+        operation_schedule = machine.operation_schedule
+        self.schedule_heatmap[action[0]] = np.array(self._schedule_to_array(operation_schedule))
 
         # 선택된 리소스의 스케줄링된 Operation들
         for machine in self.machines:
@@ -664,6 +664,37 @@ class customRepeatableScheduler():
         mean_operation_duration_per_type = [np.mean(self.remain_op_duration_per_type[i]) if self.remain_op_duration_per_type[i] else 0 for i in range(self.num_of_types)]
         std_operation_duration_per_type = [np.std(self.remain_op_duration_per_type[i]) if self.remain_op_duration_per_type[i] else 0 for i in range(self.num_of_types)]
 
+        observation_v4 = {
+            # Vaild 행동, Invalid 행동 관련 지표
+            'action_masks': self.action_mask,
+            # Operation Type별 지표
+            "total_count_per_type": np.array(total_count_per_type),
+            "mean_operation_duration_per_type": np.array(mean_operation_duration_per_type),
+            "std_operation_duration_per_type": np.array(std_operation_duration_per_type),
+            # 현 scheduling 상황 관련 지표
+            'last_finish_time_per_machine' : np.array([machine.cal_last_finish_time()//100 for machine in self.machines]),
+            'machine_ability' : np.array(machine_ability),
+            'hole_length_per_machine' : np.array(hole_length_per_machine),
+            "machine_utilization_rate": np.array(self.machine_operation_rate),
+            'remaining_repeats': np.array(remaining_repeats),
+            # schedule_heatmap
+            'schedule_heatmap': self.schedule_heatmap,
+            # schedule_buffer 관련 지표
+            'schedule_buffer_job_repeat': np.array(schedule_buffer_job_repeat),
+            'schedule_buffer_operation_index':  np.array(schedule_buffer_operation_index),
+            'cur_op_earliest_start': np.array(earliest_start_per_operation),
+            'cur_job_deadline': np.array(job_deadline),
+            'cur_op_duration': np.array(op_duration),
+            'cur_op_type': np.array(op_type),
+            "cur_remain_working_time" : np.array(remaining_working_time),
+            "cur_remain_num_op" : np.array(num_remaining_op),
+            # 추정 tardiness 관련 지표
+            'mean_estimated_tardiness_per_job': np.array(mean_estimated_tardiness_per_job),
+            'std_estimated_tardiness_per_job' : np.array(std_estimated_tardiness_per_job),
+            'cur_estimated_tardiness_per_job' : np.array(cur_estimated_tardiness_per_job),
+            # cost 관련 지표
+            'current_costs' : np.array([self.cost_deadline, self.cost_hole, self.cost_processing, self.cost_makespan])
+        }
         observation_v3 ={
             # Operation Type별 지표
             "total_count_per_type": np.array(total_count_per_type),
@@ -752,7 +783,7 @@ class customRepeatableScheduler():
             'current_costs' : np.array([self.cost_deadline, self.cost_hole, self.cost_processing, self.cost_makespan])
         }
         
-        return observation_v3
+        return observation_v4
 
     def test_cal_best_finish_time(self):
         # machine 0에 대해서만 테스트
