@@ -120,29 +120,27 @@ def plot_input_weights(model, env, save_img=False):
     plot_and_print_groups(feature_groups)
 
 if __name__ == "__main__":
-    cost_list = [5, 2, 1, 10]
+    cost_list = [4, 1, 2, 10]
     profit_per_time = 10
     max_time = 50
 
     # env1_no_heatmap, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time, has_heatmap = False)
     # env2_no_heatmap, _ = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = True, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time, has_heatmap = False)
-    env1, env_name = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
-    env2, env_name = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = True, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
-    
-    params = {
-    "policy_kwargs": dict(
-        net_arch=[256, 128, 64]
-    ),
-    "learning_rate": 0.00005,
-}
-    
-    model_path = "MP_Quad_Env4_all_normalv1"
+    env_normal, _ = make_env(num_machines = 8, num_jobs = 8, max_repeats = 8, repeat_means = [3] * 8, repeat_stds = [1] * 8, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
+    env_test, _ = make_env(num_machines = 8, num_jobs = 8, max_repeats = 8, repeat_means = [3] * 8, repeat_stds = [1] * 8, test_mode = True, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
+    env4, _  = make_env(num_machines = 8, num_jobs = 12, max_repeats = 12, repeat_means = [3] * 12, repeat_stds = [1] * 12, test_mode = False, cost_list = cost_list, profit_per_time = profit_per_time, max_time = max_time)
+
     params = {
         "policy_kwargs": dict(
-            net_arch=[256, 128, 64]
+            net_arch=[512, 256, 128, 64]
         ),
-        "learning_rate": 0.00005,
+        "learning_rate": 0.00003,
+        "gamma": 0.9,
+        "n_steps": 4096,
+        "clip_range": 0.1,
     }
+    
+    model_path = "MP_Single_Env4_gamma_95_obs_v3_clip_1v1"
     # params = {
     #     "env": env1,
     #     "n_steps": 2048,
@@ -167,9 +165,9 @@ if __name__ == "__main__":
     #     "verbose": 1
     # }
     # # Load the model
-    model = MaskablePPO.load(model_path, **params)
+    model = MaskablePPO.load(model_path)#, **params)
 
-    env2.reset()
-    plot_input_weights(model, env2, save_img=False)
+    env_test.reset()
+    plot_input_weights(model, env4, save_img=False)
     # env2_no_heatmap.reset()
     # plot_input_weights(model, env2_no_heatmap, save_img=False)

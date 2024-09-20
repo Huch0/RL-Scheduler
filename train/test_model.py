@@ -37,7 +37,7 @@ def plot_policy_function(model, obs, action_masks):
     - action_masks: 행동 마스크(Action Masks)
     """
     # 2차원으로 변환 (8x12)
-    len_machine = obs.get("schedule_heatmap").shape[0]
+    len_machine = obs.get("hole_length_per_machine").shape[0]
     len_jobs = obs.get("action_masks").shape[0] // len_machine
     obs_tensor = convert_obs_to_tensor(obs)
     action_prob = model.policy.get_distribution(obs=obs_tensor, action_masks=action_masks)
@@ -60,6 +60,21 @@ def plot_policy_function(model, obs, action_masks):
 
     # 최선의 행동 출력
     print(f"Machine : [{best_action_idx[0]}] <-- Job : [{best_action_idx[1]+1}] is best ({best_action_prob*100:.2f}%)!")
+
+    # 2번째 최선의 행동 찾기
+    action_probs_2d[best_action_idx] = 0  # 최대값을 0으로 설정
+    second_best_action_idx = np.unravel_index(np.argmax(action_probs_2d, axis=None), action_probs_2d.shape)
+    second_best_action_prob = action_probs_2d[second_best_action_idx]
+
+    print(f"Machine : [{second_best_action_idx[0]}] <-- Job : [{second_best_action_idx[1]+1}] is second best ({second_best_action_prob*100:.2f}%)!")
+
+    # 3번째 최선의 행동 찾기
+    action_probs_2d[second_best_action_idx] = 0  # 최대값을 0으로 설정
+    third_best_action_idx = np.unravel_index(np.argmax(action_probs_2d, axis=None), action_probs_2d.shape)
+    third_best_action_prob = action_probs_2d[third_best_action_idx]
+
+    print(f"Machine : [{third_best_action_idx[0]}] <-- Job : [{third_best_action_idx[1]+1}] is third best ({third_best_action_prob*100:.2f}%)!")
+
 
     fig, ax = plt.subplots(figsize=(10, 6))
     cax = ax.imshow(action_probs_2d, cmap='Reds', aspect='auto', vmin=0, vmax=1)  # vmin, vmax 설정
@@ -126,10 +141,20 @@ def test_model(env, model, detail_mode = False, deterministic = True, render = T
         if debug_step is not None:
             if type(debug_step) is list:
                 if debug_step[0] <= step <= debug_step[1]:
+                    print("Step : ", step)
                     env.render()
+                    print(info["schedule_buffer"])
+                    print(info["machine_operation_rate"])
+                    #'cost_deadline': self.cost_deadline,
+                    # 'cost_hole': self.cost_hole,
+                    # 'cost_processing': self.cost_processing,
+                    # 'cost_makespan': self.cost_makespan,
+                    print(info["cost_deadline"], info["cost_hole"], info["cost_processing"], info["cost_makespan"])
                     plot_policy_function(model, obs, action_masks)
             elif step == debug_step:
-                env.render()
+                #env.render()
+                print("Step : ", step)
+                print(info["machine_operation_rate"])
                 plot_policy_function(model, obs, action_masks)
 
         action, _states = model.predict(obs, action_masks=action_masks, deterministic = deterministic)
@@ -138,7 +163,8 @@ def test_model(env, model, detail_mode = False, deterministic = True, render = T
         step += 1
         done = terminated or truncated
 
-        if done:    
+        if done:
+            print(info["machine_operation_rate"])
             info["reward"] = reward
             info["env"] = env
             info["profit_ratio"] = env.profit_per_time
