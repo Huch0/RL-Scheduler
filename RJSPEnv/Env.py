@@ -4,14 +4,14 @@ import numpy as np
 import pandas as pd
 import json
 from stable_baselines3.common.env_checker import check_env
-from scheduler_env.customScheduler_repeat import customRepeatableScheduler
+from RJSPEnv.Scheduler import customRepeatableScheduler
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches  # 필요한 모듈을 가져옵니다.
 from collections import defaultdict
 
 from stable_baselines3.common.preprocessing import get_flattened_obs_dim, is_image_space
 
-class SchedulingEnv(gym.Env):
+class RJSPEnv(gym.Env):
     def _load_machines(self, file_path):
         machines = []
 
@@ -73,7 +73,7 @@ class SchedulingEnv(gym.Env):
         return jobs
 
     def __init__(self, machine_config_path, job_config_path, job_repeats_params, render_mode="seaborn", cost_deadline_per_time = 5, cost_hole_per_time = 1, cost_processing_per_time = 2, cost_makespan_per_time = 10, profit_per_time = 10, target_time = None, test_mode=False, max_time = 150, num_of_types = 4, sample_mode = "normal"):
-        super(SchedulingEnv, self).__init__()
+        super(RJSPEnv, self).__init__()
 
         # cost 관련 변수
         self.cost_deadline_per_time = cost_deadline_per_time
