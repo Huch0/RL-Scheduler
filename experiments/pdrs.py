@@ -1,14 +1,16 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import seaborn as sns
 import pandas as pd
-from sb3_contrib import MaskablePPO
-from utils.tb_logger import CustomLogger
-from scheduler_env.pdr_env import SchedulingEnv as PDRenv
-from scheduler_env.benchmark_rl_env import SchedulingEnv as RLenv
+import torch as th
+# from sb3_contrib import MaskablePPO
+# from utils.tb_logger import CustomLogger
+# from scheduler_env.pdr_env import SchedulingEnv as PDRenv
+# from scheduler_env.benchmark_rl_env import SchedulingEnv as RLenv
 
-
+### start : PDR 구현
 def CR(env):
     """
     Critical Ratio
@@ -43,7 +45,6 @@ def CR(env):
         'selected_job': selected_job,
         'selected_op': selected_op,
     }
-
 
 def FDD_over_MWKR(env):
     """
@@ -94,7 +95,6 @@ def FDD_over_MWKR(env):
         'selected_op': selected_op,
     }
 
-
 def MWKR(env):
     """
     Most Work Remaining
@@ -130,7 +130,6 @@ def MWKR(env):
         'selected_job': selected_job,
         'selected_op': selected_op,
     }
-
 
 def LWKR_MOD(env):
     """
@@ -184,7 +183,6 @@ def LWKR_MOD(env):
         'selected_op': selected_op,
     }
 
-
 def LWKR_SPT(env):
     """
     Least Work Remaining + Shortest Processing Time
@@ -230,7 +228,6 @@ def LWKR_SPT(env):
         'selected_job': selected_job,
         'selected_op': selected_op,
     }
-
 
 def ETD(env):
     """
@@ -286,7 +283,6 @@ def ETD(env):
         'selected_op': selected_op,
     }
 
-
 def select_machine(machines, selected_job, selected_op):
     first_start_time = np.inf
     selected_machine = None
@@ -300,7 +296,6 @@ def select_machine(machines, selected_job, selected_op):
             selected_machine = machine
 
     return selected_machine
-
 
 def find_first_start_time(machine, job, operation):
     """
@@ -361,9 +356,10 @@ def find_first_start_time(machine, job, operation):
             min_earliest_start = last_alloc
 
     return min_earliest_start
+### end : PDR 구현
 
-
-def compare_pdr_model(pdrs, pdr_envs, model, model_envs, deterministic=True, sample_times=100, log_dir='./experiments/tmp/1', verbose=False):
+### start : PDR / model 비교 실험 
+def compare_pdr_model(pdrs, pdr_envs, model, model_envs, deterministic=True, sample_times=100, log_dir='./experiments/tmp/1', verbose=False, render=False):
     """
     Compare the given PDRs on the given environments.
     """
@@ -374,14 +370,15 @@ def compare_pdr_model(pdrs, pdr_envs, model, model_envs, deterministic=True, sam
 
     # Log the results for each PDR
     for pdr in pdrs:
-        results = eval_pdr(pdr, pdr_envs, render=False, verbose=verbose)
+        results = eval_pdr(pdr, pdr_envs, render=render, verbose=verbose)
 
         for key, values in results.items():
             for i, value in enumerate(values):
                 writer.add_scalar(f'{pdr.__name__}/{key}', value, i)
 
     if model is not None:
-        results = eval_model(model, model_envs, writer, deterministic=deterministic, sample_times=sample_times, verbose=verbose)
+        results = eval_model(model, model_envs, writer, deterministic=deterministic,
+                             sample_times=sample_times, verbose=verbose)
 
         for key, values in results.items():
             for i, value in enumerate(values):
@@ -389,8 +386,87 @@ def compare_pdr_model(pdrs, pdr_envs, model, model_envs, deterministic=True, sam
 
     writer.close()
     return
+def eval_pdr(PDR, envs, render=False, verbose=False):
 
+    """
+    Evaluate the PDR on the given environments.
 
+    :param PDR: The PDR function to evaluate.
+    :param envs: The list of environments to evaluate on.
+    :param render: Whether to render the environment.
+    :return: The objective values of the environments. (makespan, total tardiness, idle time)
+    """
+    # ms_cost = envs[0].cost_makespan_per_time
+    # tard_cost = envs[0].cost_deadline_per_time
+    # pt_cst = envs[0].cost_processing_per_time
+    # idle_cost = envs[0].cost_hole_per_time
+    if verbose:
+        print(f'Evaluating PDR: {PDR.__name__}')
+
+    makespan_list = []
+    tardiness_list = []
+    processing_time_list = []
+    idle_time_list = []
+
+    makespan_cost_list = []
+    tardiness_cost_list = []
+    processing_time_cost_list = []
+    idle_time_cost_list = []
+
+    total_cost_list = []
+
+    for env in envs:
+        obs, info = env.reset()
+        scheduler = env.custom_scheduler
+
+        done = False
+        while not done:
+            action = PDR(env)
+            scheduler.update_state(action)
+            done = scheduler.is_done()
+
+        obs = scheduler.get_observation()
+        info = scheduler.get_info()
+
+        makespan = scheduler._get_final_operation_finish()
+        total_tardiness = sum(info['job_tardiness'])
+        total_processing_time = info['sum_of_processing_time']
+        total_idle_time = info['sum_of_hole_time']
+
+        makespan_cost = info['cost_makespan']
+        tardiness_cost = info['cost_deadline']
+        processing_time_cost = info['cost_processing']
+        idlet_time_cost = info['cost_hole']
+        total_cost = info['total_cost']
+
+        makespan_list.append(makespan)
+        tardiness_list.append(total_tardiness)
+        processing_time_list.append(total_processing_time)
+        idle_time_list.append(total_idle_time)
+
+        makespan_cost_list.append(makespan_cost)
+        tardiness_cost_list.append(tardiness_cost)
+        processing_time_cost_list.append(processing_time_cost)
+        idle_time_cost_list.append(idlet_time_cost)
+        total_cost_list.append(total_cost)
+
+        if verbose:
+            print(f'Repeat: {env.custom_scheduler.current_repeats}')
+            print(
+                f'makespan: {makespan}, total tardiness: {total_tardiness}, processing time: {total_processing_time}, idle time: {total_idle_time}')
+            print(f'makespan cost: {makespan_cost}, tardiness cost: {tardiness_cost}, processing time cost: {processing_time_cost}, idle time cost: {idlet_time_cost}, total cost: {total_cost}')
+        if render:
+            env.render()
+    return {
+        'makespan': makespan_list,
+        'total_tardiness': tardiness_list,
+        'processing_time': processing_time_list,
+        'idle_time': idle_time_list,
+        'makespan_cost': makespan_cost_list,
+        'tard_cost': tardiness_cost_list,
+        'idle_time_cost': idle_time_cost_list,
+        'total_cost': total_cost_list
+    }
 def eval_model(model, envs, writer, deterministic=True, sample_times=100, verbose=False, render=False):
     if verbose:
         print(f'Evaluating Model')
@@ -472,30 +548,33 @@ def eval_model(model, envs, writer, deterministic=True, sample_times=100, verbos
         'idle_time_cost': idle_time_cost_list,
         'total_cost': total_cost_list
     }
+### end : PDR / model 비교 실험 
 
-
-def plot_pdr_comparison(pdrs, with_model=True, log_dir='./experiments/tmp/1', pie=False):
+### start : plot
+def plot_pdr_comparison(pdrs, objs, with_model=True, log_dir='./experiments/tmp/1', pie=False, save_img=False):
     # Read the CSV file
     csv_file_path = os.path.join(log_dir, 'results.csv')
     df = pd.read_csv(csv_file_path)
 
-    # Set up the 8 subplots
-    fig, axs = plt.subplots(3, 4, figsize=(16, 8))
+    # Create a color map for algorithms
+    algorithms = [pdr.__name__.replace('_over_', '/').replace('_', '+') for pdr in pdrs]
+    if with_model:
+        algorithms.append('PPO')
 
-    objs = ['makespan', 'total_tardiness', 'processing_time', 'idle_time',
-            'makespan_cost', 'tard_cost', 'idle_time_cost', 'total_cost']
+    # Create a color palette
+    n_colors = len(algorithms)
+    color_palette = plt.colormaps['Set2'](np.linspace(0, 1, n_colors))
+    color_dict = dict(zip(algorithms, color_palette))
 
+    # Objective charts
     for i, obj in enumerate(objs):
-        ax = axs[i // 4, i % 4]
+        fig, ax = plt.subplots(figsize=(8, 6))
         data = []
         for pdr in pdrs:
             pdr_name = pdr.__name__
-
             column_name = f'{pdr_name}/{obj}'
             pdr_data = df[column_name]
-
-            pdr_name = pdr_name.replace('_over_', '/')
-            pdr_name = pdr_name.replace('_', '+')
+            pdr_name = pdr_name.replace('_over_', '/').replace('_', '+')
             pdr_df = pd.DataFrame({obj: pdr_data, 'Algo': pdr_name})
             data.append(pdr_df)
         if with_model:
@@ -504,151 +583,252 @@ def plot_pdr_comparison(pdrs, with_model=True, log_dir='./experiments/tmp/1', pi
             data.append(model_df)
 
         combined_data = pd.concat(data)
-        sns.boxplot(x='Algo', y=obj, data=combined_data, ax=ax)
+
+        # Use the color dictionary for the boxplot
+        sns.boxplot(
+            x='Algo',
+            y=obj,
+            data=combined_data,
+            ax=ax,
+            palette={algo: mcolors.rgb2hex(color_dict[algo]) for algo in color_dict}
+        )
+
+        # Calculate the mean values for each algorithm
+        mean_values = combined_data.groupby('Algo')[obj].mean()
+
+        # Find the lowest mean value
+        lowest_mean_value = mean_values.min()
+
+        # Draw a horizontal line at the lowest mean value
+        ax.axhline(lowest_mean_value, color='red', linestyle='--',
+                   linewidth=1, label=f'Lowest Mean: {lowest_mean_value:.2f}')
+
         ax.set_title(obj.replace('_', ' ').title())
         ax.set_ylabel(obj.replace('_', ' ').title())
-
-        # Tilt x-axis tick labels
         ax.tick_params(axis='x', rotation=45)
+        plt.tight_layout()
 
-    # Calculate and plot win rate for each algorithm on the 4 objectives
+        # Save the plot as a PDF file
+        if save_img:
+            pdf_file_path = os.path.join(log_dir, f'{obj}_boxplot.pdf')
+            plt.savefig(pdf_file_path, format='pdf')
+
+        plt.show()
+
+    # Win rate charts
     win_rate_objs = ['makespan_cost', 'tard_cost', 'idle_time_cost', 'total_cost']
 
     for i, obj in enumerate(win_rate_objs):
-        win_rates = {algo.__name__: 0 for algo in pdrs}
-        if with_model:
-            win_rates['PPO'] = 0
+        fig, ax = plt.subplots(figsize=(10, 8))
+        win_rates = {algo: 0 for algo in algorithms}
 
         best_algo_counts = df[[f'{pdr.__name__}/{obj}' for pdr in pdrs] +
                               ([f'PPO/{obj}'] if with_model else [])].idxmin(axis=1)
-        for algo in win_rates.keys():
-            win_rates[algo] += (best_algo_counts == f'{algo}/{obj}').sum()
+        for algo, pdr in zip(win_rates.keys(), pdrs):
+            win_rates[algo] += (best_algo_counts == f'{pdr.__name__}/{obj}').sum()
 
-        # print(best_algo_counts)
-        # print(win_rates)
+        if with_model:
+            win_rates['PPO'] += (best_algo_counts == f'PPO/{obj}').sum()
 
-        # Normalize win rates
         total_instances = len(df)
         for algo in win_rates.keys():
             win_rates[algo] /= total_instances
 
-        # print(win_rates)
+        win_rate_df = pd.DataFrame(list(win_rates.items()), columns=['Algo', 'Win Rate'])
+        print(win_rate_df)
+        # assert sum of all win rates is 1 for each objective
+        assert np.isclose(win_rate_df['Win Rate'].sum(), 1)
 
-        # Plot win rates for the current objective
-        ax = axs[2, i % 4]
-        win_rate_df = pd.DataFrame([(algo.replace('_over_', '/').replace('_', '+'), win_rate)
-                                   for algo, win_rate in win_rates.items()], columns=['Algo', 'Win Rate'])
         if pie:
-            wedges, texts = ax.pie(win_rate_df['Win Rate'], startangle=140, colors=sns.color_palette('pastel'))
-            ax.legend(wedges, win_rate_df['Algo'], title="Algorithms", loc="center left", bbox_to_anchor=(1, 0, 0.5, 1))
+            win_rate_df = win_rate_df[win_rate_df['Win Rate'] > 0].sort_values('Win Rate', ascending=False)
 
-            # Annotate percentages
-            for wedge, pct in zip(wedges, win_rate_df['Win Rate']):
-                angle = (wedge.theta2 - wedge.theta1) / 2. + wedge.theta1
-                y = np.sin(np.deg2rad(angle))
-                x = np.cos(np.deg2rad(angle))
-                horizontalalignment = {-1: "right", 1: "left"}[int(np.sign(x))]
-                connectionstyle = "angle,angleA=0,angleB={}".format(angle)
-                ax.annotate(f'{pct:.1%}', xy=(x, y), xytext=(1.35*np.sign(x), 1.4*y),
-                            horizontalalignment=horizontalalignment,
-                            arrowprops=dict(arrowstyle="-", connectionstyle=connectionstyle))
+            wedges, texts, autotexts = ax.pie(win_rate_df['Win Rate'],
+                                              autopct=lambda pct: f'{pct:.1f}%' if pct > 0 else '',
+                                              startangle=90,
+                                              colors=[color_dict[algo] for algo in win_rate_df['Algo']],
+                                              pctdistance=0.85)
+
+            centre_circle = plt.Circle((0, 0), 0.70, fc='white')
+            fig.gca().add_artist(centre_circle)
+            ax.axis('equal')
+            plt.setp(autotexts, size=10, weight="bold", color="black")
+            ax.legend(wedges, win_rate_df['Algo'],
+                      title="Algorithms",
+                      loc="center left",
+                      bbox_to_anchor=(1, 0, 0.5, 1))
         else:
-            sns.barplot(x='Algo', y='Win Rate', data=win_rate_df, ax=ax)
-        ax.set_title(f'Win Rate for {obj.replace("_", " ").title()}')
-        ax.set_ylabel('Win Rate')
+            sns.barplot(x='Algo', y='Win Rate', data=win_rate_df, ax=ax,
+                        palette={algo: mcolors.rgb2hex(color_dict[algo]) for algo in color_dict})
+
+        ax.set_title(f'Win Rate for {obj.replace("_", " ").title()}', fontsize=16)
+
+        if not pie:
+            ax.set_ylabel('Win Rate', fontsize=14)
+            ax.tick_params(axis='x', rotation=45)
+
+        plt.tight_layout()
+        # Save the plot as a PDF file
+        if save_img:
+            pdf_file_path = os.path.join(log_dir, f'{obj}_winrate.pdf')
+            plt.savefig(pdf_file_path, format='pdf')
+
+        plt.show()
+
+def plot_combined_comparison(pdrs, objs, with_model=True, log_dir='./experiments/tmp/1', pie=False, save_img=False):
+    # Read the CSV file
+    csv_file_path = os.path.join(log_dir, 'results.csv')
+    df = pd.read_csv(csv_file_path)
+
+    # Create a color map for algorithms
+    algorithms = [pdr.__name__.replace('_over_', '/').replace('_', '+') for pdr in pdrs]
+    if with_model:
+        algorithms.append('PPO')
+        
+    color_names = [algo.replace('ETD', 'ETD/PDR').replace('PPO', 'Proposed') for algo in algorithms]
+
+    # Create a color palette
+    n_colors = len(color_names)
+    color_palette = plt.colormaps['Set2'](np.linspace(0, 1, n_colors))
+    color_dict = dict(zip(color_names, color_palette))
+
+    # # Create a figure with 8 subplots (2 rows x 4 columns)
+    fig, axes = plt.subplots(2, 4, figsize=(20, 10), gridspec_kw={'height_ratios': [1, 1], 'hspace': 0.8}) #, constrained_layout=True)
+
+    # Create a figure with 4 subplots (1 rows x 4 columns)
+    # fig, axes = plt.subplots(1, 4, figsize=(20, 5))
+    axes = axes.flatten()
+
+    # Objective charts
+    for i, obj in enumerate(objs):
+        ax = axes[i]
+        data = []
+        for pdr in pdrs:
+            pdr_name = pdr.__name__
+            column_name = f'{pdr_name}/{obj}'
+            pdr_data = df[column_name]
+            pdr_name = pdr_name.replace('_over_', '/').replace('_', '+')
+            pdr_df = pd.DataFrame({obj: pdr_data, 'Algo': pdr_name})
+            data.append(pdr_df)
+        if with_model:
+            model_data = df[f'PPO/{obj}']
+            model_df = pd.DataFrame({obj: model_data, 'Algo': 'PPO'})
+            data.append(model_df)
+
+        combined_data = pd.concat(data)
+
+        # Adjust algorithm names
+        combined_data['Algo'] = combined_data['Algo'].replace({'ETD': 'ETD/PDR', 'PPO': 'Proposed'})
+
+        # Use the color dictionary for the boxplot
+        sns.boxplot(
+            x='Algo',
+            y=obj,
+            data=combined_data,
+            ax=ax,
+            palette={algo: mcolors.rgb2hex(color_dict[algo]) for algo in color_dict}
+        )
+
+        # Calculate the mean values for each algorithm
+        mean_values = combined_data.groupby('Algo')[obj].mean()
+        print(mean_values)
+        
+
+        # # Find the lowest mean value
+        # lowest_mean_value = mean_values.min()
+
+        # # Draw a horizontal line at the lowest mean value
+        # ax.axhline(lowest_mean_value, color='red', linestyle='--', linewidth=1, label=f'Lowest Mean: {lowest_mean_value:.2f}')
+        title = obj.replace('_', ' ').title()
+        if obj == 'tard_cost':
+            title = "Tardiness Cost"
+        ax.set_title(title)
+        ax.set_xlabel('')  # Remove the 'Algo' label below x-axis labels
+        # ylabel = obj.replace('_', ' ').title()
+        # if obj == 'tard_cost':
+        #     ylabel = 'Tardiness Cost'
+        ylabel = "Cost"
+        ax.set_ylabel(ylabel, labelpad=3)
         ax.tick_params(axis='x', rotation=45)
+        # ax.legend()
 
-    plt.tight_layout()
+    # Win rate charts
+    win_rate_objs = ['makespan_cost', 'tard_cost', 'idle_time_cost', 'total_cost']
+
+    for i, obj in enumerate(win_rate_objs):
+        ax = axes[len(objs) + i]
+        win_rates = {algo: 0 for algo in algorithms}
+
+        best_algo_counts = df[[f'{pdr.__name__}/{obj}' for pdr in pdrs] +
+                              ([f'PPO/{obj}'] if with_model else [])].idxmin(axis=1)
+        for algo, pdr in zip(win_rates.keys(), pdrs):
+            win_rates[algo] += (best_algo_counts == f'{pdr.__name__}/{obj}').sum()
+
+        if with_model:
+            win_rates['PPO'] += (best_algo_counts == f'PPO/{obj}').sum()
+
+        total_instances = len(df)
+        for algo in win_rates.keys():
+            win_rates[algo] /= total_instances
+
+        win_rate_df = pd.DataFrame(list(win_rates.items()), columns=['Algo', 'Win Rate'])
+        win_rate_df['Algo'] = win_rate_df['Algo'].replace({'ETD': 'ETD/PDR', 'PPO': 'Proposed'})
+        print(win_rate_df)
+        # assert sum of all win rates is 1 for each objective
+        assert np.isclose(win_rate_df['Win Rate'].sum(), 1)
+
+        if pie:
+            win_rate_df = win_rate_df[win_rate_df['Win Rate'] > 0].sort_values('Win Rate', ascending=False)
+
+            wedges, texts, autotexts = ax.pie(win_rate_df['Win Rate'],
+                                              autopct=lambda pct: f'{pct:.1f}%' if pct > 5 else '',
+                                              startangle=90,
+                                              colors=[color_dict[algo] for algo in win_rate_df['Algo']],
+                                              pctdistance=0.85)
+
+            centre_circle = plt.Circle((0, 0), 0.70, fc='white')
+            ax.add_artist(centre_circle)
+            ax.axis('equal')
+            plt.setp(autotexts, size=10, weight="bold", color="black")
+            # ax.legend(wedges, win_rate_df['Algo'],
+            #           title="Algorithms",
+            #           loc="center left",
+            #           bbox_to_anchor=(1, 0, 0.5, 1))
+            ax.legend(wedges, win_rate_df['Algo'],
+                title="Algorithms",
+                loc="upper center",
+                bbox_to_anchor=(0.5, -0.1),  # Adjust the y-coordinate to move the legend below the plot
+                ncol=3)  # Adjust the number of columns in the legend as needed
+        else:
+            sns.barplot(x='Algo', y='Win Rate', data=win_rate_df, ax=ax,
+                        palette={algo: mcolors.rgb2hex(color_dict[algo]) for algo in color_dict})
+
+        title = obj.replace("_", " ").title()
+        if obj == 'tard_cost':
+            title = 'Tardiness Cost'
+        ax.set_title(f'Win Rate on {title}', fontsize=15, pad=10) # Adjust title ~ plot gap 
+
+        if not pie:
+            ax.set_ylabel('Win Rate', fontsize=14)
+            ax.tick_params(axis='x', rotation=45)
+
+    # plt.tight_layout()
+
+    # Adjust the spacing between subplots
+    plt.subplots_adjust(wspace=0.6)  # Adjust hspace value as needed
+
+    # Save the combined plot as a PDF file
+    if save_img:
+        pdf_file_path = os.path.join(log_dir, 'combined_plots+win_rates_v2.pdf')
+        plt.savefig(pdf_file_path, format='pdf', bbox_inches='tight')
+
     plt.show()
-
-
-def eval_pdr(PDR, envs, render=False, verbose=False):
-    """
-    Evaluate the PDR on the given environments.
-
-    :param PDR: The PDR function to evaluate.
-    :param envs: The list of environments to evaluate on.
-    :param render: Whether to render the environment.
-    :return: The objective values of the environments. (makespan, total tardiness, idle time)
-    """
-    # ms_cost = envs[0].cost_makespan_per_time
-    # tard_cost = envs[0].cost_deadline_per_time
-    # pt_cst = envs[0].cost_processing_per_time
-    # idle_cost = envs[0].cost_hole_per_time
-    if verbose:
-        print(f'Evaluating PDR: {PDR.__name__}')
-
-    makespan_list = []
-    tardiness_list = []
-    processing_time_list = []
-    idle_time_list = []
-
-    makespan_cost_list = []
-    tardiness_cost_list = []
-    processing_time_cost_list = []
-    idle_time_cost_list = []
-
-    total_cost_list = []
-
-    for env in envs:
-        obs, info = env.reset()
-        scheduler = env.custom_scheduler
-
-        done = False
-        while not done:
-            action = PDR(env)
-            scheduler.update_state(action)
-            done = scheduler.is_done()
-
-        obs = scheduler.get_observation()
-        info = scheduler.get_info()
-
-        makespan = scheduler._get_final_operation_finish()
-        total_tardiness = sum(info['job_tardiness'])
-        total_processing_time = info['sum_of_processing_time']
-        total_idle_time = info['sum_of_hole_time']
-
-        makespan_cost = info['cost_makespan']
-        tardiness_cost = info['cost_deadline']
-        processing_time_cost = info['cost_processing']
-        idlet_time_cost = info['cost_hole']
-        total_cost = info['total_cost']
-
-        makespan_list.append(makespan)
-        tardiness_list.append(total_tardiness)
-        processing_time_list.append(total_processing_time)
-        idle_time_list.append(total_idle_time)
-
-        makespan_cost_list.append(makespan_cost)
-        tardiness_cost_list.append(tardiness_cost)
-        processing_time_cost_list.append(processing_time_cost)
-        idle_time_cost_list.append(idlet_time_cost)
-        total_cost_list.append(total_cost)
-
-        if verbose:
-            print(f'Repeat: {env.custom_scheduler.current_repeats}')
-            print(
-                f'makespan: {makespan}, total tardiness: {total_tardiness}, processing time: {total_processing_time}, idle time: {total_idle_time}')
-            print(f'makespan cost: {makespan_cost}, tardiness cost: {tardiness_cost}, processing time cost: {processing_time_cost}, idle time cost: {idlet_time_cost}, total cost: {total_cost}')
-        if render:
-            env.render()
-    return {
-        'makespan': makespan_list,
-        'total_tardiness': tardiness_list,
-        'processing_time': processing_time_list,
-        'idle_time': idle_time_list,
-        'makespan_cost': makespan_cost_list,
-        'tard_cost': tardiness_cost_list,
-        'idle_time_cost': idle_time_cost_list,
-        'total_cost': total_cost_list
-    }
-
+### end : plot
 
 if __name__ == "__main__":
     # Random seed
     # np.random.seed(0)
 
-    # n_jobs = 7
+    # n_jobs = 10
     # eval_instances = 100
     # mean, std = 3, 1
 
@@ -685,50 +865,76 @@ if __name__ == "__main__":
     # repeats_5_100 = [[[4, 1], [3, 1], [3, 1], [5, 1], [4, 1]], [[2, 1], [3, 1], [2, 1], [2, 1], [3, 1]], [[3, 1], [4, 1], [3, 1], [3, 1], [3, 1]], [[3, 1], [4, 1], [2, 1], [3, 1], [2, 1]], [[1, 1], [3, 1], [3, 1], [2, 1], [5, 1]], [[1, 1], [3, 1], [2, 1], [4, 1], [4, 1]], [[3, 1], [3, 1], [2, 1], [1, 1], [2, 1]], [[3, 1], [4, 1], [4, 1], [2, 1], [2, 1]], [[1, 1], [1, 1], [1, 1], [4, 1], [2, 1]], [[2, 1], [1, 1], [3, 1], [1, 1], [2, 1]], [[2, 1], [3, 1], [2, 1], [1, 1], [2, 1]], [[3, 1], [3, 1], [3, 1], [2, 1], [2, 1]], [[2, 1], [2, 1], [2, 1], [1, 1], [3, 1]], [[2, 1], [1, 1], [3, 1], [2, 1], [3, 1]], [[3, 1], [3, 1], [4, 1], [1, 1], [3, 1]], [[2, 1], [2, 1], [2, 1], [2, 1], [3, 1]], [[1, 1], [3, 1], [3, 1], [1, 1], [4, 1]], [[4, 1], [4, 1], [2, 1], [1, 1], [4, 1]], [[2, 1], [4, 1], [3, 1], [3, 1], [3, 1]], [[3, 1], [3, 1], [4, 1], [3, 1], [3, 1]], [[4, 1], [1, 1], [1, 1], [3, 1], [1, 1]], [[4, 1], [2, 1], [2, 1], [4, 1], [4, 1]], [[4, 1], [3, 1], [2, 1], [4, 1], [2, 1]], [[3, 1], [3, 1], [2, 1], [3, 1], [3, 1]], [[3, 1], [1, 1], [3, 1], [4, 1], [2, 1]], [[2, 1], [2, 1], [4, 1], [3, 1], [3, 1]], [[2, 1], [3, 1], [2, 1], [3, 1], [2, 1]], [[3, 1], [3, 1], [2, 1], [3, 1], [1, 1]], [[1, 1], [3, 1], [3, 1], [3, 1], [5, 1]], [[3, 1], [2, 1], [4, 1], [1, 1], [2, 1]], [[2, 1], [4, 1], [2, 1], [2, 1], [2, 1]], [[2, 1], [4, 1], [1, 1], [1, 1], [2, 1]], [[2, 1], [4, 1], [3, 1], [3, 1], [1, 1]], [[3, 1], [1, 1], [1, 1], [4, 1], [3, 1]], [[3, 1], [3, 1], [3, 1], [2, 1], [1, 1]], [[3, 1], [2, 1], [2, 1], [2, 1], [3, 1]], [[2, 1], [1, 1], [2, 1], [1, 1], [3, 1]], [[1, 1], [1, 1], [3, 1], [2, 1], [4, 1]], [[1, 1], [3, 1], [2, 1], [1, 1], [3, 1]], [[2, 1], [3, 1], [3, 1], [5, 1], [4, 1]], [[2, 1], [2, 1], [4, 1], [3, 1], [3, 1]], [[1, 1], [2, 1], [2, 1], [3, 1], [2, 1]], [[3, 1], [3, 1], [3, 1], [2, 1], [2, 1]], [[2, 1], [2, 1], [3, 1], [5, 1], [2, 1]], [[2, 1], [2, 1], [2, 1], [3, 1], [1, 1]], [[3, 1], [3, 1], [3, 1], [2, 1], [2, 1]], [[1, 1], [2, 1], [2, 1], [3, 1], [1, 1]], [[3, 1], [4, 1], [1, 1], [3, 1], [3, 1]], [[2, 1], [2, 1], [2, 1], [2, 1], [2, 1]], [[1, 1], [4, 1], [4, 1], [2, 1], [
     #     1, 1]], [[3, 1], [2, 1], [3, 1], [2, 1], [3, 1]], [[3, 1], [2, 1], [1, 1], [1, 1], [3, 1]], [[1, 1], [2, 1], [2, 1], [2, 1], [1, 1]], [[3, 1], [3, 1], [3, 1], [2, 1], [3, 1]], [[3, 1], [1, 1], [4, 1], [3, 1], [2, 1]], [[2, 1], [3, 1], [2, 1], [1, 1], [5, 1]], [[2, 1], [4, 1], [2, 1], [4, 1], [3, 1]], [[3, 1], [1, 1], [4, 1], [3, 1], [4, 1]], [[2, 1], [2, 1], [5, 1], [1, 1], [2, 1]], [[4, 1], [3, 1], [3, 1], [2, 1], [3, 1]], [[1, 1], [4, 1], [2, 1], [2, 1], [3, 1]], [[2, 1], [1, 1], [1, 1], [3, 1], [2, 1]], [[2, 1], [4, 1], [1, 1], [2, 1], [2, 1]], [[3, 1], [2, 1], [2, 1], [2, 1], [2, 1]], [[2, 1], [2, 1], [3, 1], [2, 1], [1, 1]], [[2, 1], [2, 1], [5, 1], [2, 1], [3, 1]], [[3, 1], [1, 1], [3, 1], [1, 1], [1, 1]], [[3, 1], [1, 1], [3, 1], [2, 1], [4, 1]], [[4, 1], [2, 1], [2, 1], [1, 1], [2, 1]], [[2, 1], [2, 1], [3, 1], [3, 1], [3, 1]], [[2, 1], [1, 1], [4, 1], [2, 1], [2, 1]], [[2, 1], [1, 1], [2, 1], [2, 1], [3, 1]], [[3, 1], [3, 1], [3, 1], [3, 1], [2, 1]], [[3, 1], [2, 1], [2, 1], [2, 1], [1, 1]], [[3, 1], [2, 1], [3, 1], [2, 1], [3, 1]], [[3, 1], [3, 1], [1, 1], [2, 1], [3, 1]], [[1, 1], [3, 1], [1, 1], [1, 1], [3, 1]], [[1, 1], [2, 1], [1, 1], [4, 1], [3, 1]], [[3, 1], [2, 1], [2, 1], [1, 1], [2, 1]], [[2, 1], [3, 1], [4, 1], [4, 1], [3, 1]], [[2, 1], [1, 1], [3, 1], [3, 1], [1, 1]], [[3, 1], [3, 1], [3, 1], [2, 1], [2, 1]], [[1, 1], [3, 1], [2, 1], [2, 1], [4, 1]], [[3, 1], [3, 1], [3, 1], [4, 1], [4, 1]], [[3, 1], [3, 1], [1, 1], [3, 1], [2, 1]], [[3, 1], [3, 1], [1, 1], [2, 1], [3, 1]], [[2, 1], [1, 1], [3, 1], [3, 1], [2, 1]], [[3, 1], [3, 1], [3, 1], [3, 1], [3, 1]], [[2, 1], [1, 1], [2, 1], [3, 1], [3, 1]], [[2, 1], [3, 1], [2, 1], [2, 1], [2, 1]], [[1, 1], [3, 1], [3, 1], [3, 1], [3, 1]], [[5, 1], [2, 1], [1, 1], [3, 1], [2, 1]], [[2, 1], [2, 1], [2, 1], [3, 1], [2, 1]], [[5, 1], [2, 1], [2, 1], [1, 1], [3, 1]], [[1, 1], [2, 1], [2, 1], [2, 1], [4, 1]], [[3, 1], [4, 1], [2, 1], [4, 1], [3, 1]], [[3, 1], [4, 1], [2, 1], [2, 1], [3, 1]], [[1, 1], [4, 1], [3, 1], [2, 1], [3, 1]], [[1, 1], [2, 1], [4, 1], [4, 1], [5, 1]], [[2, 1], [2, 1], [2, 1], [1, 1], [2, 1]]]
 
-    repeats_7_100 = [[[4, 1], [3, 1], [3, 1], [5, 1], [4, 1], [2, 1], [3, 1]], [[2, 1], [2, 1], [3, 1], [3, 1], [4, 1], [3, 1], [3, 1]], [[3, 1], [3, 1], [4, 1], [2, 1], [3, 1], [2, 1], [1, 1]], [[3, 1], [3, 1], [2, 1], [5, 1], [1, 1], [3, 1], [2, 1]], [[4, 1], [4, 1], [3, 1], [3, 1], [2, 1], [1, 1], [2, 1]], [[3, 1], [4, 1], [4, 1], [2, 1], [2, 1], [1, 1], [1, 1]], [[1, 1], [4, 1], [2, 1], [2, 1], [1, 1], [3, 1], [1, 1]], [[2, 1], [2, 1], [3, 1], [2, 1], [1, 1], [2, 1], [3, 1]], [[3, 1], [3, 1], [2, 1], [2, 1], [2, 1], [2, 1], [2, 1]], [[1, 1], [3, 1], [2, 1], [1, 1], [3, 1], [2, 1], [3, 1]], [[3, 1], [3, 1], [4, 1], [1, 1], [3, 1], [2, 1], [2, 1]], [[2, 1], [2, 1], [3, 1], [1, 1], [3, 1], [3, 1], [1, 1]], [[4, 1], [4, 1], [4, 1], [2, 1], [1, 1], [4, 1], [2, 1]], [[4, 1], [3, 1], [3, 1], [3, 1], [3, 1], [3, 1], [4, 1]], [[3, 1], [3, 1], [4, 1], [1, 1], [1, 1], [3, 1], [1, 1]], [[4, 1], [2, 1], [2, 1], [4, 1], [4, 1], [4, 1], [3, 1]], [[2, 1], [4, 1], [2, 1], [3, 1], [3, 1], [2, 1], [3, 1]], [[3, 1], [3, 1], [1, 1], [3, 1], [4, 1], [2, 1], [2, 1]], [[2, 1], [4, 1], [3, 1], [3, 1], [2, 1], [3, 1], [2, 1]], [[3, 1], [2, 1], [3, 1], [3, 1], [2, 1], [3, 1], [1, 1]], [[1, 1], [3, 1], [3, 1], [3, 1], [5, 1], [3, 1], [2, 1]], [[4, 1], [1, 1], [2, 1], [2, 1], [4, 1], [2, 1], [2, 1]], [[2, 1], [2, 1], [4, 1], [1, 1], [1, 1], [2, 1], [2, 1]], [[4, 1], [3, 1], [3, 1], [1, 1], [3, 1], [1, 1], [1, 1]], [[4, 1], [3, 1], [3, 1], [3, 1], [3, 1], [2, 1], [1, 1]], [[3, 1], [2, 1], [2, 1], [2, 1], [3, 1], [2, 1], [1, 1]], [[2, 1], [1, 1], [3, 1], [1, 1], [1, 1], [3, 1], [2, 1]], [[4, 1], [1, 1], [3, 1], [2, 1], [1, 1], [3, 1], [2, 1]], [[3, 1], [3, 1], [5, 1], [4, 1], [2, 1], [2, 1], [4, 1]], [[3, 1], [3, 1], [1, 1], [2, 1], [2, 1], [3, 1], [2, 1]], [[3, 1], [3, 1], [3, 1], [2, 1], [2, 1], [2, 1], [2, 1]], [[3, 1], [5, 1], [2, 1], [2, 1], [2, 1], [2, 1], [3, 1]], [[1, 1], [3, 1], [3, 1], [3, 1], [2, 1], [2, 1], [1, 1]], [[2, 1], [2, 1], [3, 1], [1, 1], [3, 1], [4, 1], [1, 1]], [[3, 1], [3, 1], [2, 1], [2, 1], [2, 1], [2, 1], [2, 1]], [[1, 1], [4, 1], [4, 1], [2, 1], [1, 1], [3, 1], [2, 1]], [[3, 1], [2, 1], [3, 1], [3, 1], [2, 1], [1, 1], [1, 1]], [[3, 1], [1, 1], [2, 1], [2, 1], [2, 1], [1, 1], [3, 1]], [[3, 1], [3, 1], [2, 1], [3, 1], [3, 1], [1, 1], [4, 1]], [[3, 1], [2, 1], [2, 1], [3, 1], [2, 1], [1, 1], [5, 1]], [[2, 1], [4, 1], [2, 1], [4, 1], [3, 1], [3, 1], [1, 1]], [[4, 1], [3, 1], [4, 1], [2, 1], [2, 1], [5, 1], [1, 1]], [[2, 1], [4, 1], [3, 1], [3, 1], [2, 1], [3, 1], [1, 1]], [[4, 1], [2, 1], [2, 1], [3, 1], [2, 1], [1, 1], [1, 1]], [[3, 1], [2, 1], [2, 1], [4, 1], [1, 1], [2, 1], [2, 1]], [[3, 1], [2, 1], [2, 1], [2, 1], [2, 1], [2, 1], [2, 1]], [[3, 1], [2, 1], [1, 1], [2, 1], [2, 1], [5, 1], [2, 1]], [[3, 1], [3, 1], [1, 1], [3, 1], [1, 1], [1, 1], [3, 1]], [[1, 1], [3, 1], [2, 1], [4, 1], [4, 1], [2, 1], [2, 1]], [[1, 1], [2, 1], [2, 1], [2, 1], [3, 1], [3, 1], [
-        3, 1]], [[2, 1], [1, 1], [4, 1], [2, 1], [2, 1], [2, 1], [1, 1]], [[2, 1], [2, 1], [3, 1], [3, 1], [3, 1], [3, 1], [3, 1]], [[2, 1], [3, 1], [2, 1], [2, 1], [2, 1], [1, 1], [3, 1]], [[2, 1], [3, 1], [2, 1], [3, 1], [3, 1], [3, 1], [1, 1]], [[2, 1], [3, 1], [1, 1], [3, 1], [1, 1], [1, 1], [3, 1]], [[1, 1], [2, 1], [1, 1], [4, 1], [3, 1], [3, 1], [2, 1]], [[2, 1], [1, 1], [2, 1], [2, 1], [3, 1], [4, 1], [4, 1]], [[3, 1], [2, 1], [1, 1], [3, 1], [3, 1], [1, 1], [3, 1]], [[3, 1], [3, 1], [2, 1], [2, 1], [1, 1], [3, 1], [2, 1]], [[2, 1], [4, 1], [3, 1], [3, 1], [3, 1], [4, 1], [4, 1]], [[3, 1], [3, 1], [1, 1], [3, 1], [2, 1], [3, 1], [3, 1]], [[1, 1], [2, 1], [3, 1], [2, 1], [1, 1], [3, 1], [3, 1]], [[2, 1], [3, 1], [3, 1], [3, 1], [3, 1], [3, 1], [2, 1]], [[1, 1], [2, 1], [3, 1], [3, 1], [2, 1], [3, 1], [2, 1]], [[2, 1], [2, 1], [1, 1], [3, 1], [3, 1], [3, 1], [3, 1]], [[5, 1], [2, 1], [1, 1], [3, 1], [2, 1], [2, 1], [2, 1]], [[2, 1], [3, 1], [2, 1], [5, 1], [2, 1], [2, 1], [1, 1]], [[3, 1], [1, 1], [2, 1], [2, 1], [2, 1], [4, 1], [3, 1]], [[4, 1], [2, 1], [4, 1], [3, 1], [3, 1], [4, 1], [2, 1]], [[2, 1], [3, 1], [1, 1], [4, 1], [3, 1], [2, 1], [3, 1]], [[1, 1], [2, 1], [4, 1], [4, 1], [5, 1], [2, 1], [2, 1]], [[2, 1], [1, 1], [2, 1], [3, 1], [2, 1], [4, 1], [2, 1]], [[2, 1], [2, 1], [1, 1], [1, 1], [1, 1], [4, 1], [3, 1]], [[4, 1], [1, 1], [1, 1], [2, 1], [3, 1], [3, 1], [4, 1]], [[3, 1], [4, 1], [2, 1], [2, 1], [1, 1], [2, 1], [3, 1]], [[2, 1], [3, 1], [4, 1], [1, 1], [3, 1], [1, 1], [3, 1]], [[4, 1], [3, 1], [1, 1], [2, 1], [2, 1], [2, 1], [2, 1]], [[2, 1], [3, 1], [1, 1], [2, 1], [4, 1], [2, 1], [2, 1]], [[4, 1], [1, 1], [4, 1], [2, 1], [3, 1], [3, 1], [3, 1]], [[2, 1], [2, 1], [4, 1], [1, 1], [3, 1], [1, 1], [2, 1]], [[5, 1], [2, 1], [3, 1], [1, 1], [2, 1], [3, 1], [3, 1]], [[3, 1], [3, 1], [3, 1], [3, 1], [1, 1], [3, 1], [3, 1]], [[3, 1], [2, 1], [2, 1], [1, 1], [2, 1], [4, 1], [1, 1]], [[2, 1], [1, 1], [3, 1], [2, 1], [2, 1], [2, 1], [3, 1]], [[2, 1], [1, 1], [3, 1], [3, 1], [2, 1], [1, 1], [3, 1]], [[3, 1], [2, 1], [2, 1], [2, 1], [2, 1], [1, 1], [3, 1]], [[2, 1], [3, 1], [1, 1], [2, 1], [2, 1], [1, 1], [3, 1]], [[2, 1], [1, 1], [1, 1], [3, 1], [3, 1], [2, 1], [3, 1]], [[3, 1], [3, 1], [4, 1], [1, 1], [3, 1], [2, 1], [2, 1]], [[2, 1], [2, 1], [1, 1], [3, 1], [4, 1], [2, 1], [2, 1]], [[2, 1], [2, 1], [3, 1], [2, 1], [2, 1], [3, 1], [2, 1]], [[3, 1], [3, 1], [4, 1], [2, 1], [4, 1], [4, 1], [2, 1]], [[1, 1], [2, 1], [4, 1], [2, 1], [2, 1], [4, 1], [3, 1]], [[1, 1], [3, 1], [3, 1], [3, 1], [3, 1], [2, 1], [1, 1]], [[2, 1], [2, 1], [2, 1], [1, 1], [3, 1], [3, 1], [2, 1]], [[2, 1], [2, 1], [4, 1], [1, 1], [3, 1], [2, 1], [1, 1]], [[1, 1], [2, 1], [3, 1], [3, 1], [2, 1], [4, 1], [4, 1]], [[3, 1], [2, 1], [4, 1], [3, 1], [3, 1], [2, 1], [1, 1]], [[5, 1], [1, 1], [2, 1], [5, 1], [3, 1], [3, 1], [1, 1]], [[1, 1], [2, 1], [4, 1], [2, 1], [2, 1], [3, 1], [4, 1]]]
+    # repeats_7_100 = [[[4, 1], [3, 1], [3, 1], [5, 1], [4, 1], [2, 1], [3, 1]], [[2, 1], [2, 1], [3, 1], [3, 1], [4, 1], [3, 1], [3, 1]], [[3, 1], [3, 1], [4, 1], [2, 1], [3, 1], [2, 1], [1, 1]], [[3, 1], [3, 1], [2, 1], [5, 1], [1, 1], [3, 1], [2, 1]], [[4, 1], [4, 1], [3, 1], [3, 1], [2, 1], [1, 1], [2, 1]], [[3, 1], [4, 1], [4, 1], [2, 1], [2, 1], [1, 1], [1, 1]], [[1, 1], [4, 1], [2, 1], [2, 1], [1, 1], [3, 1], [1, 1]], [[2, 1], [2, 1], [3, 1], [2, 1], [1, 1], [2, 1], [3, 1]], [[3, 1], [3, 1], [2, 1], [2, 1], [2, 1], [2, 1], [2, 1]], [[1, 1], [3, 1], [2, 1], [1, 1], [3, 1], [2, 1], [3, 1]], [[3, 1], [3, 1], [4, 1], [1, 1], [3, 1], [2, 1], [2, 1]], [[2, 1], [2, 1], [3, 1], [1, 1], [3, 1], [3, 1], [1, 1]], [[4, 1], [4, 1], [4, 1], [2, 1], [1, 1], [4, 1], [2, 1]], [[4, 1], [3, 1], [3, 1], [3, 1], [3, 1], [3, 1], [4, 1]], [[3, 1], [3, 1], [4, 1], [1, 1], [1, 1], [3, 1], [1, 1]], [[4, 1], [2, 1], [2, 1], [4, 1], [4, 1], [4, 1], [3, 1]], [[2, 1], [4, 1], [2, 1], [3, 1], [3, 1], [2, 1], [3, 1]], [[3, 1], [3, 1], [1, 1], [3, 1], [4, 1], [2, 1], [2, 1]], [[2, 1], [4, 1], [3, 1], [3, 1], [2, 1], [3, 1], [2, 1]], [[3, 1], [2, 1], [3, 1], [3, 1], [2, 1], [3, 1], [1, 1]], [[1, 1], [3, 1], [3, 1], [3, 1], [5, 1], [3, 1], [2, 1]], [[4, 1], [1, 1], [2, 1], [2, 1], [4, 1], [2, 1], [2, 1]], [[2, 1], [2, 1], [4, 1], [1, 1], [1, 1], [2, 1], [2, 1]], [[4, 1], [3, 1], [3, 1], [1, 1], [3, 1], [1, 1], [1, 1]], [[4, 1], [3, 1], [3, 1], [3, 1], [3, 1], [2, 1], [1, 1]], [[3, 1], [2, 1], [2, 1], [2, 1], [3, 1], [2, 1], [1, 1]], [[2, 1], [1, 1], [3, 1], [1, 1], [1, 1], [3, 1], [2, 1]], [[4, 1], [1, 1], [3, 1], [2, 1], [1, 1], [3, 1], [2, 1]], [[3, 1], [3, 1], [5, 1], [4, 1], [2, 1], [2, 1], [4, 1]], [[3, 1], [3, 1], [1, 1], [2, 1], [2, 1], [3, 1], [2, 1]], [[3, 1], [3, 1], [3, 1], [2, 1], [2, 1], [2, 1], [2, 1]], [[3, 1], [5, 1], [2, 1], [2, 1], [2, 1], [2, 1], [3, 1]], [[1, 1], [3, 1], [3, 1], [3, 1], [2, 1], [2, 1], [1, 1]], [[2, 1], [2, 1], [3, 1], [1, 1], [3, 1], [4, 1], [1, 1]], [[3, 1], [3, 1], [2, 1], [2, 1], [2, 1], [2, 1], [2, 1]], [[1, 1], [4, 1], [4, 1], [2, 1], [1, 1], [3, 1], [2, 1]], [[3, 1], [2, 1], [3, 1], [3, 1], [2, 1], [1, 1], [1, 1]], [[3, 1], [1, 1], [2, 1], [2, 1], [2, 1], [1, 1], [3, 1]], [[3, 1], [3, 1], [2, 1], [3, 1], [3, 1], [1, 1], [4, 1]], [[3, 1], [2, 1], [2, 1], [3, 1], [2, 1], [1, 1], [5, 1]], [[2, 1], [4, 1], [2, 1], [4, 1], [3, 1], [3, 1], [1, 1]], [[4, 1], [3, 1], [4, 1], [2, 1], [2, 1], [5, 1], [1, 1]], [[2, 1], [4, 1], [3, 1], [3, 1], [2, 1], [3, 1], [1, 1]], [[4, 1], [2, 1], [2, 1], [3, 1], [2, 1], [1, 1], [1, 1]], [[3, 1], [2, 1], [2, 1], [4, 1], [1, 1], [2, 1], [2, 1]], [[3, 1], [2, 1], [2, 1], [2, 1], [2, 1], [2, 1], [2, 1]], [[3, 1], [2, 1], [1, 1], [2, 1], [2, 1], [5, 1], [2, 1]], [[3, 1], [3, 1], [1, 1], [3, 1], [1, 1], [1, 1], [3, 1]], [[1, 1], [3, 1], [2, 1], [4, 1], [4, 1], [2, 1], [2, 1]], [[1, 1], [2, 1], [2, 1], [2, 1], [3, 1], [3, 1], [
+    #     3, 1]], [[2, 1], [1, 1], [4, 1], [2, 1], [2, 1], [2, 1], [1, 1]], [[2, 1], [2, 1], [3, 1], [3, 1], [3, 1], [3, 1], [3, 1]], [[2, 1], [3, 1], [2, 1], [2, 1], [2, 1], [1, 1], [3, 1]], [[2, 1], [3, 1], [2, 1], [3, 1], [3, 1], [3, 1], [1, 1]], [[2, 1], [3, 1], [1, 1], [3, 1], [1, 1], [1, 1], [3, 1]], [[1, 1], [2, 1], [1, 1], [4, 1], [3, 1], [3, 1], [2, 1]], [[2, 1], [1, 1], [2, 1], [2, 1], [3, 1], [4, 1], [4, 1]], [[3, 1], [2, 1], [1, 1], [3, 1], [3, 1], [1, 1], [3, 1]], [[3, 1], [3, 1], [2, 1], [2, 1], [1, 1], [3, 1], [2, 1]], [[2, 1], [4, 1], [3, 1], [3, 1], [3, 1], [4, 1], [4, 1]], [[3, 1], [3, 1], [1, 1], [3, 1], [2, 1], [3, 1], [3, 1]], [[1, 1], [2, 1], [3, 1], [2, 1], [1, 1], [3, 1], [3, 1]], [[2, 1], [3, 1], [3, 1], [3, 1], [3, 1], [3, 1], [2, 1]], [[1, 1], [2, 1], [3, 1], [3, 1], [2, 1], [3, 1], [2, 1]], [[2, 1], [2, 1], [1, 1], [3, 1], [3, 1], [3, 1], [3, 1]], [[5, 1], [2, 1], [1, 1], [3, 1], [2, 1], [2, 1], [2, 1]], [[2, 1], [3, 1], [2, 1], [5, 1], [2, 1], [2, 1], [1, 1]], [[3, 1], [1, 1], [2, 1], [2, 1], [2, 1], [4, 1], [3, 1]], [[4, 1], [2, 1], [4, 1], [3, 1], [3, 1], [4, 1], [2, 1]], [[2, 1], [3, 1], [1, 1], [4, 1], [3, 1], [2, 1], [3, 1]], [[1, 1], [2, 1], [4, 1], [4, 1], [5, 1], [2, 1], [2, 1]], [[2, 1], [1, 1], [2, 1], [3, 1], [2, 1], [4, 1], [2, 1]], [[2, 1], [2, 1], [1, 1], [1, 1], [1, 1], [4, 1], [3, 1]], [[4, 1], [1, 1], [1, 1], [2, 1], [3, 1], [3, 1], [4, 1]], [[3, 1], [4, 1], [2, 1], [2, 1], [1, 1], [2, 1], [3, 1]], [[2, 1], [3, 1], [4, 1], [1, 1], [3, 1], [1, 1], [3, 1]], [[4, 1], [3, 1], [1, 1], [2, 1], [2, 1], [2, 1], [2, 1]], [[2, 1], [3, 1], [1, 1], [2, 1], [4, 1], [2, 1], [2, 1]], [[4, 1], [1, 1], [4, 1], [2, 1], [3, 1], [3, 1], [3, 1]], [[2, 1], [2, 1], [4, 1], [1, 1], [3, 1], [1, 1], [2, 1]], [[5, 1], [2, 1], [3, 1], [1, 1], [2, 1], [3, 1], [3, 1]], [[3, 1], [3, 1], [3, 1], [3, 1], [1, 1], [3, 1], [3, 1]], [[3, 1], [2, 1], [2, 1], [1, 1], [2, 1], [4, 1], [1, 1]], [[2, 1], [1, 1], [3, 1], [2, 1], [2, 1], [2, 1], [3, 1]], [[2, 1], [1, 1], [3, 1], [3, 1], [2, 1], [1, 1], [3, 1]], [[3, 1], [2, 1], [2, 1], [2, 1], [2, 1], [1, 1], [3, 1]], [[2, 1], [3, 1], [1, 1], [2, 1], [2, 1], [1, 1], [3, 1]], [[2, 1], [1, 1], [1, 1], [3, 1], [3, 1], [2, 1], [3, 1]], [[3, 1], [3, 1], [4, 1], [1, 1], [3, 1], [2, 1], [2, 1]], [[2, 1], [2, 1], [1, 1], [3, 1], [4, 1], [2, 1], [2, 1]], [[2, 1], [2, 1], [3, 1], [2, 1], [2, 1], [3, 1], [2, 1]], [[3, 1], [3, 1], [4, 1], [2, 1], [4, 1], [4, 1], [2, 1]], [[1, 1], [2, 1], [4, 1], [2, 1], [2, 1], [4, 1], [3, 1]], [[1, 1], [3, 1], [3, 1], [3, 1], [3, 1], [2, 1], [1, 1]], [[2, 1], [2, 1], [2, 1], [1, 1], [3, 1], [3, 1], [2, 1]], [[2, 1], [2, 1], [4, 1], [1, 1], [3, 1], [2, 1], [1, 1]], [[1, 1], [2, 1], [3, 1], [3, 1], [2, 1], [4, 1], [4, 1]], [[3, 1], [2, 1], [4, 1], [3, 1], [3, 1], [2, 1], [1, 1]], [[5, 1], [1, 1], [2, 1], [5, 1], [3, 1], [3, 1], [1, 1]], [[1, 1], [2, 1], [4, 1], [2, 1], [2, 1], [3, 1], [4, 1]]]
+    # repeats_8_100 = [[[4, 1], [3, 1], [3, 1], [5, 1], [4, 1], [2, 1], [3, 1], [2, 1]], [[2, 1], [3, 1], [3, 1], [4, 1], [3, 1], [3, 1], [3, 1], [3, 1]], [[4, 1], [2, 1], [3, 1], [2, 1], [1, 1], [3, 1], [3, 1], [2, 1]], [[5, 1], [1, 1], [3, 1], [2, 1], [4, 1], [4, 1], [3, 1], [3, 1]], [[2, 1], [1, 1], [2, 1], [3, 1], [4, 1], [4, 1], [2, 1], [2, 1]], [[1, 1], [1, 1], [1, 1], [4, 1], [2, 1], [2, 1], [1, 1], [3, 1]], [[1, 1], [2, 1], [2, 1], [3, 1], [2, 1], [1, 1], [2, 1], [3, 1]], [[3, 1], [3, 1], [2, 1], [2, 1], [2, 1], [2, 1], [2, 1], [1, 1]], [[3, 1], [2, 1], [1, 1], [3, 1], [2, 1], [3, 1], [3, 1], [3, 1]], [[4, 1], [1, 1], [3, 1], [2, 1], [2, 1], [2, 1], [2, 1], [3, 1]], [[1, 1], [3, 1], [3, 1], [1, 1], [4, 1], [4, 1], [4, 1], [2, 1]], [[1, 1], [4, 1], [2, 1], [4, 1], [3, 1], [3, 1], [3, 1], [3, 1]], [[3, 1], [4, 1], [3, 1], [3, 1], [4, 1], [1, 1], [1, 1], [3, 1]], [[1, 1], [4, 1], [2, 1], [2, 1], [4, 1], [4, 1], [4, 1], [3, 1]], [[2, 1], [4, 1], [2, 1], [3, 1], [3, 1], [2, 1], [3, 1], [3, 1]], [[3, 1], [1, 1], [3, 1], [4, 1], [2, 1], [2, 1], [2, 1], [4, 1]], [[3, 1], [3, 1], [2, 1], [3, 1], [2, 1], [3, 1], [2, 1], [3, 1]], [[3, 1], [2, 1], [3, 1], [1, 1], [1, 1], [3, 1], [3, 1], [3, 1]], [[5, 1], [3, 1], [2, 1], [4, 1], [1, 1], [2, 1], [2, 1], [4, 1]], [[2, 1], [2, 1], [2, 1], [2, 1], [4, 1], [1, 1], [1, 1], [2, 1]], [[2, 1], [4, 1], [3, 1], [3, 1], [1, 1], [3, 1], [1, 1], [1, 1]], [[4, 1], [3, 1], [3, 1], [3, 1], [3, 1], [2, 1], [1, 1], [3, 1]], [[2, 1], [2, 1], [2, 1], [3, 1], [2, 1], [1, 1], [2, 1], [1, 1]], [[3, 1], [1, 1], [1, 1], [3, 1], [2, 1], [4, 1], [1, 1], [3, 1]], [[2, 1], [1, 1], [3, 1], [2, 1], [3, 1], [3, 1], [5, 1], [4, 1]], [[2, 1], [2, 1], [4, 1], [3, 1], [3, 1], [1, 1], [2, 1], [2, 1]], [[3, 1], [2, 1], [3, 1], [3, 1], [3, 1], [2, 1], [2, 1], [2, 1]], [[2, 1], [3, 1], [5, 1], [2, 1], [2, 1], [2, 1], [2, 1], [3, 1]], [[1, 1], [3, 1], [3, 1], [3, 1], [2, 1], [2, 1], [1, 1], [2, 1]], [[2, 1], [3, 1], [1, 1], [3, 1], [4, 1], [1, 1], [3, 1], [3, 1]], [[2, 1], [2, 1], [2, 1], [2, 1], [2, 1], [1, 1], [4, 1], [4, 1]], [[2, 1], [1, 1], [3, 1], [2, 1], [3, 1], [2, 1], [3, 1], [3, 1]], [[2, 1], [1, 1], [1, 1], [3, 1], [1, 1], [2, 1], [2, 1], [2, 1]], [[1, 1], [3, 1], [3, 1], [3, 1], [2, 1], [3, 1], [3, 1], [1, 1]], [[4, 1], [3, 1], [2, 1], [2, 1], [3, 1], [2, 1], [1, 1], [5, 1]], [[2, 1], [4, 1], [2, 1], [4, 1], [3, 1], [3, 1], [1, 1], [4, 1]], [[3, 1], [4, 1], [2, 1], [2, 1], [5, 1], [1, 1], [2, 1], [4, 1]], [[3, 1], [3, 1], [2, 1], [3, 1], [1, 1], [4, 1], [2, 1], [2, 1]], [[3, 1], [2, 1], [1, 1], [1, 1], [3, 1], [2, 1], [2, 1], [4, 1]], [[1, 1], [2, 1], [2, 1], [3, 1], [2, 1], [2, 1], [2, 1], [2, 1]], [[2, 1], [2, 1], [3, 1], [2, 1], [1, 1], [2, 1], [2, 1], [5, 1]], [[2, 1], [3, 1], [3, 1], [1, 1], [3, 1], [1, 1], [1, 1], [3, 1]], [[1, 1], [3, 1], [2, 1], [4, 1], [4, 1], [2, 1], [2, 1], [1, 1]], [[2, 1], [2, 1], [2, 1], [3, 1], [3, 1], [3, 1], [2, 1], [1, 1]], [[4, 1], [2, 1], [2, 1], [2, 1], [1, 1], [2, 1], [2, 1], [3, 1]], [[3, 1], [3, 1], [3, 1], [3, 1], [2, 1], [3, 1], [2, 1], [2, 1]], [[2, 1], [1, 1], [3, 1], [2, 1], [3, 1], [2, 1], [3, 1], [3, 1]], [[3, 1], [1, 1], [2, 1], [3, 1], [1, 1], [3, 1], [1, 1], [1, 1]], [[3, 1], [1, 1], [2, 1], [1, 1], [4, 1], [3, 1], [3, 1], [2, 1]], [[2, 1], [1, 1], [2, 1], [2, 1], [3, 1], [4, 1], [4, 1], [
+    #     3, 1]], [[2, 1], [1, 1], [3, 1], [3, 1], [1, 1], [3, 1], [3, 1], [3, 1]], [[2, 1], [2, 1], [1, 1], [3, 1], [2, 1], [2, 1], [4, 1], [3, 1]], [[3, 1], [3, 1], [4, 1], [4, 1], [3, 1], [3, 1], [1, 1], [3, 1]], [[2, 1], [3, 1], [3, 1], [1, 1], [2, 1], [3, 1], [2, 1], [1, 1]], [[3, 1], [3, 1], [2, 1], [3, 1], [3, 1], [3, 1], [3, 1], [3, 1]], [[2, 1], [1, 1], [2, 1], [3, 1], [3, 1], [2, 1], [3, 1], [2, 1]], [[2, 1], [2, 1], [1, 1], [3, 1], [3, 1], [3, 1], [3, 1], [5, 1]], [[2, 1], [1, 1], [3, 1], [2, 1], [2, 1], [2, 1], [2, 1], [3, 1]], [[2, 1], [5, 1], [2, 1], [2, 1], [1, 1], [3, 1], [1, 1], [2, 1]], [[2, 1], [2, 1], [4, 1], [3, 1], [4, 1], [2, 1], [4, 1], [3, 1]], [[3, 1], [4, 1], [2, 1], [2, 1], [3, 1], [1, 1], [4, 1], [3, 1]], [[2, 1], [3, 1], [1, 1], [2, 1], [4, 1], [4, 1], [5, 1], [2, 1]], [[2, 1], [2, 1], [1, 1], [2, 1], [3, 1], [2, 1], [4, 1], [2, 1]], [[2, 1], [2, 1], [1, 1], [1, 1], [1, 1], [4, 1], [3, 1], [4, 1]], [[1, 1], [1, 1], [2, 1], [3, 1], [3, 1], [4, 1], [3, 1], [4, 1]], [[2, 1], [2, 1], [1, 1], [2, 1], [3, 1], [2, 1], [3, 1], [4, 1]], [[1, 1], [3, 1], [1, 1], [3, 1], [4, 1], [3, 1], [1, 1], [2, 1]], [[2, 1], [2, 1], [2, 1], [2, 1], [3, 1], [1, 1], [2, 1], [4, 1]], [[2, 1], [2, 1], [4, 1], [1, 1], [4, 1], [2, 1], [3, 1], [3, 1]], [[3, 1], [2, 1], [2, 1], [4, 1], [1, 1], [3, 1], [1, 1], [2, 1]], [[5, 1], [2, 1], [3, 1], [1, 1], [2, 1], [3, 1], [3, 1], [3, 1]], [[3, 1], [3, 1], [3, 1], [1, 1], [3, 1], [3, 1], [3, 1], [2, 1]], [[2, 1], [1, 1], [2, 1], [4, 1], [1, 1], [2, 1], [1, 1], [3, 1]], [[2, 1], [2, 1], [2, 1], [3, 1], [2, 1], [1, 1], [3, 1], [3, 1]], [[2, 1], [1, 1], [3, 1], [3, 1], [2, 1], [2, 1], [2, 1], [2, 1]], [[1, 1], [3, 1], [2, 1], [3, 1], [1, 1], [2, 1], [2, 1], [1, 1]], [[3, 1], [2, 1], [1, 1], [1, 1], [3, 1], [3, 1], [2, 1], [3, 1]], [[3, 1], [3, 1], [4, 1], [1, 1], [3, 1], [2, 1], [2, 1], [2, 1]], [[2, 1], [1, 1], [3, 1], [4, 1], [2, 1], [2, 1], [2, 1], [2, 1]], [[3, 1], [2, 1], [2, 1], [3, 1], [2, 1], [3, 1], [3, 1], [4, 1]], [[2, 1], [4, 1], [4, 1], [2, 1], [1, 1], [2, 1], [4, 1], [2, 1]], [[2, 1], [4, 1], [3, 1], [1, 1], [3, 1], [3, 1], [3, 1], [3, 1]], [[2, 1], [1, 1], [2, 1], [2, 1], [2, 1], [1, 1], [3, 1], [3, 1]], [[2, 1], [2, 1], [2, 1], [4, 1], [1, 1], [3, 1], [2, 1], [1, 1]], [[1, 1], [2, 1], [3, 1], [3, 1], [2, 1], [4, 1], [4, 1], [3, 1]], [[2, 1], [4, 1], [3, 1], [3, 1], [2, 1], [1, 1], [5, 1], [1, 1]], [[2, 1], [5, 1], [3, 1], [3, 1], [1, 1], [1, 1], [2, 1], [4, 1]], [[2, 1], [2, 1], [3, 1], [4, 1], [1, 1], [1, 1], [2, 1], [4, 1]], [[3, 1], [5, 1], [3, 1], [2, 1], [4, 1], [3, 1], [2, 1], [3, 1]], [[2, 1], [2, 1], [4, 1], [2, 1], [2, 1], [2, 1], [4, 1], [2, 1]], [[2, 1], [2, 1], [3, 1], [2, 1], [1, 1], [2, 1], [2, 1], [4, 1]], [[3, 1], [3, 1], [2, 1], [2, 1], [2, 1], [1, 1], [5, 1], [1, 1]], [[3, 1], [1, 1], [2, 1], [2, 1], [1, 1], [1, 1], [4, 1], [2, 1]], [[2, 1], [3, 1], [3, 1], [3, 1], [1, 1], [3, 1], [3, 1], [1, 1]], [[3, 1], [4, 1], [2, 1], [3, 1], [3, 1], [2, 1], [3, 1], [1, 1]], [[2, 1], [3, 1], [3, 1], [3, 1], [3, 1], [1, 1], [2, 1], [3, 1]], [[4, 1], [2, 1], [2, 1], [3, 1], [2, 1], [3, 1], [2, 1], [1, 1]], [[2, 1], [2, 1], [1, 1], [2, 1], [4, 1], [3, 1], [3, 1], [1, 1]], [[3, 1], [3, 1], [3, 1], [3, 1], [1, 1], [2, 1], [2, 1], [2, 1]], [[2, 1], [4, 1], [2, 1], [2, 1], [3, 1], [1, 1], [2, 1], [2, 1]]]
+    # repeats_10_100 = [[[4, 1], [3, 1], [3, 1], [5, 1], [4, 1], [2, 1], [3, 1], [2, 1], [2, 1], [3, 1]], [[3, 1], [4, 1], [3, 1], [3, 1], [3, 1], [3, 1], [4, 1], [2, 1], [3, 1], [2, 1]], [[1, 1], [3, 1], [3, 1], [2, 1], [5, 1], [1, 1], [3, 1], [2, 1], [4, 1], [4, 1]], [[3, 1], [3, 1], [2, 1], [1, 1], [2, 1], [3, 1], [4, 1], [4, 1], [2, 1], [2, 1]], [[1, 1], [1, 1], [1, 1], [4, 1], [2, 1], [2, 1], [1, 1], [3, 1], [1, 1], [2, 1]], [[2, 1], [3, 1], [2, 1], [1, 1], [2, 1], [3, 1], [3, 1], [3, 1], [2, 1], [2, 1]], [[2, 1], [2, 1], [2, 1], [1, 1], [3, 1], [2, 1], [1, 1], [3, 1], [2, 1], [3, 1]], [[3, 1], [3, 1], [4, 1], [1, 1], [3, 1], [2, 1], [2, 1], [2, 1], [2, 1], [3, 1]], [[1, 1], [3, 1], [3, 1], [1, 1], [4, 1], [4, 1], [4, 1], [2, 1], [1, 1], [4, 1]], [[2, 1], [4, 1], [3, 1], [3, 1], [3, 1], [3, 1], [3, 1], [4, 1], [3, 1], [3, 1]], [[4, 1], [1, 1], [1, 1], [3, 1], [1, 1], [4, 1], [2, 1], [2, 1], [4, 1], [4, 1]], [[4, 1], [3, 1], [2, 1], [4, 1], [2, 1], [3, 1], [3, 1], [2, 1], [3, 1], [3, 1]], [[3, 1], [1, 1], [3, 1], [4, 1], [2, 1], [2, 1], [2, 1], [4, 1], [3, 1], [3, 1]], [[2, 1], [3, 1], [2, 1], [3, 1], [2, 1], [3, 1], [3, 1], [2, 1], [3, 1], [1, 1]], [[1, 1], [3, 1], [3, 1], [3, 1], [5, 1], [3, 1], [2, 1], [4, 1], [1, 1], [2, 1]], [[2, 1], [4, 1], [2, 1], [2, 1], [2, 1], [2, 1], [4, 1], [1, 1], [1, 1], [2, 1]], [[2, 1], [4, 1], [3, 1], [3, 1], [1, 1], [3, 1], [1, 1], [1, 1], [4, 1], [3, 1]], [[3, 1], [3, 1], [3, 1], [2, 1], [1, 1], [3, 1], [2, 1], [2, 1], [2, 1], [3, 1]], [[2, 1], [1, 1], [2, 1], [1, 1], [3, 1], [1, 1], [1, 1], [3, 1], [2, 1], [4, 1]], [[1, 1], [3, 1], [2, 1], [1, 1], [3, 1], [2, 1], [3, 1], [3, 1], [5, 1], [4, 1]], [[2, 1], [2, 1], [4, 1], [3, 1], [3, 1], [1, 1], [2, 1], [2, 1], [3, 1], [2, 1]], [[3, 1], [3, 1], [3, 1], [2, 1], [2, 1], [2, 1], [2, 1], [3, 1], [5, 1], [2, 1]], [[2, 1], [2, 1], [2, 1], [3, 1], [1, 1], [3, 1], [3, 1], [3, 1], [2, 1], [2, 1]], [[1, 1], [2, 1], [2, 1], [3, 1], [1, 1], [3, 1], [4, 1], [1, 1], [3, 1], [3, 1]], [[2, 1], [2, 1], [2, 1], [2, 1], [2, 1], [1, 1], [4, 1], [4, 1], [2, 1], [1, 1]], [[3, 1], [2, 1], [3, 1], [2, 1], [3, 1], [3, 1], [2, 1], [1, 1], [1, 1], [3, 1]], [[1, 1], [2, 1], [2, 1], [2, 1], [1, 1], [3, 1], [3, 1], [3, 1], [2, 1], [3, 1]], [[3, 1], [1, 1], [4, 1], [3, 1], [2, 1], [2, 1], [3, 1], [2, 1], [1, 1], [5, 1]], [[2, 1], [4, 1], [2, 1], [4, 1], [3, 1], [3, 1], [1, 1], [4, 1], [3, 1], [4, 1]], [[2, 1], [2, 1], [5, 1], [1, 1], [2, 1], [4, 1], [3, 1], [3, 1], [2, 1], [3, 1]], [[1, 1], [4, 1], [2, 1], [2, 1], [3, 1], [2, 1], [1, 1], [1, 1], [3, 1], [2, 1]], [[2, 1], [4, 1], [1, 1], [2, 1], [2, 1], [3, 1], [2, 1], [2, 1], [2, 1], [2, 1]], [[2, 1], [2, 1], [3, 1], [2, 1], [1, 1], [2, 1], [2, 1], [5, 1], [2, 1], [3, 1]], [[3, 1], [1, 1], [3, 1], [1, 1], [1, 1], [3, 1], [1, 1], [3, 1], [2, 1], [4, 1]], [[4, 1], [2, 1], [2, 1], [1, 1], [2, 1], [2, 1], [2, 1], [3, 1], [3, 1], [3, 1]], [[2, 1], [1, 1], [4, 1], [2, 1], [2, 1], [2, 1], [1, 1], [2, 1], [2, 1], [3, 1]], [[3, 1], [3, 1], [3, 1], [3, 1], [2, 1], [3, 1], [2, 1], [2, 1], [2, 1], [1, 1]], [[3, 1], [2, 1], [3, 1], [2, 1], [3, 1], [3, 1], [3, 1], [1, 1], [2, 1], [3, 1]], [[1, 1], [3, 1], [1, 1], [1, 1], [3, 1], [1, 1], [2, 1], [1, 1], [4, 1], [3, 1]], [[3, 1], [2, 1], [2, 1], [1, 1], [2, 1], [2, 1], [3, 1], [4, 1], [4, 1], [3, 1]], [[2, 1], [1, 1], [3, 1], [3, 1], [1, 1], [3, 1], [3, 1], [3, 1], [2, 1], [2, 1]], [[1, 1], [3, 1], [2, 1], [2, 1], [4, 1], [3, 1], [3, 1], [3, 1], [4, 1], [4, 1]], [[3, 1], [3, 1], [1, 1], [3, 1], [2, 1], [3, 1], [3, 1], [1, 1], [2, 1], [3, 1]], [[2, 1], [1, 1], [3, 1], [3, 1], [2, 1], [3, 1], [3, 1], [3, 1], [3, 1], [3, 1]], [[2, 1], [1, 1], [2, 1], [3, 1], [3, 1], [2, 1], [3, 1], [2, 1], [2, 1], [2, 1]], [[1, 1], [3, 1], [3, 1], [3, 1], [3, 1], [5, 1], [2, 1], [1, 1], [3, 1], [2, 1]], [[2, 1], [2, 1], [2, 1], [3, 1], [2, 1], [5, 1], [2, 1], [2, 1], [1, 1], [3, 1]], [[1, 1], [2, 1], [2, 1], [2, 1], [4, 1], [3, 1], [4, 1], [2, 1], [4, 1], [3, 1]], [[3, 1], [4, 1], [2, 1], [2, 1], [3, 1], [1, 1], [4, 1], [3, 1], [2, 1], [3, 1]], [[1, 1], [2, 1], [4, 1], [4, 1], [5, 1], [2, 1], [2, 1], [2, 1], [1, 1], [
+    #     2, 1]], [[3, 1], [2, 1], [4, 1], [2, 1], [2, 1], [2, 1], [1, 1], [1, 1], [1, 1], [4, 1]], [[3, 1], [4, 1], [1, 1], [1, 1], [2, 1], [3, 1], [3, 1], [4, 1], [3, 1], [4, 1]], [[2, 1], [2, 1], [1, 1], [2, 1], [3, 1], [2, 1], [3, 1], [4, 1], [1, 1], [3, 1]], [[1, 1], [3, 1], [4, 1], [3, 1], [1, 1], [2, 1], [2, 1], [2, 1], [2, 1], [2, 1]], [[3, 1], [1, 1], [2, 1], [4, 1], [2, 1], [2, 1], [4, 1], [1, 1], [4, 1], [2, 1]], [[3, 1], [3, 1], [3, 1], [2, 1], [2, 1], [4, 1], [1, 1], [3, 1], [1, 1], [2, 1]], [[5, 1], [2, 1], [3, 1], [1, 1], [2, 1], [3, 1], [3, 1], [3, 1], [3, 1], [3, 1]], [[3, 1], [1, 1], [3, 1], [3, 1], [3, 1], [2, 1], [2, 1], [1, 1], [2, 1], [4, 1]], [[1, 1], [2, 1], [1, 1], [3, 1], [2, 1], [2, 1], [2, 1], [3, 1], [2, 1], [1, 1]], [[3, 1], [3, 1], [2, 1], [1, 1], [3, 1], [3, 1], [2, 1], [2, 1], [2, 1], [2, 1]], [[1, 1], [3, 1], [2, 1], [3, 1], [1, 1], [2, 1], [2, 1], [1, 1], [3, 1], [2, 1]], [[1, 1], [1, 1], [3, 1], [3, 1], [2, 1], [3, 1], [3, 1], [3, 1], [4, 1], [1, 1]], [[3, 1], [2, 1], [2, 1], [2, 1], [2, 1], [1, 1], [3, 1], [4, 1], [2, 1], [2, 1]], [[2, 1], [2, 1], [3, 1], [2, 1], [2, 1], [3, 1], [2, 1], [3, 1], [3, 1], [4, 1]], [[2, 1], [4, 1], [4, 1], [2, 1], [1, 1], [2, 1], [4, 1], [2, 1], [2, 1], [4, 1]], [[3, 1], [1, 1], [3, 1], [3, 1], [3, 1], [3, 1], [2, 1], [1, 1], [2, 1], [2, 1]], [[2, 1], [1, 1], [3, 1], [3, 1], [2, 1], [2, 1], [2, 1], [4, 1], [1, 1], [3, 1]], [[2, 1], [1, 1], [1, 1], [2, 1], [3, 1], [3, 1], [2, 1], [4, 1], [4, 1], [3, 1]], [[2, 1], [4, 1], [3, 1], [3, 1], [2, 1], [1, 1], [5, 1], [1, 1], [2, 1], [5, 1]], [[3, 1], [3, 1], [1, 1], [1, 1], [2, 1], [4, 1], [2, 1], [2, 1], [3, 1], [4, 1]], [[1, 1], [1, 1], [2, 1], [4, 1], [3, 1], [5, 1], [3, 1], [2, 1], [4, 1], [3, 1]], [[2, 1], [3, 1], [2, 1], [2, 1], [4, 1], [2, 1], [2, 1], [2, 1], [4, 1], [2, 1]], [[2, 1], [2, 1], [3, 1], [2, 1], [1, 1], [2, 1], [2, 1], [4, 1], [3, 1], [3, 1]], [[2, 1], [2, 1], [2, 1], [1, 1], [5, 1], [1, 1], [3, 1], [1, 1], [2, 1], [2, 1]], [[1, 1], [1, 1], [4, 1], [2, 1], [2, 1], [3, 1], [3, 1], [3, 1], [1, 1], [3, 1]], [[3, 1], [1, 1], [3, 1], [4, 1], [2, 1], [3, 1], [3, 1], [2, 1], [3, 1], [1, 1]], [[2, 1], [3, 1], [3, 1], [3, 1], [3, 1], [1, 1], [2, 1], [3, 1], [4, 1], [2, 1]], [[2, 1], [3, 1], [2, 1], [3, 1], [2, 1], [1, 1], [2, 1], [2, 1], [1, 1], [2, 1]], [[4, 1], [3, 1], [3, 1], [1, 1], [3, 1], [3, 1], [3, 1], [3, 1], [1, 1], [2, 1]], [[2, 1], [2, 1], [2, 1], [4, 1], [2, 1], [2, 1], [3, 1], [1, 1], [2, 1], [2, 1]], [[4, 1], [3, 1], [2, 1], [2, 1], [3, 1], [3, 1], [3, 1], [2, 1], [1, 1], [2, 1]], [[2, 1], [3, 1], [4, 1], [2, 1], [3, 1], [4, 1], [2, 1], [4, 1], [2, 1], [3, 1]], [[2, 1], [3, 1], [2, 1], [2, 1], [2, 1], [3, 1], [3, 1], [5, 1], [4, 1], [2, 1]], [[3, 1], [3, 1], [3, 1], [2, 1], [3, 1], [3, 1], [2, 1], [2, 1], [3, 1], [3, 1]], [[3, 1], [2, 1], [3, 1], [5, 1], [3, 1], [2, 1], [3, 1], [2, 1], [2, 1], [3, 1]], [[1, 1], [1, 1], [2, 1], [1, 1], [1, 1], [2, 1], [1, 1], [2, 1], [2, 1], [3, 1]], [[4, 1], [3, 1], [3, 1], [3, 1], [3, 1], [1, 1], [2, 1], [3, 1], [1, 1], [3, 1]], [[4, 1], [2, 1], [2, 1], [2, 1], [3, 1], [1, 1], [2, 1], [2, 1], [3, 1], [1, 1]], [[4, 1], [2, 1], [3, 1], [2, 1], [2, 1], [2, 1], [3, 1], [2, 1], [3, 1], [2, 1]], [[2, 1], [3, 1], [3, 1], [2, 1], [1, 1], [4, 1], [2, 1], [1, 1], [5, 1], [2, 1]], [[1, 1], [2, 1], [3, 1], [3, 1], [2, 1], [4, 1], [2, 1], [1, 1], [3, 1], [4, 1]], [[2, 1], [1, 1], [4, 1], [1, 1], [1, 1], [3, 1], [2, 1], [2, 1], [3, 1], [2, 1]], [[1, 1], [4, 1], [4, 1], [3, 1], [3, 1], [5, 1], [2, 1], [2, 1], [3, 1], [4, 1]], [[4, 1], [2, 1], [3, 1], [1, 1], [2, 1], [2, 1], [1, 1], [4, 1], [2, 1], [2, 1]], [[3, 1], [4, 1], [3, 1], [5, 1], [2, 1], [3, 1], [3, 1], [4, 1], [3, 1], [2, 1]], [[2, 1], [3, 1], [4, 1], [2, 1], [3, 1], [3, 1], [3, 1], [2, 1], [5, 1], [1, 1]], [[2, 1], [3, 1], [3, 1], [3, 1], [2, 1], [2, 1], [3, 1], [4, 1], [3, 1], [3, 1]], [[2, 1], [3, 1], [3, 1], [4, 1], [5, 1], [2, 1], [2, 1], [2, 1], [2, 1], [2, 1]], [[3, 1], [2, 1], [2, 1], [4, 1], [2, 1], [3, 1], [2, 1], [3, 1], [4, 1], [2, 1]], [[3, 1], [3, 1], [2, 1], [3, 1], [3, 1], [3, 1], [2, 1], [3, 1], [1, 1], [2, 1]]]
 
-    repeats = repeats_7_100
+    # repeats = repeats_5_100
 
-    def make_env(repeat, env_fn):
-        # Create the environment
-        num_machines = 5
-        num_jobs = 7
-        max_repeats = 5
-        cost_list = [5, 1, 2, 10]
-        profit_per_time = 10
-        max_time = 150
+    # def make_env(repeat, env_fn):
+    #     # Create the environment
+    #     num_machines = 3
+    #     num_jobs = 5
+    #     max_repeats = 5
+    #     cost_list = [5, 1, 2, 10]
+    #     profit_per_time = 10
+    #     max_time = 50
 
-        return env_fn(
-            machine_config_path=f"instances/Machines/v0-{str(num_machines)}x{str(num_jobs)}.json",
-            job_config_path=f"instances/Jobs/v0-{str(num_machines)}x{str(num_jobs)}.json",
-            job_repeats_params=repeat,
-            render_mode="seaborn",
-            cost_deadline_per_time=cost_list[0],
-            cost_hole_per_time=cost_list[1],
-            cost_processing_per_time=cost_list[2],
-            cost_makespan_per_time=cost_list[3],
-            profit_per_time=profit_per_time,
-            target_time=None,
-            test_mode=True,
-            max_time=max_time
-        )
+    #     return env_fn(
+    #         machine_config_path=f"instances/Machines/v0-{str(num_machines)}x{str(num_jobs)}.json",
+    #         job_config_path=f"instances/Jobs/v0-{str(num_machines)}x{str(num_jobs)}.json",
+    #         job_repeats_params=repeat,
+    #         render_mode="seaborn",
+    #         cost_deadline_per_time=cost_list[0],
+    #         cost_hole_per_time=cost_list[1],
+    #         cost_processing_per_time=cost_list[2],
+    #         cost_makespan_per_time=cost_list[3],
+    #         profit_per_time=profit_per_time,
+    #         target_time=None,
+    #         test_mode=True,
+    #         max_time=max_time,
+    #         num_of_types=4
+    #     )
 
-    pdr_envs = [make_env(repeat, PDRenv) for repeat in repeats]
-    rl_envs = [make_env(repeat, RLenv) for repeat in repeats]
+    # pdr_envs = [make_env(repeat, PDRenv) for repeat in repeats]
+    # rl_envs = [make_env(repeat, RLenv) for repeat in repeats]
 
     # # Evaluate the PDR
-    pdr = LWKR_MOD
+    # pdr = ETD
     # results = eval_pdr(pdr, pdr_envs, render=True, verbose=True)
 
     # Compare the PDRs
     pdrs = [MWKR, CR, FDD_over_MWKR, LWKR_MOD, LWKR_SPT, ETD]
-    log_dir = "./experiments/tmp/1"
-    model_path = './logs/tmp/1/final_model.zip'
+    log_dir = "./experiments/tmp/0-paper-8x12-ppo"
+    model_path = './logs/tmp/0-paper-3x5-1m-lr5/best_model.zip'
 
-    policy_kwargs = dict(net_arch=dict(pi=[256, 128, 64], vf=[256, 128, 64]))
-    model = MaskablePPO.load(model_path, policy_kwargs=policy_kwargs)
+    # policy_kwargs = dict(
+    #     # activation_fn=th.nn.LeakyReLU,
+    #     net_arch=dict(
+    #         pi=[256, 128, 64],
+    #         vf=[256, 128, 64]
+    #     )
+    # )
+    # model = MaskablePPO.load(model_path, policy_kwargs=policy_kwargs)
 
-    compare_pdr_model(pdrs, pdr_envs, model, rl_envs, deterministic=False, sample_times=100, log_dir=log_dir, verbose=False)
+    # compare_pdr_model(pdrs, pdr_envs, model, rl_envs, deterministic=False,
+    #                   sample_times=100, log_dir=log_dir, verbose=False, render=False)
 
-    plot_pdr_comparison(pdrs, with_model=True, log_dir=log_dir, pie=False)
+    objs = [
+        # 'makespan',
+        # 'total_tardiness',
+        # 'processing_time',
+        # 'idle_time',
+        'makespan_cost',
+        'tard_cost',
+        'idle_time_cost',
+        'total_cost'
+    ]
+    # plot_pdr_comparison(pdrs, objs, with_model=True, log_dir=log_dir, pie=True, save_img=True)
+
+
+    # 4개의  cost 결과를 하나의 plot으로 만듦
+    plot_combined_comparison(pdrs, objs, with_model=True, log_dir=log_dir, pie=True, save_img=True)
