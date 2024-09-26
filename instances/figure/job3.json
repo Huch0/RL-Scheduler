@@ -25,7 +25,7 @@
                     "predecessor": 1
                 }
             ],
-            "deadline": [9, 12]
+            "deadline": [900, 1200]
         },
         {
             "name": "Job 2",
@@ -51,7 +51,7 @@
                     "predecessor": 4
                 }
             ],
-            "deadline": [8, 11]
+            "deadline": [800, 1100]
         },
         {
             "name": "Job 3",
@@ -77,7 +77,7 @@
                     "predecessor": 7
                 }
             ],
-            "deadline": [6, 10]
+            "deadline": [600, 1000]
         }
     ]
 }

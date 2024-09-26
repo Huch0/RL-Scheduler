@@ -1,0 +1,16 @@
+{
+    "machines": [
+      {
+        "name": "machine 1",
+        "type": "A"
+      },
+      {
+        "name": "machine 2",
+        "type": "B"
+      },
+      {
+        "name": "machine 3",
+        "type": "C, D"
+      }
+    ]
+}
