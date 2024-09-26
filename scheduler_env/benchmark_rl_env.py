@@ -285,7 +285,7 @@ class SchedulingEnv(gym.Env):
             random_jobs.append(random_job_info)
 
         # 랜덤 Job 인스턴스를 사용하여 customScheduler 초기화
-        self.custom_scheduler = customRepeatableScheduler(jobs=random_jobs, machines=self.machine_config, cost_deadline_per_time= self.cost_deadline_per_time, cost_hole_per_time = self.cost_hole_per_time, cost_processing_per_time = self.cost_processing_per_time, cost_makespan_per_time = self.cost_makespan_per_time, profit_per_time = self.profit_per_time, current_repeats=self.current_repeats, max_time=self.max_time)
+        self.custom_scheduler = customRepeatableScheduler(jobs=random_jobs, machines=self.machine_config, cost_deadline_per_time= self.cost_deadline_per_time, cost_hole_per_time = self.cost_hole_per_time, cost_processing_per_time = self.cost_processing_per_time, cost_makespan_per_time = self.cost_makespan_per_time, profit_per_time = self.profit_per_time, current_repeats=self.current_repeats, max_time=self.max_time, num_of_types=self.num_of_types)
         self.custom_scheduler.reset()
 
     def _calculate_target_time(self):

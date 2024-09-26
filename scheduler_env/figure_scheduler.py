@@ -371,11 +371,13 @@ class customRepeatableScheduler():
             for job in job_list:
                 remaining_operations = [op for op in job.operation_queue if op.finish is None]
 
-                if not remaining_operations:
+                if len(remaining_operations) == 0:
                     job.tardiness = job.operation_queue[-1].finish - job.deadline
                     job.time_exceeded = max(0, job.operation_queue[-1].finish - job.deadline)
                     job.estimated_tardiness = job.tardiness
                     job.is_done = True
+                    print(f"Job {job.name}-{job.index} is done")
+                    print(job.operation_queue[-1].finish, job.deadline)
                     continue
                 
                 earliest_operation = remaining_operations[0]
@@ -656,6 +658,9 @@ class customRepeatableScheduler():
         }
     
     def render(self, mode="seaborn", num_steps=0):
+        # Set the font size for all text elements
+        plt.rcParams.update({'font.size': 15})  # Adjust the font size as needed
+    
         current_schedule = [operation.to_dict() for operation in self.current_schedule]
         scheduled_df = list(filter(lambda operation: operation['sequence'] is not None, current_schedule))
         scheduled_df = pd.DataFrame(scheduled_df)
@@ -703,7 +708,7 @@ class customRepeatableScheduler():
         legend_patches = []
         for _, label, color in legend_jobs:
             legend_patches.append(mpatches.Patch(color=color, label=label))
-        ax.legend(handles=legend_patches)
+        ax.legend(handles=legend_patches, loc='lower right')
 
         plt.show()
 
