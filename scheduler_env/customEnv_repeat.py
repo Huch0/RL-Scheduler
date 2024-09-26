@@ -119,7 +119,8 @@ class SchedulingEnv(gym.Env):
         self.num_of_types = num_of_types
 
         self.action_space = spaces.Discrete(self.len_machines * self.len_jobs)
-        self.observation_space = spaces.Dict({
+
+        observation_space_v1 = spaces.Dict({
             # Vaild 행동, Invalid 행동 관련 지표
             "action_masks": spaces.Box(low=0, high=1, shape=(self.len_machines * self.len_jobs, ), dtype=np.int8),
             # Instance 특징에 대한 지표            
@@ -159,6 +160,107 @@ class SchedulingEnv(gym.Env):
             "cost_factor_per_time": spaces.Box(low=-100, high=100, shape=(4, ), dtype=np.float64),
             "current_costs": spaces.Box(low=0, high=50000, shape=(4, ), dtype=np.float64),
         })
+        observation_space_v2 = spaces.Dict({
+            # Vaild 행동, Invalid 행동 관련 지표
+            "action_masks": spaces.Box(low=0, high=1, shape=(self.len_machines * self.len_jobs, ), dtype=np.int8),
+            # Instance 특징에 대한 지표            
+            # Operation Type별 지표
+            "total_count_per_type": spaces.Box(low=-1, high=50, shape=(num_of_types, ), dtype=np.int64),
+            "mean_operation_duration_per_type": spaces.Box(low=0, high=20, shape=(num_of_types, ), dtype=np.float64),
+            "std_operation_duration_per_type": spaces.Box(low=0, high=20, shape=(num_of_types, ), dtype=np.float64),
+            # Job별 지표
+            "mean_deadline_per_job": spaces.Box(low=-1, high=max_time, shape=(self.len_jobs, ), dtype=np.float64),
+            "std_deadline_per_job": spaces.Box(low=-1, high=max_time, shape=(self.len_jobs, ), dtype=np.float64),
+            # 현 scheduling 상황 관련 지표
+            'last_finish_time_per_machine': spaces.Box(low=0, high=max_time, shape=(self.len_machines, ), dtype=np.int64),
+            "machine_ability": spaces.Box(low=-1, high=100, shape=(self.len_machines, ), dtype=np.int64),
+            "hole_length_per_machine": spaces.Box(low=0, high=max_time, shape=(self.len_machines, ), dtype=np.int64),
+            "machine_utilization_rate": spaces.Box(low=0, high=1, shape=(self.len_machines, ), dtype=np.float64),
+            'remaining_repeats': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
+            # schedule_buffer 관련 지표
+            "schedule_buffer_job_repeat": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int64),
+            "schedule_buffer_operation_index": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int64),
+            "cur_op_earliest_start": spaces.Box(low=-1, high=max_time, shape=(self.len_jobs, ), dtype=np.int64),
+            'cur_job_deadline': spaces.Box(low=-1, high=max_time, shape=(self.len_jobs, ), dtype=np.int64),
+            'cur_op_duration': spaces.Box(low=-1, high=20, shape=(self.len_jobs, ), dtype=np.int64),
+            'cur_op_type': spaces.Box(low=-1, high=25, shape=(self.len_jobs, ), dtype=np.int64),
+            "cur_remain_working_time": spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
+            'cur_remain_num_op': spaces.Box(low=0, high=10, shape=(self.len_jobs, ), dtype=np.int64),
+            # 추정 tardiness 관련 지표
+            "mean_estimated_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
+            "std_estimated_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
+            'cur_estimated_tardiness_per_job': spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
+            # cost 관련 지표
+            "current_costs": spaces.Box(low=0, high=50000, shape=(4, ), dtype=np.float64),
+        })
+        observation_space_v3 = spaces.Dict({
+            # Instance 특징에 대한 지표            
+            # Operation Type별 지표
+            "total_count_per_type": spaces.Box(low=-1, high=50, shape=(num_of_types, ), dtype=np.int64),
+            "mean_operation_duration_per_type": spaces.Box(low=0, high=20, shape=(num_of_types, ), dtype=np.float64),
+            "std_operation_duration_per_type": spaces.Box(low=0, high=20, shape=(num_of_types, ), dtype=np.float64),
+            # Job별 지표
+            "mean_deadline_per_job": spaces.Box(low=-1, high=max_time, shape=(self.len_jobs, ), dtype=np.float64),
+            "std_deadline_per_job": spaces.Box(low=-1, high=max_time, shape=(self.len_jobs, ), dtype=np.float64),
+            'remaining_repeats': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
+            # 현 scheduling 상황 관련 지표
+            'last_finish_time_per_machine': spaces.Box(low=0, high=max_time, shape=(self.len_machines, ), dtype=np.int64),
+            "machine_ability": spaces.Box(low=-1, high=100, shape=(self.len_machines, ), dtype=np.int64),
+            "hole_length_per_machine": spaces.Box(low=0, high=max_time, shape=(self.len_machines, ), dtype=np.int64),
+            "machine_utilization_rate": spaces.Box(low=0, high=1, shape=(self.len_machines, ), dtype=np.float64),
+            # schedule_buffer 관련 지표
+            "schedule_buffer_job_repeat": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int64),
+            "schedule_buffer_operation_index": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int64),
+            "cur_op_earliest_start": spaces.Box(low=-1, high=max_time, shape=(self.len_jobs, ), dtype=np.int64),
+            'cur_job_deadline': spaces.Box(low=-1, high=max_time, shape=(self.len_jobs, ), dtype=np.int64),
+            'cur_op_duration': spaces.Box(low=-1, high=20, shape=(self.len_jobs, ), dtype=np.int64),
+            'cur_op_type': spaces.Box(low=-1, high=25, shape=(self.len_jobs, ), dtype=np.int64),
+            "cur_remain_working_time": spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
+            'cur_remain_num_op': spaces.Box(low=0, high=10, shape=(self.len_jobs, ), dtype=np.int64),
+            # 추정 tardiness 관련 지표
+            "mean_estimated_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
+            "std_estimated_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
+            'cur_estimated_tardiness_per_job': spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
+            # cost 관련 지표
+            "current_costs": spaces.Box(low=0, high=50000, shape=(4, ), dtype=np.float64),
+        })        
+        observation_space_v4 = spaces.Dict({
+            # Vaild 행동, Invalid 행동 관련 지표
+            "action_masks": spaces.Box(low=0, high=1, shape=(self.len_machines * self.len_jobs, ), dtype=np.int8),
+            # Instance 특징에 대한 지표            
+            # Operation Type별 지표
+            "total_count_per_type": spaces.Box(low=-1, high=50, shape=(num_of_types, ), dtype=np.int64),
+            "mean_operation_duration_per_type": spaces.Box(low=0, high=20, shape=(num_of_types, ), dtype=np.float64),
+            "std_operation_duration_per_type": spaces.Box(low=0, high=20, shape=(num_of_types, ), dtype=np.float64),
+            # Job별 지표
+            "mean_deadline_per_job": spaces.Box(low=-1, high=max_time, shape=(self.len_jobs, ), dtype=np.float64),
+            "std_deadline_per_job": spaces.Box(low=-1, high=max_time, shape=(self.len_jobs, ), dtype=np.float64),
+            # 현 scheduling 상황 관련 지표
+            'last_finish_time_per_machine': spaces.Box(low=0, high=max_time, shape=(self.len_machines, ), dtype=np.int64),
+            "machine_ability": spaces.Box(low=-1, high=100, shape=(self.len_machines, ), dtype=np.int64),
+            "hole_length_per_machine": spaces.Box(low=0, high=max_time, shape=(self.len_machines, ), dtype=np.int64),
+            "machine_utilization_rate": spaces.Box(low=0, high=1, shape=(self.len_machines, ), dtype=np.float64),
+            'remaining_repeats': spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
+            # schedule_heatmap 관련 지표
+            "schedule_heatmap": spaces.Box(low=-1, high=2, shape=(self.len_machines, max_time), dtype=np.int8),
+            # schedule_buffer 관련 지표
+            "schedule_buffer_job_repeat": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int64),
+            "schedule_buffer_operation_index": spaces.Box(low=-1, high=10, shape=(self.len_jobs, ), dtype=np.int64),
+            "cur_op_earliest_start": spaces.Box(low=-1, high=max_time, shape=(self.len_jobs, ), dtype=np.int64),
+            'cur_job_deadline': spaces.Box(low=-1, high=max_time, shape=(self.len_jobs, ), dtype=np.int64),
+            'cur_op_duration': spaces.Box(low=-1, high=20, shape=(self.len_jobs, ), dtype=np.int64),
+            'cur_op_type': spaces.Box(low=-1, high=25, shape=(self.len_jobs, ), dtype=np.int64),
+            "cur_remain_working_time": spaces.Box(low=0, high=20, shape=(self.len_jobs, ), dtype=np.int64),
+            'cur_remain_num_op': spaces.Box(low=0, high=10, shape=(self.len_jobs, ), dtype=np.int64),
+            # 추정 tardiness 관련 지표
+            "mean_estimated_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
+            "std_estimated_tardiness_per_job": spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
+            'cur_estimated_tardiness_per_job': spaces.Box(low=-100, high=100, shape=(self.len_jobs, ), dtype=np.float64),
+            # cost 관련 지표
+            "current_costs": spaces.Box(low=0, high=50000, shape=(4, ), dtype=np.float64),
+        })
+        self.observation_space = observation_space_v4
+
     def is_image(self):
         print(is_image_space(self.observation_space["schedule_heatmap"]))
 
@@ -226,25 +328,57 @@ class SchedulingEnv(gym.Env):
     def update_repeat_stds(self, new_std):
         self.job_repeats_params = [(mean, new_std) for mean, _ in self.job_repeats_params]
 
+    
     def _get_observation(self):
         observation = self.custom_scheduler.get_observation()
-        #추가
-        # observation["total_count_per_type"] = np.array(self.total_count_per_type)
-        observation["mappable_machine_count_per_type"] = np.array(self.mappable_machine_count_per_type)
+        def safe_normalize(column):
+            std = np.std(column)
+            if std == 0:
+                return column - np.mean(column)  # 표준편차가 0이면 평균만 빼고 반환
+            return (column - np.mean(column)) / std
+        
         observation["mean_deadline_per_job"] = np.array(self.mean_deadline_per_job)
         observation["std_deadline_per_job"] = np.array(self.std_deadline_per_job)
-        # observation["mean_operation_duration_per_type"] = np.array(self.mean_operation_duration_per_type)
-        # observation["std_operation_duration_per_type"] = np.array(self.std_operation_duration_per_type)
-        
-        #기존 정보 계산 최적화
-        observation["mean_operation_duration_per_job"] = np.array(self.mean_operation_duration_per_job)
-        observation["std_operation_duration_per_job"] = np.array(self.std_operation_duration_per_job)
-        observation["current_repeats"] = np.array(self.current_repeats)
-        observation["num_operations_per_job"] = np.array(self.num_operations_per_job)
-        observation["total_length_per_job"] = np.array([int(num * mean) for num, mean in zip(self.num_operations_per_job, self.mean_operation_duration_per_job)])
 
-        # heatmap = observation["schedule_heatmap"]
-        # observation["schedule_heatmap"] = heatmap
+
+        # 아래 코드에서 나누기 예외처리를 하고 싶어. std가 0인 경우가 있으니까
+
+        # observation["N_mean_operation_duration_per_type"] = safe_normalize(observation["mean_operation_duration_per_type"])
+        # observation["N_std_operation_duration_per_type"] = safe_normalize(observation["std_operation_duration_per_type"])
+        # observation['N_mean_deadline_per_job'] = safe_normalize(observation['mean_deadline_per_job'])
+        # observation['N_std_deadline_per_job'] = safe_normalize(observation['std_deadline_per_job'])
+        # observation['N_last_finish_time_per_machine'] = safe_normalize(observation['last_finish_time_per_machine'])
+        # observation['N_hole_length_per_machine'] = safe_normalize(observation['hole_length_per_machine'])
+        # observation['N_cur_op_earliest_start'] = safe_normalize(observation['cur_op_earliest_start'])
+        # observation['N_cur_job_deadline'] = safe_normalize(observation['cur_job_deadline'])
+        # observation['N_cur_op_duration'] = safe_normalize(observation['cur_op_duration'])
+        # observation['N_cur_remain_working_time'] = safe_normalize(observation['cur_remain_working_time'])
+        # observation['N_mean_estimated_tardiness_per_job'] = safe_normalize(observation['mean_estimated_tardiness_per_job'])
+        # observation['N_std_estimated_tardiness_per_job'] = safe_normalize(observation['std_estimated_tardiness_per_job'])
+        # observation['N_cur_estimated_tardiness_per_job'] = safe_normalize(observation['cur_estimated_tardiness_per_job'])
+        # observation['N_machine_utilization_rate'] = safe_normalize(observation['machine_utilization_rate'])
+
+
+        # observation에서 지표들 중 정규화 되지 않은 것들을 제거
+        # observation.pop("mean_operation_duration_per_type", None)
+        # observation.pop("std_operation_duration_per_type", None)
+        # observation.pop("mean_deadline_per_job", None)
+        # observation.pop("std_deadline_per_job", None)
+        # observation.pop("hole_length_per_machine", None)
+        # observation.pop("last_finish_time_per_machine", None)
+        # observation.pop("cur_op_earliest_start", None)
+        # observation.pop("cur_job_deadline", None)
+        # observation.pop("cur_op_duration", None)
+        # observation.pop("cur_remain_working_time", None)
+        # observation.pop("mean_estimated_tardiness_per_job", None)
+        # observation.pop("std_estimated_tardiness_per_job", None)
+        # observation.pop("cur_estimated_tardiness_per_job", None)
+        # observation.pop("machine_utilization_rate", None)
+
+
+        
+
+        
         return observation
     
     def set_test_mode(self, test_mode):
