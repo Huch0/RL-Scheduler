@@ -13,10 +13,10 @@ RL-Scheduler/
 │   └── Scheduler.py
 ├── instances/
 │   ├── Jobs/
-│   │   ├── v0-8x12-12.json
+│   │   ├── v0-12x8-12.json
 │   │   └── ...
 │   └── Machines/
-│       ├── v0-8x12.json
+│       ├── v0-12x8.json
 │       └── ...
 ├── models/
 │   └── paper/
