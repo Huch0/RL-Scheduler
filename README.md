@@ -1,6 +1,7 @@
 # RL-Scheduler: Reinforcement Learning for Repeatable Job Shop Scheduling
 
 ## Introduction
+![Uploading scheduling_process_12x8.gif…]()
 
 RL-Scheduler is a project focused on applying Reinforcement Learning (RL) techniques to the complex problem of Repeatable Job Shop Scheduling. By modeling the scheduling environment as a custom Gym environment (RJSPEnv), we leverage state-of-the-art RL algorithms, specifically **MaskablePPO**, to learn efficient scheduling policies that can handle dynamic and complex job shop scenarios with invalid actions.
 
