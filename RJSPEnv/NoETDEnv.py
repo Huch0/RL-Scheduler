@@ -4,14 +4,14 @@ import numpy as np
 import pandas as pd
 import json
 from stable_baselines3.common.env_checker import check_env
-from RJSPEnv.Scheduler import customRepeatableScheduler
+from RJSPEnv.Scheduler_without_ETD import customRepeatableSchedulerWithoutETD
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches  # 필요한 모듈을 가져옵니다.
 from collections import defaultdict
 
 from stable_baselines3.common.preprocessing import get_flattened_obs_dim, is_image_space
 
-class RJSPEnv(gym.Env):
+class NoETDEnv(gym.Env):
     def _load_machines(self, file_path):
         machines = []
 
@@ -73,7 +73,7 @@ class RJSPEnv(gym.Env):
         return jobs
 
     def __init__(self, machine_config_path, job_config_path, job_repeats_params, render_mode="seaborn", cost_deadline_per_time = 5, cost_hole_per_time = 1, cost_processing_per_time = 2, cost_makespan_per_time = 10, profit_per_time = 10, target_time = None, test_mode=False, max_time = 150, num_of_types = 4, sample_mode = "normal"):
-        super(RJSPEnv, self).__init__()
+        super(NoETDEnv, self).__init__()
 
         # cost 관련 변수
         self.cost_deadline_per_time = cost_deadline_per_time
@@ -459,7 +459,7 @@ class RJSPEnv(gym.Env):
             random_jobs.append(random_job_info)
 
         # 랜덤 Job 인스턴스를 사용하여 customScheduler 초기화
-        self.custom_scheduler = customRepeatableScheduler(jobs=random_jobs, machines=self.machine_config, cost_deadline_per_time= self.cost_deadline_per_time, cost_hole_per_time = self.cost_hole_per_time, cost_processing_per_time = self.cost_processing_per_time, cost_makespan_per_time = self.cost_makespan_per_time, profit_per_time = self.profit_per_time, current_repeats=self.current_repeats, max_time=self.max_time, num_of_types=self.num_of_types)
+        self.custom_scheduler = customRepeatableSchedulerWithoutETD(jobs=random_jobs, machines=self.machine_config, cost_deadline_per_time= self.cost_deadline_per_time, cost_hole_per_time = self.cost_hole_per_time, cost_processing_per_time = self.cost_processing_per_time, cost_makespan_per_time = self.cost_makespan_per_time, profit_per_time = self.profit_per_time, current_repeats=self.current_repeats, max_time=self.max_time, num_of_types=self.num_of_types)
             
         self._calculate_target_time()
 

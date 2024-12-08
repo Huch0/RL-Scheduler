@@ -127,9 +127,7 @@ class Job(JobInfo):
         if not self.is_done and other.is_done:
             return True
         
-        if self.estimated_tardiness == other.estimated_tardiness:
-            return self.index < other.index
-        return self.estimated_tardiness > other.estimated_tardiness
+        return self.deadline < other.deadline
     
     def __str__(self) -> str:
         return f"{self.name} - Repeat {self.index + 1}\t\t:\tTardiness/Deadline = {self.tardiness}/{self.deadline}"
@@ -170,7 +168,7 @@ class Operation():
     def __str__(self):
         return f"job : {self.job}, index : {self.index} | ({self.start}, {self.finish})"
     
-class customRepeatableScheduler():
+class customRepeatableSchedulerWithoutETD():
     def __init__(self, jobs, machines, cost_deadline_per_time, cost_hole_per_time, cost_processing_per_time, cost_makespan_per_time, profit_per_time, current_repeats, max_time = 150, num_of_types = 4) -> None:
         self.machines = [Machine(machine_info)
                           for machine_info in machines]
@@ -510,24 +508,32 @@ class customRepeatableScheduler():
         return [binary_schedule, op_index_schedule, op_job_schedule, job_repeat_schedule]
 
     def _update_schedule_buffer(self):
-        # Clear the current schedule buffer
-
         for i in range(len(self.schedule_buffer)):
+            # 모든 job instance가 done이면 buffer 갱신
             if all(job.is_done for job in self.jobs[i]):
                 self.schedule_buffer[i] = [-1, -1]
                 continue
             
-            # Get the job with the highest estimated tardiness from the heap
-            job = heapq.heappop(self.jobs[i])
-            # Find the first unscheduled operation in the job
-            for j, operation in enumerate(job.operation_queue):
+            # ETD 대신 deadline을 기준으로 job instance 정렬
+            job_instances = list(self.jobs[i])
+            job_instances = [job for job in job_instances if not job.is_done]
+
+            # deadline 순으로 정렬 (deadline이 작은게 우선)
+            job_instances.sort(key=lambda j: j.deadline)
+
+            # 가장 deadline이 가까운 job instance 선택
+            selected_job = job_instances[0]
+
+            # 해당 job instance에서 unscheduled operation 선택
+            for j, operation in enumerate(selected_job.operation_queue):
                 if operation.finish is None:
-                    # Append the job index and operation index to the schedule buffer
-                    self.schedule_buffer[i] = [job.index, j]
+                    self.schedule_buffer[i] = [selected_job.index, j]
                     break
-            
-            # Push the job back into the heap
-            heapq.heappush(self.jobs[i], job)
+
+            # self.jobs[i]를 deadline 기준으로 다시 구성
+            # done이 아닌 job은 다시 리스트에 추가 (heap이 아닌 리스트 사용)
+            # 만약 heap 사용을 유지하고 싶다면, job.__lt__를 deadline기준으로 하고 heapq 사용 가능
+            self.jobs[i] = job_instances
 
     def _schedule_operation(self, action):
         # Implement the scheduling logic based on the action
