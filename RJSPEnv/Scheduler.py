@@ -820,53 +820,58 @@ class customRepeatableScheduler():
         scheduled_df = list(filter(lambda operation: operation['sequence'] is not None, current_schedule))
         scheduled_df = pd.DataFrame(scheduled_df)
 
-        if scheduled_df.empty:
-            plt.figure(figsize=(12, 6))
-            plt.title("Operation Schedule Visualization")
-            return plt
-
-        n_machines = len(self.machines)
-
         fig, ax = plt.subplots(figsize=(12, 6))
-        ax.set_title(f'Operation Schedule Visualization | steps = {num_steps}')
-        ax.set_yticks(range(n_machines))
-        ax.set_yticklabels([f'Machine {i}\n ability:{self.machines[i].ability}' for i in range(n_machines)])
 
-        ax.set_xlim(0, self.last_finish_time)
-        ax.set_ylim(-1, n_machines)
+        if scheduled_df.empty:
+            ax.set_title("Operation Schedule Visualization")
+        else:
+            n_machines = len(self.machines)
+            ax.set_title(f'Operation Schedule Visualization | steps = {num_steps}')
+            ax.set_yticks(range(n_machines))
+            ax.set_yticklabels([f'Machine {i}\n ability:{self.machines[i].ability}' for i in range(n_machines)])
 
-        legend_jobs = []
+            ax.set_xlim(0, self.last_finish_time)
+            ax.set_ylim(-1, n_machines)
 
-        for i in range(len(self.machines)):
-            machine_operations = scheduled_df[scheduled_df['machine'] == i]
-            for index, operation in machine_operations.iterrows():
-                base_color = mcolors.to_rgba(operation['color'])
-                job_index = operation["job_index"]
-                shade_factor = (job_index + 1) / (len(self.jobs[0]) + 1)
-                shaded_color = tuple([min(max(shade * shade_factor, 0), 1) if idx < 3 else shade for idx, shade in enumerate(base_color)])
+            legend_jobs = []
 
-                # Build operation sequence string
-                operation_sequences = scheduled_df[(scheduled_df['job'] == operation['job']) & (scheduled_df['job_index'] == operation['job_index'])].sort_values(by='sequence')
-                operation_info = ' -> '.join(map(str, operation_sequences['machine'].tolist()))
+            for i in range(len(self.machines)):
+                machine_operations = scheduled_df[scheduled_df['machine'] == i]
+                for index, operation in machine_operations.iterrows():
+                    base_color = mcolors.to_rgba(operation['color'])
+                    job_index = operation["job_index"]
+                    shade_factor = (job_index + 1) / (len(self.jobs[0]) + 1)
+                    shaded_color = tuple([min(max(shade * shade_factor, 0), 1) if idx < 3 else shade for idx, shade in enumerate(base_color)])
 
-                job_label = f'Job {int(operation["job"]) + 1} - Repeat{job_index + 1} - ({operation_info})'
-                legend = (int(operation["job"]) + 1, job_label, shaded_color)
-                if legend not in legend_jobs:
-                    legend_jobs.append(legend)
+                    # Build operation sequence string
+                    operation_sequences = scheduled_df[(scheduled_df['job'] == operation['job']) & (scheduled_df['job_index'] == operation['job_index'])].sort_values(by='sequence')
+                    operation_info = ' -> '.join(map(str, operation_sequences['machine'].tolist()))
 
-                op_block = mpatches.Rectangle(
-                    (operation["start"], i - 0.5), operation["finish"] - operation["start"], 1, facecolor=shaded_color, edgecolor='black', linewidth=1)
-                ax.add_patch(op_block)
+                    job_label = f'Job {int(operation["job"]) + 1} - Repeat{job_index + 1} - ({operation_info})'
+                    legend = (int(operation["job"]) + 1, job_label, shaded_color)
+                    if legend not in legend_jobs:
+                        legend_jobs.append(legend)
 
-        # Add legend for job repetition
-        legend_jobs.sort()
-        legend_patches = []
-        for _, label, color in legend_jobs:
-            legend_patches.append(mpatches.Patch(color=color, label=label))
-        ax.legend(handles=legend_patches, bbox_to_anchor=(1.01, 1), loc='upper left')
+                    op_block = mpatches.Rectangle(
+                        (operation["start"], i - 0.5), operation["finish"] - operation["start"], 1, facecolor=shaded_color, edgecolor='black', linewidth=1)
+                    ax.add_patch(op_block)
 
-        plt.show()
+            # Add legend for job repetition
+            legend_jobs.sort()
+            legend_patches = []
+            for _, label, color in legend_jobs:
+                legend_patches.append(mpatches.Patch(color=color, label=label))
+            ax.legend(handles=legend_patches, bbox_to_anchor=(1.01, 1), loc='upper left')
 
+        if mode == 'rgb_array':
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png')
+            plt.close(fig)
+            buf.seek(0)
+            img = Image.open(buf)
+            return np.array(img)
+        else:
+            plt.show()
     def is_legal(self, action):
         return self.action_mask[action[0]*len(self.jobs) + action[1]]
         return self.legal_actions[action[0], action[1]]
