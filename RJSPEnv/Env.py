@@ -296,7 +296,8 @@ class RJSPEnv(gym.Env):
             # reward += self._calculate_step_reward(action)
             self._update_state(action)
         else:  # Illegal action
-            reward = -0.5
+            # reward = -0.5
+            pass
 
         terminated = self._is_done()
         if terminated:
@@ -304,7 +305,7 @@ class RJSPEnv(gym.Env):
             self.best_makespan = min(self.best_makespan, final_makespan)  # Update the best makespan
             reward += self._calculate_final_reward()
 
-        truncated = bool(self.num_steps == 10000)
+        truncated = bool(self.num_steps == 1000)
         if truncated:
             reward = -100.0
 
@@ -474,7 +475,7 @@ class RJSPEnv(gym.Env):
         self.target_time = total_duration / self.len_machines
 
     def render(self, mode="human"):
-        self.custom_scheduler.render(mode=mode, num_steps=self.num_steps)
+        return self.custom_scheduler.render(mode=mode, num_steps=self.num_steps)
 
     def visualize_graph(self):
         self.custom_scheduler.visualize_graph()
