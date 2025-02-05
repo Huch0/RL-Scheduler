@@ -1,0 +1,37 @@
+[project]
+name = "rl-scheduler"
+version = "0.1.0"
+description = "RL-Scheduler: A Reinforcement Learning-based framework for Repeatable Job Shop Scheduling (RJSP). Leverages MaskablePPO to optimize scheduling policies in dynamic environments with invalid actions. Includes a custom Gym environment (RJSPEnv), pre-trained models, and a tutorial for implementation."
+authors = [
+    {name = "sjin4861",email = "sjin4861@pusan.ac.kr"}
+]
+readme = "README.md"
+requires-python = "<4.0,>=3.11"
+dependencies = [
+    "seaborn (>=0.13.2,<0.14.0)",
+    "ipython (>=8.32.0,<9.0.0)",
+    "stable-baselines3 (>=2.5.0,<3.0.0)",
+    "sb3-contrib (>=2.5.0,<3.0.0)",
+    "gymnasium (>=1.0.0,<2.0.0)",
+    "torch (>=2.6.0,<3.0.0)",
+    "pandas (>=2.2.3,<3.0.0)",
+    "loguru (>=0.7.3,<0.8.0)",
+    "cloudpickle (>=3.1.1,<4.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "7.4.0"
+pytest-cov = "4.1.0"
+pytest-asyncio = "0.21.1"
+black = "23.7.0"
+isort = "5.12.0"
+mypy = "1.4.1"
+pre-commit = "3.3.3"
+
+[tool.isort]
+profile = "black"
