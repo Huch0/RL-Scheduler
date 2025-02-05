@@ -1,0 +1,14 @@
+repos:
+  - repo: https://github.com/psf/black
+    rev: 23.7.0  # 사용 중인 black 버전에 맞게 수정
+    hooks:
+      - id: black
+        stages: [pre-commit]
+
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.12.0  # 사용 중인 isort 버전에 맞게 수정
+    hooks:
+      - id: isort
+        stages: [pre-commit]
+        args: ["--profile", "black"]
+
