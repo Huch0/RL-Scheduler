@@ -10,24 +10,30 @@ RL-Scheduler is a project focused on applying Reinforcement Learning (RL) techni
 ~~~ bash
 RL-Scheduler/
 ├── README.md
+├── .gitignore
 ├── .pre-commit-config.yaml
 ├── poetry.lock
 ├── pyproject.toml
-├── RJSPEnv/
-│   ├── Env.py
-│   └── Scheduler.py
-├── instances/
-│   ├── Jobs/
-│   │   ├── v0-12x8-12.json
-│   │   └── ...
-│   └── Machines/
-│       ├── v0-12x8.json
-│       └── ...
-├── models/
-│   └── paper/
-│       ├── 0-paper-8x12-18m/
-│           ├── MP_Single_Env4_gamma_1_obs_v4_clip_1_lr_custom_expv1_18000000.zip
-│           └── ...
+├── rl_scheduler
+│   ├── RJSPEnv
+│   │   ├── Env.py
+│   │   ├── NoETDEnv.py
+│   │   ├── Scheduler.py
+│   │   ├── Scheduler_without_ETD.py
+│   │   ├── __init__.py
+│   ├── __init__.py
+│   ├── instances
+│   │   ├── Jobs
+│   │       ├── v0-12x8-12.json
+│   │       └── ...
+│   │   └── Machines
+│   │       ├── v0-12x8.json
+│   │       └── ...
+│   └── models
+│       └── paper
+│           ├── 0-paper-8x12-18m/
+│              ├── MP_Single_Env4_gamma_1_obs_v4_clip_1_lr_custom_expv1_18000000.zip
+│              └── ...
 ├── tutorial.ipynb
 └── tests/
 ~~~
