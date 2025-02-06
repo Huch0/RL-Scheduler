@@ -3,7 +3,8 @@ name = "rl-scheduler"
 version = "0.1.0"
 description = "RL-Scheduler: A Reinforcement Learning-based framework for Repeatable Job Shop Scheduling (RJSP). Leverages MaskablePPO to optimize scheduling policies in dynamic environments with invalid actions. Includes a custom Gym environment (RJSPEnv), pre-trained models, and a tutorial for implementation."
 authors = [
-    {name = "sjin4861",email = "sjin4861@pusan.ac.kr"}
+    {name = "sjin4861",email = "sjin4861@pusan.ac.kr"},
+    {name = "huch0",email = "cldud1@pusan.ac.kr"}
 ]
 readme = "README.md"
 requires-python = "<4.0,>=3.11"
@@ -18,8 +19,9 @@ dependencies = [
     "loguru (>=0.7.3,<0.8.0)",
     "cloudpickle (>=3.1.1,<4.0.0)"
 ]
-
-
+packages = [
+    { include = "rl_scheduler" }
+]
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
