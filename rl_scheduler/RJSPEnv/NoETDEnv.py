@@ -10,7 +10,7 @@ from gymnasium import spaces
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.preprocessing import get_flattened_obs_dim, is_image_space
 
-from RJSPEnv.Scheduler_without_ETD import customRepeatableSchedulerWithoutETD
+from .Scheduler_without_ETD import customRepeatableSchedulerWithoutETD
 
 
 class NoETDEnv(gym.Env):
