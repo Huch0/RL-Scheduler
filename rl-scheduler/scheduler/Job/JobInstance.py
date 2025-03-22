@@ -8,14 +8,22 @@ class JobInstance:
         self,
         job_instance_id: int,
         job_template: JobTemplate,
-        operation_instance_sequence: List[OperationInstance],
+        # operation_instance_sequence: List[OperationInstance],
         deadline: int,
         earnings: int,
         late_penalty: int,
     ):
         self.job_instance_id = job_instance_id
         self.job_template = job_template
-        self.operation_instance_sequence = operation_instance_sequence
+        
         self.deadline = deadline
         self.earnings = earnings
         self.late_penalty = late_penalty
+
+        # 상호참조라 우선 None
+        self.operation_instance_sequence = None
+
+    def set_operation_instance_sequence(self, operation_instance_sequence: List[OperationInstance]):
+        self.operation_instance_sequence = operation_instance_sequence
+        for operation_instance in self.operation_instance_sequence:
+            operation_instance.set_job_instance(self)
