@@ -1,0 +1,24 @@
+{
+    "jobs": [
+        {
+            "job_template_id": 0,
+            "operation_template_sequence": [0, 1, 2]
+        },
+        {
+            "job_template_id": 1,
+            "operation_template_sequence": [3, 4, 5]
+        },
+        {
+            "job_template_id": 2,
+            "operation_template_sequence": [6, 7, 8]
+        },
+        {
+            "job_template_id": 3,
+            "operation_template_sequence": [9, 10, 11]
+        },
+        {
+            "job_template_id": 4,
+            "operation_template_sequence": [12, 13, 14, 15]
+        }
+    ]
+}
