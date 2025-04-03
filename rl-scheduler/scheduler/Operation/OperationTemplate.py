@@ -1,17 +1,21 @@
-from ..Job.JobInstance import JobTemplate
-
-
 class OperationTemplate:
     def __init__(
         self,
         operation_template_id: int,
         type_code: str,
         duration: int,
-        job_template: JobTemplate,
-        predecessor: int, #이렇게 해도 None이 들어갈 수 있나?  검증 필요
+        job_template_id: int,
     ):
         self.operation_template_id = operation_template_id
         self.type_code = type_code
         self.duration = duration
-        self.job_template = job_template
-        self.predecessor = predecessor
+        self.job_template_id = job_template_id
+
+    def __str__(self):
+        return (
+            f"OperationTemplate(\n"
+            f"\toperation_template_id: {self.operation_template_id}\n"
+            f"\ttype_code: {self.type_code}\n"
+            f"\tduration: {self.duration}\n"
+            f"\tjob_template_id: {self.job_template_id}\n)"
+        )
