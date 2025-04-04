@@ -2,6 +2,7 @@ from typing import List
 from scheduler.Job import JobInstance, JobTemplate
 from scheduler.Machine import MachineInstance, MachineTemplate
 from scheduler.Operation import OperationInstance, OperationTemplate
+from scheduler.Profit import ProfitFunction
 
 
 # instance를 생성하는 factory
@@ -30,9 +31,7 @@ class InstanceFactory:
     def get_new_job_instances(
         self,
         repetitions: List[int],
-        prices: List[List[int]],
-        deadlines: List[List[int]],
-        late_penalty: List[List[int]],
+        profit_fn: List[List[ProfitFunction]],
     ) -> List[List[JobInstance]]:
         
         # operation instance job_template으로 만드는 메서드 (predecessor 연결)
@@ -49,18 +48,17 @@ class InstanceFactory:
         
         job_instances = []
         for job_template in self.job_templates:
-            for r in repetitions:
-                job_type = []
-                for i in range(r):
-                    job_instance = JobInstance(
-                        job_instance_id=i, 
-                        job_template=job_template,
-                        earnings=prices[i],
-                        deadline=deadlines[i],
-                        late_penalty=late_penalty[i],
-                    )
-                    operation_seqeunce = create_operation_instances_by_job_template(job_template)
-                    job_instance.set_operation_instance_sequence(operation_seqeunce)
-                    job_type.append(job_instance)
-                job_instances.append(job_type)
+            job_template_id = job_template.job_template_id
+            r = repetitions[job_template_id]
+            job_type = []
+            for i in range(r):
+                job_instance = JobInstance(
+                    job_instance_id=i, 
+                    job_template=job_template,
+                    profit_fn=profit_fn[job_template_id][i],  # profit_fn을 job_template_id와 i로 인덱싱하여 가져옴
+                )
+                operation_sequence = create_operation_instances_by_job_template(job_template)
+                job_instance.set_operation_instance_sequence(operation_sequence)
+                job_type.append(job_instance)
+            job_instances.append(job_type)
         return job_instances
