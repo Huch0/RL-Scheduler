@@ -16,52 +16,54 @@ class InstanceFactory:
         self.operation_templates = operation_templates
         self.job_templates = job_templates
 
-    # scheduler 모듈에서 매 reset마다 호출 필요
-    def get_new_instance(
+    # machine instance 생성 메서드
+    def get_new_machine_instances(self) -> List[MachineInstance]:
+        machine_instances = []
+        for machine_template in self.machine_templates:
+            machine_instance = MachineInstance(
+                machine_template=machine_template,
+                assigned_operations=[]  # 나중에 Heap으로 변경해서 사용할 것
+            )
+            machine_instances.append(machine_instance)
+        return machine_instances
+
+   
+
+    # job instance 생성 메서드
+    def get_new_job_instances(
         self,
         repetitions: List[int],
         prices: List[int],
         deadlines: List[int],
         late_penalty: dict[int],
-    ) -> dict[List[MachineInstance], List[List[JobInstance]]]:
-
-        # 만약 deadline을 일일이 주지 않는다면 확률 분포로부터 샘플링해야함
-        # 25.03.22. 드는 생각 : price, deadline과 late_panelty를 묶어서 가격 함수로 표현이 가능한데...
-
-        # machine instance 생성
-        machine_instances = []
-        for machine_template in self.machine_templates:
-            machine_instance = MachineInstance(
-                machine_template=machine_template,
-                assigned_operations=[],  # 나중에 Heap으로 변경해서 사용할 것
-            )
-            machine_instances.append(machine_instance)
-
-        # job instance, operation instance 생성
+    ) -> List[List[JobInstance]]:
+        
+         # operation instance job_template으로 만드는 메서드 (predecessor 연결)
+        def create_operation_instances_by_job_template(job_template: JobTemplate) -> List[OperationInstance]:
+            operations = []
+            predecessor = None
+            # 현재 아래 부분이 최근 추가 사항과 맞지 않음.
+            for operation_template in job_template.operation_template_sequence:
+                op_instance = OperationInstance(operation_template, predecessor)
+                operations.append(op_instance)
+                predecessor = op_instance
+            return operations
+        
         job_instances = []
         for job_template in self.job_templates:
             for r in repetitions:
                 job_type = []
                 for i in range(r):
                     job_instance = JobInstance(
-                        job_instance_id=i + 1,
+                        # job instance id 형식은 1이상으로 설정 (몇번째 반복인지 의미)
+                        job_instance_id=i + 1, 
                         job_template=job_template,
                         earnings=prices[i],
                         deadline=deadlines[i],
                         late_penalty=late_penalty[i],
                     )
-                    job_instance.set_operation_instance_sequence(
-                        [
-                            OperationInstance(operation_template)
-                            for operation_template in job_template.operation_template_sequence
-                        ]
-                    )
+                    operation_seqeunce = create_operation_instances_by_job_template(job_template)
+                    job_instance.set_operation_instance_sequence(operation_seqeunce)
                     job_type.append(job_instance)
                 job_instances.append(job_type)
-
-        instance = {
-            "machine_instances": machine_instances,
-            "job_instances": job_instances,
-        }
-
-        return instance
+        return job_instances
