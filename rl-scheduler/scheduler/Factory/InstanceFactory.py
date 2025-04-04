@@ -26,24 +26,22 @@ class InstanceFactory:
             )
             machine_instances.append(machine_instance)
         return machine_instances
-
-   
-
     # job instance 생성 메서드
     def get_new_job_instances(
         self,
         repetitions: List[int],
-        prices: List[int],
-        deadlines: List[int],
-        late_penalty: dict[int],
+        prices: List[List[int]],
+        deadlines: List[List[int]],
+        late_penalty: List[List[int]],
     ) -> List[List[JobInstance]]:
         
-         # operation instance job_template으로 만드는 메서드 (predecessor 연결)
+        # operation instance job_template으로 만드는 메서드 (predecessor 연결)
         def create_operation_instances_by_job_template(job_template: JobTemplate) -> List[OperationInstance]:
             operations = []
             predecessor = None
             # 현재 아래 부분이 최근 추가 사항과 맞지 않음.
-            for operation_template in job_template.operation_template_sequence:
+            for operation_template_id in job_template.operation_template_sequence:
+                operation_template = self.operation_templates[operation_template_id]
                 op_instance = OperationInstance(operation_template, predecessor)
                 operations.append(op_instance)
                 predecessor = op_instance
@@ -55,8 +53,7 @@ class InstanceFactory:
                 job_type = []
                 for i in range(r):
                     job_instance = JobInstance(
-                        # job instance id 형식은 1이상으로 설정 (몇번째 반복인지 의미)
-                        job_instance_id=i + 1, 
+                        job_instance_id=i, 
                         job_template=job_template,
                         earnings=prices[i],
                         deadline=deadlines[i],
