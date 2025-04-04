@@ -23,36 +23,25 @@ class Scheduler:
         self.machine_instances : List[MachineInstance] = None
         self.job_instances : List[JobInstance] = None
 
-        self.repetitions : List[int] = None
-        self.prices = List[List[int]] = None
-        self.deadlines = List[List[int]] = None
-        self.late_penalty = dict[int] = None
+    def reset(self, repetitions, profit_functions):
+        # contract 모듈
 
-    def reset(self, repetitions, prices, deadlines, late_penalty):
         # 반복 수, 가격, 마감일, 지각 패널티를 설정
         # repetitions = [1, 2, 3]
-        # prices = [[100], [200, 300], [400, 500, 600]] 
-        # deadlines = [10, [20, 30]], [40, 50, 60]] 
-        # late_penalty = {1: 5, 2: 10, 3: 15} <- 일의 급한 정도를 어느 정도 카테고리로 설정해두기
-        self.repetitions = repetitions
-        self.prices = prices
-        self.deadlines = deadlines
-        self.late_penalty = late_penalty
         
-        self.machine_instances = self.instance_factory.get_new_machine_instances()
-        self.job_instances = self.instance_factory.get_new_job_instances(repetitions=self.repetitions,
-                                                                      prices=self.prices,
-                                                                      deadlines=self.deadlines,
-                                                                      late_penalty=self.late_penalty)
+        # self.prices = prices
+        # self.deadlines = deadlines
+        # self.late_penalty = late_penalty
 
-    def step(self, action):
-        # Step 1: Action 파싱 및 유효성 체크
-        chosen_machine, chosen_job = action[0], action[1]
-        try:
-            chosen_repetition = action[2] if len(action) > 2 and action[2] is not None else 0
-        except IndexError:
-            # ETD 등의 메트릭으로 대응해서 Job instance 고를 수 있도록 한다.
-            pass
+        # 만약 repetitions이 분포 형태로 들어오면 샘플링할것
+        # prices ... 는 profit_function 형태로 들어오면 샘플링할것
+
+
+        self.machine_instances = self.instance_factory.get_new_machine_instances()
+        self.job_instances = self.instance_factory.get_new_job_instances(repetitions=repetitions, profit_functions=profit_functions)
+
+    def step(self, chosen_machine, chosen_job, chosen_repetition):
+        # M X J X R 형태의 action을 받는다.
 
         # Step 2: 해당 job의 operation instance 검색
         chosen_op = self.find_op_instance_by_action(chosen_job, chosen_repetition)
@@ -69,16 +58,8 @@ class Scheduler:
         
         # Step 5: 후처리 (예: 다음 작업의 시작 시간을 업데이트)
         # ...post processing code...
-        
-        # Step 6: 액션 마스크 업데이트
-        # ...action mask update code...
-        
-        # Step 7: 새로운 상태, 보상, 종료 플래그, 추가 정보를 반환
-        new_state = None  # placeholder
-        reward = 0        # placeholder
-        done = False      # placeholder
-        info = {}         # placeholder
-        return new_state, reward, done, info
+
+       
 
     def find_op_instance_by_action(self, chosen_job, chosen_repetition):
         # job instances가 몇 번째 반복인지를 기준으로 오름차순 정렬되어있다 가정
@@ -97,15 +78,10 @@ class Scheduler:
         # 기계 처리 능력과 operation의 유형이 일치하는지 확인
         return operation_instance.operation_template.operation_type_code in machine_instance.machine_template.supported_operation_type_codes
     
+    # TODO
     def find_slot_in_machine(self, machine_instance, operation_instance):
-        # 기계의 슬롯을 조회하여 작업을 할당할 수 있는 슬롯을 찾는다.
-        machine_instance.assigned_operations.sort(key=lambda x: x.start_time)
-        for i in range(len(machine_instance.assigned_operations) - 1):
-            # operation_instance의 earliest start time+duration 을 고려해서 머신의 slot을 살펴본다
-            pass
+        pass
 
-    def allocate_op_to_machine(self, machine_instance, operation_instance, slot):
-        # operation_instance를 machine_instance에 할당
-        operation_instance.start_time = slot
-        operation_instance.end_time = slot + operation_instance.operation_template.duration
-        machine_instance.assigned_operations.append(operation_instance)
+    # TODO
+    def allocate_op_to_machine(self, machine_instance, operation_instance):
+        pass
