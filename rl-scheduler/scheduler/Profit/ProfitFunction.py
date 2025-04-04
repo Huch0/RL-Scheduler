@@ -21,6 +21,9 @@ class ProfitFunction:
         else:
             late_time = time - self.deadline
             return self.price - self.late_penalty * late_time
+
+    def __str__(self):
+        return f"ProfitFunction(job_instance_id={self.job_instance_id}, price={self.price}, deadline={self.deadline}, late_penalty={self.late_penalty})"
         
 # # 사용 예시
 # profit_fn = ProfitFunction(price=1000.0, deadline=15.0, late_penalty=50.0)

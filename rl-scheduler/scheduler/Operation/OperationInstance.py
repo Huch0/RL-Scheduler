@@ -25,3 +25,7 @@ class OperationInstance:
 
     def set_job_instance(self, job_instance: "JobInstance"):  # noqa: F821
         self.job_instance = job_instance
+
+    def __str__(self):
+        pred = "None" if self.predecessor is None else f"{id(self.predecessor)}"
+        return f"OperationInstance(id={self.operation_template.operation_template_id}, predecessor={pred}, start={self.start_time}, end={self.end_time})"

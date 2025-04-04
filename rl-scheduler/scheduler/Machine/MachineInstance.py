@@ -2,7 +2,6 @@ from .MachineTemplate import MachineTemplate
 from typing import List
 from ..Operation.OperationInstance import OperationInstance
 
-
 class MachineInstance:
     def __init__(
         self,
@@ -11,3 +10,6 @@ class MachineInstance:
     ):
         self.machine_template = machine_template
         self.assigned_operations = assigned_operations
+
+    def __str__(self):
+        return f"MachineInstance(template={self.machine_template}, ops_count={len(self.assigned_operations)})"
