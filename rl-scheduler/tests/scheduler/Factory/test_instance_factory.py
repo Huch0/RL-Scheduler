@@ -60,6 +60,10 @@ def test_operation_instances():
             # Verify each subsequent operation is chained.
             for i in range(1, len(ops)):
                 assert ops[i].predecessor == ops[i - 1]
-            print("Job instance {} operation chain:".format(job.job_instance_id))
-            for op in ops:
-                print(op)
+            for i in range(len(ops) - 1):
+                assert ops[i].successor == ops[i + 1]
+            # Print the operation chain clearly for debugging.
+            # chain_str = " -> ".join([f"[id: {op.operation_template.operation_template_id} | pred: {'None' if op.predecessor is None else id(op.predecessor)} | succ: {'None' if op.successor is None else id(op.successor)}]" for op in ops])
+            # print(f"Job instance {job.job_instance_id} operation chain:")
+            # print(chain_str)
+# pytest에서 print 내용을 보려면 터미널에서 "pytest -s" 옵션으로 실행하세요.
