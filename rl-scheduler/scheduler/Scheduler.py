@@ -36,21 +36,9 @@ class Scheduler:
         self.slot_allocator = slot_allocator
 
     def reset(self, repetitions, profit_functions):
-        # contract 모듈
-
-        # 반복 수, 가격, 마감일, 지각 패널티를 설정
-        # repetitions = [1, 2, 3]
-
-        # self.prices = prices
-        # self.deadlines = deadlines
-        # self.late_penalty = late_penalty
-
-        # 만약 repetitions이 분포 형태로 들어오면 샘플링할것
-        # prices ... 는 profit_function 형태로 들어오면 샘플링할것
-
         self.machine_instances = self.instance_factory.get_new_machine_instances()
         self.job_instances = self.instance_factory.get_new_job_instances(
-            repetitions=repetitions, profit_functions=profit_functions
+            repetitions=repetitions, profit_fn=profit_functions
         )
 
     def step(self, chosen_machine_id: int, chosen_job_id: int, chosen_repetition: int):
@@ -72,7 +60,6 @@ class Scheduler:
             4. Allocates a slot for the operation on the machine.
             5. Updates the earliest start time of the successor operation.
         """
-
         # Find the operation instance for the given job and repetition.
         chosen_op = self.find_op_instance_by_action(chosen_job_id, chosen_repetition)
 
@@ -89,8 +76,16 @@ class Scheduler:
             machine_instance=chosen_machine, operation_instance=chosen_op
         )
 
+        # Post processing: set processing_machine and job_instance_id for test assertions
+        chosen_op.processing_machine = chosen_machine.machine_template.machine_template_id
+        job_instance = self.job_instances[chosen_job_id][chosen_repetition]
+        chosen_op.job_instance_id = job_instance.job_instance_id
+
         # Update the earliest start time of the successor operation.
-        chosen_op.successor.earliest_start_time = chosen_op.end_time
+        if chosen_op.successor is not None:
+            chosen_op.successor.earliest_start_time = chosen_op.end_time
+
+        return chosen_op
 
     def find_op_instance_by_action(self, chosen_job_id: int, chosen_repetition: int):
         # job instances가 몇 번째 반복인지를 기준으로 오름차순 정렬되어있다 가정
@@ -111,6 +106,6 @@ class Scheduler:
     def check_constraint(self, machine_instance, operation_instance):
         # 기계 처리 능력과 operation의 유형이 일치하는지 확인
         return (
-            operation_instance.operation_template.operation_type_code
+            operation_instance.operation_template.type_code
             in machine_instance.machine_template.supported_operation_type_codes
         )
