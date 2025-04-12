@@ -38,10 +38,11 @@ class InstanceFactory:
         def create_operation_instances_by_job_template(job_template: JobTemplate) -> List[OperationInstance]:
             operations = []
             predecessor = None
-            # 현재 아래 부분이 최근 추가 사항과 맞지 않음.
             for operation_template_id in job_template.operation_template_sequence:
                 operation_template = self.operation_templates[operation_template_id]
-                op_instance = OperationInstance(operation_template, predecessor)
+                op_instance = OperationInstance(operation_template, predecessor, None)
+                if predecessor:
+                    predecessor.successor = op_instance
                 operations.append(op_instance)
                 predecessor = op_instance
             return operations
