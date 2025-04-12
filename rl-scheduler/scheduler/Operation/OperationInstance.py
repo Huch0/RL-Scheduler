@@ -9,12 +9,20 @@ class OperationInstance:
         # operation_instance_id: int,
         operation_template: OperationTemplate,
         predecessor: Optional[OperationInstance],
+        successor: Optional[OperationInstance],
+        earliest_start_time: int = 0,
         # job_instance: JobInstance,
     ):
         # self.operation_instance_id = operation_instance_id
         self.operation_template = operation_template
 
+        # Cache frequently accessed attributes from the template
+        self.type_code = operation_template.type_code
+        self.duration = operation_template.duration
+
         self.predecessor = predecessor
+        self.successor = successor
+        self.earliest_start_time = earliest_start_time
 
         self.job_instance = None  # job_instance와 상호 참조라서 나중에 설정해줘야함
 
