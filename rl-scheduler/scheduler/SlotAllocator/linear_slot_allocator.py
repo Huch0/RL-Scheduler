@@ -1,3 +1,4 @@
+from traitlets import This
 from .slot_allocator import SlotAllocator
 from ..Machine import MachineInstance
 from ..Operation import OperationInstance
@@ -6,14 +7,14 @@ from ..Operation import OperationInstance
 class LinearSlotAllocator(SlotAllocator):
     @staticmethod
     def find_and_allocate_slot(
-        self, machine_instance: MachineInstance, operation_instance: OperationInstance
+        machine_instance: MachineInstance, operation_instance: OperationInstance
     ):
         """
         Finds a slot using linear search and allocates the operation to the
         slot if available.
         """
-        slot, insert_index = self.find_slot(machine_instance, operation_instance)
-        self.allocate_operation(
+        slot, insert_index = LinearSlotAllocator.find_slot(machine_instance, operation_instance)
+        LinearSlotAllocator.allocate_operation(
             machine_instance, operation_instance, slot, insert_index
         )
 
