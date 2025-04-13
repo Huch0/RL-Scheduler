@@ -1,4 +1,3 @@
-from traitlets import This
 from .slot_allocator import SlotAllocator
 from ..Machine import MachineInstance
 from ..Operation import OperationInstance
