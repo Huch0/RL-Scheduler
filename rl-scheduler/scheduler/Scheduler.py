@@ -76,16 +76,9 @@ class Scheduler:
             machine_instance=chosen_machine, operation_instance=chosen_op
         )
 
-        # Post processing: set processing_machine and job_instance_id for test assertions
-        chosen_op.processing_machine = chosen_machine.machine_template.machine_template_id
-        job_instance = self.job_instances[chosen_job_id][chosen_repetition]
-        chosen_op.job_instance_id = job_instance.job_instance_id
-
         # Update the earliest start time of the successor operation.
         if chosen_op.successor is not None:
             chosen_op.successor.earliest_start_time = chosen_op.end_time
-
-        return chosen_op
 
     def find_op_instance_by_action(self, chosen_job_id: int, chosen_repetition: int):
         # job instances가 몇 번째 반복인지를 기준으로 오름차순 정렬되어있다 가정
@@ -106,6 +99,6 @@ class Scheduler:
     def check_constraint(self, machine_instance, operation_instance):
         # 기계 처리 능력과 operation의 유형이 일치하는지 확인
         return (
-            operation_instance.operation_template.type_code
+            operation_instance.type_code
             in machine_instance.machine_template.supported_operation_type_codes
         )
