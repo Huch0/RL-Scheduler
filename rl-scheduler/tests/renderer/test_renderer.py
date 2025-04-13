@@ -10,7 +10,6 @@ def test_render_gantt():
     machine1 = MagicMock()
     machine2 = MagicMock()
 
-    # 가짜 operation들
     fake_op1 = MagicMock()
     fake_op1.start_time = 0
     fake_op1.end_time = 3
@@ -25,7 +24,6 @@ def test_render_gantt():
     fake_op2.job_instance.job_template.job_template_id = 0
     fake_op2.job_instance.job_instance_id = 1
 
-    # 추가 가짜 operation
     fake_op3 = MagicMock()
     fake_op3.start_time = 1
     fake_op3.end_time = 4
@@ -45,9 +43,18 @@ def test_render_gantt():
 
     render_info_path = INSTANCES_DIR / "RenderInfos" / "R-example0.json"
 
+    # 1) Matplotlib Gantt
     Renderer.render_gantt(
         machine_instances=[machine1, machine2],
         render_info_path=render_info_path,
-        title="Test Gantt - Multiple Fake Ops"
+        title="Matplotlib Gantt Chart"
     )
+
+    # 2) Plotly Interactive Gantt
+    Renderer.render_gantt_interactive(
+        machine_instances=[machine1, machine2],
+        render_info_path=render_info_path,
+        title="Plotly Interactive Gantt"
+    )
+
     assert True
