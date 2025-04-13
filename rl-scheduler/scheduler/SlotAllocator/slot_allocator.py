@@ -7,7 +7,7 @@ class SlotAllocator(ABC):
     @staticmethod
     @abstractmethod
     def find_and_allocate_slot(
-        self, machine_instance: MachineInstance, operation_instance: OperationInstance
+        machine_instance: MachineInstance, operation_instance: OperationInstance
     ):
         """
         Abstract method to find and allocate a slot for the given operation
