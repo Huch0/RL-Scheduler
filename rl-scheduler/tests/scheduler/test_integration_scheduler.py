@@ -4,15 +4,15 @@ import pytest
 from scheduler.Scheduler import Scheduler
 from scheduler.SlotAllocator import LinearSlotAllocator
 from contract_generator import DeterministicGenerator as ContractGenerator
+from config_path import INSTANCES_DIR
 
 # 통합 테스트: json 파일들로부터 템플릿을 파싱, reset으로 instance 할당, 그리고 step 메서드 검증.
-BASE_DIR = Path("/Users/jun/Desktop/25_1/RL-Scheduler/rl-scheduler/instances")
 
 @pytest.fixture
 def scheduler_integration():
-    machine_config = BASE_DIR / "Machines" / "M-example0-3.json"
-    job_config = BASE_DIR / "Jobs" / "J-example0-5.json"
-    operation_config = BASE_DIR / "Operations" / "O-example0.json"
+    machine_config = INSTANCES_DIR / "Machines" / "M-example0-3.json"
+    job_config = INSTANCES_DIR / "Jobs" / "J-example0-5.json"
+    operation_config = INSTANCES_DIR / "Operations" / "O-example0.json"
     # Scheduler 초기화 시 템플릿이 파싱됨.
     sched = Scheduler(
         machine_config_path=machine_config,
@@ -24,7 +24,7 @@ def scheduler_integration():
 
 @pytest.fixture
 def contracts():
-    contract_file = BASE_DIR / "Contracts" / "C-example0-5.json"
+    contract_file = INSTANCES_DIR / "Contracts" / "C-example0-5.json"
     repetitions = ContractGenerator.load_repetition(contract_file)
     profit_functions = ContractGenerator.load_profit_fn(contract_file)
     return repetitions, profit_functions
@@ -56,7 +56,10 @@ def test_scheduler_integration_step(scheduler_integration, contracts):
     # 세 액션: (0, 0, 0), (0, 0, 0), (1, 0, 0)
     actions = [(0, 0, 0), (0, 0, 0), (1, 0, 0)]
     for chosen_machine_id, chosen_job_id, chosen_repetition in actions:
-        chosen_op = scheduler_integration.step(
+        chosen_op = scheduler_integration.find_op_instance_by_action(
++            chosen_job_id, chosen_repetition)
+        
+        scheduler_integration.step(
             chosen_machine_id=chosen_machine_id,
             chosen_job_id=chosen_job_id,
             chosen_repetition=chosen_repetition,
@@ -64,7 +67,7 @@ def test_scheduler_integration_step(scheduler_integration, contracts):
         assert chosen_op.start_time >= 0
         assert chosen_op.end_time > chosen_op.start_time
         assert chosen_op.duration == (chosen_op.end_time - chosen_op.start_time)
-        assert chosen_op.processing_machine == chosen_machine_id
+        assert chosen_op.processing_machine.machine_template.machine_template_id == chosen_machine_id
         assert chosen_op.job_instance == scheduler_integration.job_instances[chosen_job_id][chosen_repetition]
         next_op = chosen_op.successor
         if next_op:
