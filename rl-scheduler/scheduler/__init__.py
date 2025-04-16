@@ -1,16 +1,14 @@
-#rl-scheduler/scheduler/__init__.py:
-
-from .Job import JobInstance, JobTemplate
-from .Machine import MachineInstance, MachineTemplate
-from .Operation import OperationInstance, OperationTemplate
-from .Factory import InstanceFactory
+from .job import JobInstance, JobTemplate
+from .machine import MachineInstance, MachineTemplate
+from .operation import OperationInstance, OperationTemplate
+from .factory import InstanceFactory
 
 __all__ = [
-    'JobInstance',
-    'JobTemplate',
-    'MachineInstance',
-    'MachineTemplate',
-    'OperationInstance',
-    'OperationTemplate',
-    'InstanceFactory',
+    "JobInstance",
+    "JobTemplate",
+    "MachineInstance",
+    "MachineTemplate",
+    "OperationInstance",
+    "OperationTemplate",
+    "InstanceFactory",
 ]

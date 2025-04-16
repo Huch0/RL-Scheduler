@@ -1,18 +1,17 @@
-import os
-from pathlib import Path
 import pytest
-from scheduler.Scheduler import Scheduler
-from scheduler.SlotAllocator import LinearSlotAllocator
+from scheduler.scheduler import Scheduler
+from scheduler.slot_allocator import LinearSlotAllocator
 from contract_generator import DeterministicGenerator as ContractGenerator
 from config_path import INSTANCES_DIR
 
 # 통합 테스트: json 파일들로부터 템플릿을 파싱, reset으로 instance 할당, 그리고 step 메서드 검증.
 
+
 @pytest.fixture
 def scheduler_integration():
-    machine_config = INSTANCES_DIR / "Machines" / "M-example0-3.json"
-    job_config = INSTANCES_DIR / "Jobs" / "J-example0-5.json"
-    operation_config = INSTANCES_DIR / "Operations" / "O-example0.json"
+    machine_config = INSTANCES_DIR / "machines" / "M-example0-3.json"
+    job_config = INSTANCES_DIR / "jobs" / "J-example0-5.json"
+    operation_config = INSTANCES_DIR / "operations" / "O-example0.json"
     # Scheduler 초기화 시 템플릿이 파싱됨.
     sched = Scheduler(
         machine_config_path=machine_config,
@@ -22,12 +21,14 @@ def scheduler_integration():
     )
     return sched
 
+
 @pytest.fixture
 def contracts():
-    contract_file = INSTANCES_DIR / "Contracts" / "C-example0-5.json"
+    contract_file = INSTANCES_DIR / "contracts" / "C-example0-5.json"
     repetitions = ContractGenerator.load_repetition(contract_file)
     profit_functions = ContractGenerator.load_profit_fn(contract_file)
     return repetitions, profit_functions
+
 
 def test_scheduler_integration_init_and_reset(scheduler_integration, contracts):
     repetitions, profit_functions = contracts
@@ -41,13 +42,14 @@ def test_scheduler_integration_init_and_reset(scheduler_integration, contracts):
     assert scheduler_integration.job_instances is not None
 
     # 할당 결과 디버깅을 위해 print (pytest -s 옵션으로 출력 확인 가능)
-    print("=== Machine Instances ===")
+    print("=== machine Instances ===")
     for m in scheduler_integration.machine_instances:
         print(m)
-    print("=== Job Instances ===")
+    print("=== job Instances ===")
     for job_group in scheduler_integration.job_instances:
         for job in job_group:
             print(job)
+
 
 def test_scheduler_integration_step(scheduler_integration, contracts):
     repetitions, profit_functions = contracts
@@ -57,8 +59,9 @@ def test_scheduler_integration_step(scheduler_integration, contracts):
     actions = [(0, 0, 0), (0, 0, 0), (1, 0, 0)]
     for chosen_machine_id, chosen_job_id, chosen_repetition in actions:
         chosen_op = scheduler_integration.find_op_instance_by_action(
-+            chosen_job_id, chosen_repetition)
-        
+            +chosen_job_id, chosen_repetition
+        )
+
         scheduler_integration.step(
             chosen_machine_id=chosen_machine_id,
             chosen_job_id=chosen_job_id,
@@ -67,8 +70,14 @@ def test_scheduler_integration_step(scheduler_integration, contracts):
         assert chosen_op.start_time >= 0
         assert chosen_op.end_time > chosen_op.start_time
         assert chosen_op.duration == (chosen_op.end_time - chosen_op.start_time)
-        assert chosen_op.processing_machine.machine_template.machine_template_id == chosen_machine_id
-        assert chosen_op.job_instance == scheduler_integration.job_instances[chosen_job_id][chosen_repetition]
+        assert (
+            chosen_op.processing_machine.machine_template.machine_template_id
+            == chosen_machine_id
+        )
+        assert (
+            chosen_op.job_instance
+            == scheduler_integration.job_instances[chosen_job_id][chosen_repetition]
+        )
         next_op = chosen_op.successor
         if next_op:
             assert next_op.earliest_start_time == chosen_op.end_time
@@ -80,7 +89,11 @@ def test_scheduler_integration_step(scheduler_integration, contracts):
     # 각 머신의 슬롯 할당 상태 확인
     print("=== Slot Allocation Status ===")
     for machine in scheduler_integration.machine_instances:
-        print(f"Machine {machine.machine_template.machine_template_id}:")
+        print(f"machine {machine.machine_template.machine_template_id}:")
         for op in machine.assigned_operations:
-            print(f"  Operation {op.operation_template.operation_template_id}: Start Time {op.start_time}, End Time {op.end_time}")
+            print(
+                f"""  Operation
+                {op.operation_template.operation_template_id}: Start Time
+                {op.start_time}, End Time {op.end_time}"""
+            )
     print("===")

@@ -1,6 +1,6 @@
 import gymnasium as gym
 from pathlib import Path
-from scheduler.Scheduler import Scheduler
+from scheduler.scheduler import Scheduler
 from contract_generator import ContractGenerator, DeterministicGenerator
 from action_handler import ActionHandler, MJRHandler
 from observation_handler import ObservationHandler, BasicStateHandler

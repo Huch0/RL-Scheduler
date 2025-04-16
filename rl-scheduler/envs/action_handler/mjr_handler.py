@@ -1,6 +1,6 @@
 from .action_handler import ActionHandler
 from gymnasium import spaces
-from scheduler.Scheduler import Scheduler
+from scheduler.scheduler import Scheduler
 
 
 class MJRHandler(ActionHandler):

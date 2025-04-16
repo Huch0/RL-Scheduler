@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from gymnasium import spaces
-from scheduler.Scheduler import Scheduler
+from scheduler.scheduler import Scheduler
 from gymnasium.core import ObsType
 
 
