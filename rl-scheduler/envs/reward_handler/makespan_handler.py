@@ -1,4 +1,4 @@
-from scheduler.Scheduler import Scheduler
+from scheduler.scheduler import Scheduler
 from .reward_handler import RewardHandler
 
 

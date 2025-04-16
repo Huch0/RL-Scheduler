@@ -1,8 +1,7 @@
-import pytest
-from pathlib import Path
 from unittest.mock import MagicMock
-from renderer.PlotlyRenderer import PlotlyRenderer
+from renderer.plotly_renderer import PlotlyRenderer
 from config_path import INSTANCES_DIR
+
 
 def test_plotly_renderer():
     scheduler = MagicMock()
@@ -42,7 +41,7 @@ def test_plotly_renderer():
 
     scheduler.machine_instances = [machine1, machine2]
 
-    render_info_path = INSTANCES_DIR / "RenderInfos" / "R-example0.json"
+    render_info_path = INSTANCES_DIR / "renderinfos" / "R-example0.json"
     renderer = PlotlyRenderer(scheduler, render_info_path)
     renderer.render(title="Plotly Interactive Gantt")
     assert True

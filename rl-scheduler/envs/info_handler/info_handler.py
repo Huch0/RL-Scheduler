@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from scheduler.Scheduler import Scheduler
+from scheduler.scheduler import Scheduler
 
 
 class InfoHandler(ABC):

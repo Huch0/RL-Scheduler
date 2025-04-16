@@ -1,9 +1,5 @@
-from .Renderer import Renderer
-from .MatplotRenderer import MatplotRenderer
-from .PlotlyRenderer import PlotlyRenderer
+from .renderer import Renderer
+from .matplotlib_renderer import MatplotRenderer
+from .plotly_renderer import PlotlyRenderer
 
-__all__ = [
-    "Renderer",
-    "MatplotRenderer",
-    "PlotlyRenderer"
-]
+__all__ = ["Renderer", "MatplotRenderer", "PlotlyRenderer"]

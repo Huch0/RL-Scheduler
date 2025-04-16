@@ -1,8 +1,7 @@
-import pytest
-from pathlib import Path
 from unittest.mock import MagicMock
-from renderer.MatplotRenderer import MatplotRenderer
+from renderer.matplotlib_renderer import MatplotRenderer
 from config_path import INSTANCES_DIR
+
 
 def test_gantt_renderer():
     scheduler = MagicMock()
@@ -42,7 +41,7 @@ def test_gantt_renderer():
 
     scheduler.machine_instances = [machine1, machine2]
 
-    render_info_path = INSTANCES_DIR / "RenderInfos" / "R-example0.json"
+    render_info_path = INSTANCES_DIR / "renderinfos" / "R-example0.json"
     renderer = MatplotRenderer(scheduler, render_info_path)
     renderer.render(title="Matplotlib Gantt Chart")
     assert True

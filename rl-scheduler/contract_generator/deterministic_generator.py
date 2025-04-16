@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from typing import List
-from scheduler.Profit import ProfitFunction
+from scheduler.profit import ProfitFunction
 from .contract_generator import ContractGenerator
 
 
