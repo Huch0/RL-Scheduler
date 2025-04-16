@@ -3,7 +3,7 @@ from gymnasium import spaces
 from scheduler.Scheduler import Scheduler
 
 
-class ActionSpaceHandler(ABC):
+class ActionHandler(ABC):
     def __init__(self, scheduler: Scheduler, **kwargs):
         """
         Initialize the ActionSpaceHandler with a Scheduler instance.

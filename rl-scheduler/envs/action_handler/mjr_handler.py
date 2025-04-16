@@ -1,9 +1,9 @@
-from .action_space_handler import ActionSpaceHandler
+from .action_handler import ActionHandler
 from gymnasium import spaces
 from scheduler.Scheduler import Scheduler
 
 
-class MJRHandler(ActionSpaceHandler):
+class MJRHandler(ActionHandler):
     def __init__(self, scheduler: Scheduler, max_repetition: int):
         """
         Initialize the MJRHandler with a Scheduler instance and max_repetition.
