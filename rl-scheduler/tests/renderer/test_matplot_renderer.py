@@ -1,12 +1,11 @@
-# filepath: c:\Users\USER\Desktop\4-1\RL-Scheduler\rl-scheduler\tests\renderer\test_renderer.py
 import pytest
 from pathlib import Path
-from renderer.Renderer import Renderer
 from unittest.mock import MagicMock
+from renderer.MatplotRenderer import MatplotRenderer
 from config_path import INSTANCES_DIR
 
-
-def test_render_gantt():
+def test_gantt_renderer():
+    scheduler = MagicMock()
     machine1 = MagicMock()
     machine2 = MagicMock()
 
@@ -41,20 +40,9 @@ def test_render_gantt():
     machine1.assigned_operations = [fake_op1, fake_op2]
     machine2.assigned_operations = [fake_op3, fake_op4]
 
+    scheduler.machine_instances = [machine1, machine2]
+
     render_info_path = INSTANCES_DIR / "RenderInfos" / "R-example0.json"
-
-    # 1) Matplotlib Gantt
-    Renderer.render_gantt(
-        machine_instances=[machine1, machine2],
-        render_info_path=render_info_path,
-        title="Matplotlib Gantt Chart"
-    )
-
-    # 2) Plotly Interactive Gantt
-    Renderer.render_gantt_interactive(
-        machine_instances=[machine1, machine2],
-        render_info_path=render_info_path,
-        title="Plotly Interactive Gantt"
-    )
-
+    renderer = MatplotRenderer(scheduler, render_info_path)
+    renderer.render(title="Matplotlib Gantt Chart")
     assert True
