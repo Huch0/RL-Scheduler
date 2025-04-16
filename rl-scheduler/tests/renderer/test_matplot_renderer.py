@@ -1,16 +1,14 @@
-# filepath: c:\Users\USER\Desktop\4-1\RL-Scheduler\rl-scheduler\tests\renderer\test_renderer.py
 import pytest
 from pathlib import Path
-from renderer.Renderer import Renderer
 from unittest.mock import MagicMock
+from renderer.MatplotRenderer import MatplotRenderer
 from config_path import INSTANCES_DIR
 
-
-def test_render_gantt():
+def test_gantt_renderer():
+    scheduler = MagicMock()
     machine1 = MagicMock()
     machine2 = MagicMock()
 
-    # 가짜 operation들
     fake_op1 = MagicMock()
     fake_op1.start_time = 0
     fake_op1.end_time = 3
@@ -25,7 +23,6 @@ def test_render_gantt():
     fake_op2.job_instance.job_template.job_template_id = 0
     fake_op2.job_instance.job_instance_id = 1
 
-    # 추가 가짜 operation
     fake_op3 = MagicMock()
     fake_op3.start_time = 1
     fake_op3.end_time = 4
@@ -43,11 +40,9 @@ def test_render_gantt():
     machine1.assigned_operations = [fake_op1, fake_op2]
     machine2.assigned_operations = [fake_op3, fake_op4]
 
-    render_info_path = INSTANCES_DIR / "RenderInfos" / "R-example0.json"
+    scheduler.machine_instances = [machine1, machine2]
 
-    Renderer.render_gantt(
-        machine_instances=[machine1, machine2],
-        render_info_path=render_info_path,
-        title="Test Gantt - Multiple Fake Ops"
-    )
+    render_info_path = INSTANCES_DIR / "RenderInfos" / "R-example0.json"
+    renderer = MatplotRenderer(scheduler, render_info_path)
+    renderer.render(title="Matplotlib Gantt Chart")
     assert True
