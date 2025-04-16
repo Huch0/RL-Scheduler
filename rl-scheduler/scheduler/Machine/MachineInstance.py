@@ -2,6 +2,7 @@ from .MachineTemplate import MachineTemplate
 from typing import List
 from ..Operation.OperationInstance import OperationInstance
 
+
 class MachineInstance:
     def __init__(
         self,
@@ -10,6 +11,10 @@ class MachineInstance:
     ):
         self.machine_template = machine_template
         self.assigned_operations = assigned_operations
+        self.last_assigned_end_time = (
+            0  # Tracks the end time of the last assigned operation
+        )
 
     def __str__(self):
-        return f"MachineInstance(template={self.machine_template}, ops_count={len(self.assigned_operations)})"
+        return f"""MachineInstance(template={self.machine_template},
+        ops_count={len(self.assigned_operations)})"""

@@ -36,4 +36,29 @@ class OperationInstance:
 
     def __str__(self):
         pred = "None" if self.predecessor is None else f"{id(self.predecessor)}"
-        return f"OperationInstance(id={self.operation_template.operation_template_id}, predecessor={pred}, start={self.start_time}, end={self.end_time})"
+
+        return f"""OperationInstance(id=
+        {self.operation_template.operation_template_id}, predecessor={pred},
+        start={self.start_time}, end={self.end_time})"""
+
+    def schedule(self, machine_instance, start_time, end_time):
+        """
+        Schedules the operation instance on a specific machine and time slot.
+
+        Args:
+            machine_instance (MachineInstance): The machine to schedule the operation on.
+            start_time (int): The start time of the operation.
+            end_time (int): The end time of the operation.
+        """
+        self.start_time = start_time
+        self.end_time = end_time
+        self.processing_machine = machine_instance
+
+        # Update the machine's last assigned end time
+        machine_instance.last_assigned_end_time = max(
+            machine_instance.last_assigned_end_time, end_time
+        )
+
+        # If the operation is the last in the sequence, mark the job as completed
+        if self.successor is None:
+            self.job_instance.completed = True

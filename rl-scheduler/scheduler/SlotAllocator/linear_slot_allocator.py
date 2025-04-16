@@ -12,7 +12,9 @@ class LinearSlotAllocator(SlotAllocator):
         Finds a slot using linear search and allocates the operation to the
         slot if available.
         """
-        slot, insert_index = LinearSlotAllocator.find_slot(machine_instance, operation_instance)
+        slot, insert_index = LinearSlotAllocator.find_slot(
+            machine_instance, operation_instance
+        )
         LinearSlotAllocator.allocate_operation(
             machine_instance, operation_instance, slot, insert_index
         )
@@ -82,9 +84,9 @@ class LinearSlotAllocator(SlotAllocator):
         Allocates the operation to the given slot and inserts it at the
         specified position.
         """
-        operation_instance.start_time = slot["start_time"]
-        operation_instance.end_time = slot["end_time"]
-        operation_instance.processing_machine = machine_instance
+        operation_instance.schedule(
+            machine_instance, slot["start_time"], slot["end_time"]
+        )
 
         # Insert the operation at the specified position
         machine_instance.assigned_operations.insert(insert_index, operation_instance)

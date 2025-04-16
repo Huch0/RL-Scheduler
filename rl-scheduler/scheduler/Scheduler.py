@@ -102,3 +102,12 @@ class Scheduler:
             operation_instance.type_code
             in machine_instance.machine_template.supported_operation_type_codes
         )
+
+    def is_all_job_instances_scheduled(self):
+        """
+        Check if all job instances are scheduled.
+
+        Returns:
+            bool: True if all job instances are scheduled, False otherwise.
+        """
+        return all(job_instances.completed for job_instances in self.job_instances)
