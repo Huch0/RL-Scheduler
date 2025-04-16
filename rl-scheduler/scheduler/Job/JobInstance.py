@@ -17,6 +17,7 @@ class JobInstance:
         self.job_template = job_template
         self.profit_fn = profit_fn
         self.operation_instance_sequence = None
+        self.completed = False  # Tracks whether the job is completed
 
     def set_operation_instance_sequence(
         self, operation_instance_sequence: List[OperationInstance]
@@ -28,5 +29,10 @@ class JobInstance:
     def __str__(self):
         template_id = getattr(self.job_template, "job_template_id", "N/A")
         profit = f"price={self.profit_fn.price}" if self.profit_fn else "NoProfit"
-        ops = len(self.operation_instance_sequence) if self.operation_instance_sequence else 0
-        return f"JobInstance(id={self.job_instance_id}, template_id={template_id}, {profit}, ops_count={ops})"
+        ops = (
+            len(self.operation_instance_sequence)
+            if self.operation_instance_sequence
+            else 0
+        )
+        return f"""JobInstance(id={self.job_instance_id}, template_id=
+        {template_id}, {profit}, ops_count={ops})"""
