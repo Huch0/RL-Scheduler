@@ -1,5 +1,5 @@
 import pytest
-from priority_rule.edd_ji_priority import EDDPriorityRule
+from priority_rule.job_type_scope.etd_priority_rule import ETDPriorityRule
 from scheduler.scheduler import Scheduler
 from scheduler.slot_allocator import LinearSlotAllocator
 from contract_generator import DeterministicGenerator as ContractGenerator
@@ -29,22 +29,22 @@ def scheduler(contracts):
 
 def test_assign_priority_initial(scheduler):
     """
-    모든 job 그룹에서 첫 번째 인스턴스가 우선순위로 선택되어야 함
+    초기 상태에서는 모든 그룹에서 첫 번째 인스턴스가 선택되어야 함
     """
-    rule = EDDPriorityRule(scheduler)
+    rule = ETDPriorityRule(scheduler)
     assert rule.assign_priority() == [0, 0, 0, 0, 0]
 
 
 def test_assign_priority_after_some_completed(scheduler):
     """
-    일부 인스턴스를 완료 표시한 후 우선순위 확인
+    일부 인스턴스를 완료 처리한 후 우선순위 확인
     """
-    # job0과 job2의 첫 번째 인스턴스를 완료
+    # job0과 job2의 첫 번째 인스턴스를 완료 표시
     scheduler.job_instances[0][0].completed = True
     scheduler.job_instances[2][0].completed = True
-    rule = EDDPriorityRule(scheduler)
+    rule = ETDPriorityRule(scheduler)
     priorities = rule.assign_priority()
-    # job0, job2는 두 번째 인스턴스(인덱스 1)가 선택되어야 함
+    # job0과 job2는 두 번째 인스턴스(인덱스 1)가 선택되어야 함
     assert priorities[0] == 1
     assert priorities[2] == 1
     # 나머지 그룹은 첫 번째(0)
@@ -53,10 +53,10 @@ def test_assign_priority_after_some_completed(scheduler):
 
 def test_assign_priority_all_completed(scheduler):
     """
-    모든 인스턴스를 완료 표시하면 -1 반환
+    모든 인스턴스를 완료 처리하면 -1 반환
     """
     for group in scheduler.job_instances:
         for job in group:
             job.completed = True
-    rule = EDDPriorityRule(scheduler)
+    rule = ETDPriorityRule(scheduler)
     assert rule.assign_priority() == [-1, -1, -1, -1, -1]
