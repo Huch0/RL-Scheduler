@@ -30,7 +30,7 @@ class Scheduler:
         )
         # 인스턴스는 reset()에서 생성
         self.machine_instances: List[MachineInstance] = None
-        self.job_instances: List[JobInstance] = None
+        self.job_instances: List[List[JobInstance]] = None
 
         # machine slot allocator Strategy
         self.slot_allocator = slot_allocator
@@ -110,4 +110,9 @@ class Scheduler:
         Returns:
             bool: True if all job instances are scheduled, False otherwise.
         """
-        return all(job_instances.completed for job_instances in self.job_instances)
+
+        return all(
+            job_instance.completed
+            for job_type in self.job_instances
+            for job_instance in job_type
+        )
