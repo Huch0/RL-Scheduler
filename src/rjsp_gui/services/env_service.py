@@ -2,7 +2,7 @@ import pathlib
 import tempfile
 import traceback
 import sys
-import streamlit as st
+from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 from rl_scheduler.envs.utils import make_env
 from rl_scheduler.scheduler import Scheduler
@@ -89,9 +89,9 @@ def reset_env(env, contract_file):
             pass
 
 
-def _dump_to_temp(uploaded: st.UploadedFile) -> pathlib.Path:
+def _dump_to_temp(uploaded: UploadedFile) -> pathlib.Path:
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
-    tmp.write(uploaded.getbuffer())
+    tmp.write(uploaded.read())
     tmp.flush()
     tmp.close()
     return pathlib.Path(tmp.name)

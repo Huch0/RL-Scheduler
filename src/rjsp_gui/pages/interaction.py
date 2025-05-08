@@ -46,8 +46,8 @@ with agent_col:
     path = st.file_uploader(
         "Agent file", type=["pth", "pt", "json", "zip"], key="agent_path"
     )
-    st.button("Load", key="agent_load")
-    st.button("Do it!", key="agent_do")
+    st.button("Load", key="agent_load", disabled=True)
+    st.button("Do it!", key="agent_do", disabled=True)
 
 # Manual Action panel
 with manual_col:
@@ -55,18 +55,18 @@ with manual_col:
     m_machine = st.selectbox("Machine", ["Machine 1", "Machine 2"], key="man_machine")
     m_job = st.selectbox("Job", ["Job 1", "Job 2"], key="man_job")
     repetition = st.number_input("Repetition", min_value=1, value=1, key="man_rept")
-    st.button("Do it!", key="man_do")
+    st.button("Do it!", key="man_do", disabled=True)
 
 # Random Action panel
 with rand_col:
     st.markdown("**Random Action**")
-    st.button("Do it!", key="rand_do")
+    st.button("Do it!", key="rand_do", disabled=True)
 
 # Log panel
 with log_col:
     st.markdown("**Log**")
-    st.button("Load Action Sequence", key="log_load")
-    st.button("Save Current Action Sequence", key="log_save")
+    st.button("Load Action Sequence", key="log_load", disabled=True)
+    st.button("Save Current Action Sequence", key="log_save", disabled=True)
 
 st.markdown("---")
 
@@ -76,7 +76,7 @@ st.markdown("Step **23**")  # dynamic step indicator
 
 # Placeholder for Gantt chart
 st.text("<< Gantt chart of machine schedule goes here >>")
-st.button("Export", key="export_machine_schedule")
+st.button("Export", key="export_machine_schedule", disabled=True)
 
 st.markdown("---")
 
@@ -85,4 +85,4 @@ st.subheader("Job Queue")
 # Placeholder for job queue sequences
 st.text("<< Job 1: sequences of operations with expected profit graphs >>")
 st.text("<< Job 2: sequences of operations with expected profit graphs >>")
-st.button("Export", key="export_job_queue")
+st.button("Export", key="export_job_queue", disabled=True)
