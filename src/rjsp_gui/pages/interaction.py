@@ -1,5 +1,7 @@
 import streamlit as st
 from rjsp_gui.services.env_service import load_environment, reset_env
+import base64
+import io
 
 # Use the full browser width instead of Streamlit's default centered layout
 st.set_page_config(page_title="Interaction Page", layout="wide")
@@ -32,6 +34,14 @@ def _refresh_manual_selectors():
     # repetitions may vary per job; use max so slider can cover all
     max_rep = max(len(reps) for reps in scheduler.job_instances)
     st.session_state["man_max_repetition"] = max_rep if max_rep > 0 else 1
+
+
+def _fig_to_base64(fig) -> str:
+    """Convert a Matplotlib Figure to a base64 PNG data‑URI."""
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight")
+    buf.seek(0)
+    return base64.b64encode(buf.read()).decode("utf-8")
 
 
 # --- Control Plane ---
@@ -128,6 +138,44 @@ with log_col:
 
 st.markdown("---")
 
+# --- Job Queue (collapsible) ---
+st.subheader("Job Queue")
+with st.expander("", expanded=True):
+    if "env" in st.session_state and st.session_state["env"] is not None:
+        schedulder = st.session_state["env"].scheduler
+        print("Job Queue update")
+
+        for job_idx, job_repetitions in enumerate(schedulder.job_instances):
+            st.markdown(f"**Job {job_idx}**")
+
+            # Build one long inline‑scroll row of job‑instance plots
+            html_parts = []
+            for rep_idx, job_instance in enumerate(job_repetitions):
+                fig = job_instance.plot()
+                data_uri = _fig_to_base64(fig)
+                html_parts.append(
+                    f"""<div style="display:inline-block; text-align:center;
+                    min-width:400px; max-width:600px; margin-right:8px;">
+<img src="data:image/png;base64,{data_uri}" style="width:400px;"/>
+<div style="font-size:0.8rem;">Job{job_idx}-{rep_idx}</div>
+</div>"""
+                )
+
+            st.markdown(
+                "<div style='overflow-x:auto; white-space:nowrap; padding-bottom:0.5rem;'>"
+                + "".join(html_parts)
+                + "</div>",
+                unsafe_allow_html=True,
+            )
+
+            st.markdown("---")
+    else:
+        st.info("Load an environment to view Job Queue")
+
+    # Disable export until implemented
+    st.button("Export", key="export_job_queue", disabled=True)
+
+
 # --- Machine Schedule ---
 st.subheader("Machine Schedule")
 st.markdown("Step **23**")  # dynamic step indicator
@@ -137,14 +185,6 @@ st.text("<< Gantt chart of machine schedule goes here >>")
 st.button("Export", key="export_machine_schedule", disabled=True)
 
 st.markdown("---")
-
-# --- Job Queue ---
-st.subheader("Job Queue")
-# Placeholder for job queue sequences
-st.text("<< Job 1: sequences of operations with expected profit graphs >>")
-st.text("<< Job 2: sequences of operations with expected profit graphs >>")
-st.button("Export", key="export_job_queue", disabled=True)
-
 
 # Ensure manual selectors are initialized at startup
 _refresh_manual_selectors()
