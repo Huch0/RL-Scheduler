@@ -4,7 +4,7 @@ from rl_scheduler.scheduler.scheduler import Scheduler
 
 
 class MJRHandler(ActionHandler):
-    def __init__(self, scheduler: Scheduler, max_repetition: int):
+    def __init__(self, scheduler: Scheduler, max_repetition: int = 5):
         """
         Initialize the MJRHandler with a Scheduler instance and max_repetition.
 

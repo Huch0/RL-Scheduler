@@ -1,3 +1,6 @@
-from .rjsp_env import RJSPEnv
+from gymnasium.envs.registration import register
 
-__all__ = ["RJSPEnv"]
+register(
+    id="RJSPEnv-v0",
+    entry_point="rl_scheduler.envs:make_env",
+)

@@ -1,22 +1,22 @@
 import gymnasium as gym
 from pathlib import Path
 from rl_scheduler.scheduler.scheduler import Scheduler
-from rl_scheduler.contract_generator import ContractGenerator, DeterministicGenerator
-from action_handler import ActionHandler, MJRHandler
-from observation_handler import ObservationHandler, BasicStateHandler
-from reward_handler import RewardHandler, MakespanHandler
-from info_handler import InfoHandler
+from rl_scheduler.contract_generator import ContractGenerator
+from .action_handler import ActionHandler
+from .observation_handler import ObservationHandler
+from .reward_handler import RewardHandler
+from .info_handler import InfoHandler
 
 
 class RJSPEnv(gym.Env):
     def __init__(
         self,
         scheduler: Scheduler,
-        contract_generator: ContractGenerator = DeterministicGenerator,
-        action_handler: ActionHandler = MJRHandler,
-        observation_handler: ObservationHandler = BasicStateHandler,
-        reward_handler: RewardHandler = MakespanHandler,
-        info_handler: InfoHandler = InfoHandler,
+        contract_generator: ContractGenerator,
+        action_handler: ActionHandler,
+        observation_handler: ObservationHandler,
+        reward_handler: RewardHandler,
+        info_handler: InfoHandler,
     ):
         super().__init__()
 
