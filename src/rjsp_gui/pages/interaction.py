@@ -6,6 +6,34 @@ st.set_page_config(page_title="Interaction Page", layout="wide")
 
 st.title("Interaction Page")
 
+
+# Helper to refresh manual action selector options
+def _refresh_manual_selectors():
+    """
+    Populate selector options in the Manual Action panel based on
+    the current `env.scheduler` state.
+    """
+    if "env" not in st.session_state or st.session_state["env"] is None:
+        st.session_state["man_machine_options"] = []
+        st.session_state["man_job_options"] = []
+        st.session_state["man_max_repetition"] = 1
+        return
+
+    scheduler = st.session_state["env"].scheduler
+
+    st.session_state["man_machine_options"] = [
+        f"Machine {i}" for i, _ in enumerate(scheduler.machine_instances)
+    ]
+
+    st.session_state["man_job_options"] = [
+        f"Job {i}" for i, _ in enumerate(scheduler.job_instances)
+    ]
+
+    # repetitions may vary per job; use max so slider can cover all
+    max_rep = max(len(reps) for reps in scheduler.job_instances)
+    st.session_state["man_max_repetition"] = max_rep if max_rep > 0 else 1
+
+
 # --- Control Plane ---
 st.subheader("Control Plane")
 env_col, agent_col, manual_col, rand_col, log_col = st.columns([2, 2, 2, 1, 2])
@@ -29,6 +57,7 @@ with env_col:
             st.error(err)
         else:
             st.session_state["env"] = env
+            _refresh_manual_selectors()
             st.success("Environment loaded successfully!")
     if st.button("Reset", key="env_reset"):
         if "env" not in st.session_state or st.session_state["env"] is None:
@@ -36,6 +65,7 @@ with env_col:
         else:
             try:
                 reset_env(st.session_state["env"], contract_file=contract)
+                _refresh_manual_selectors()
                 st.success("Environment reset successfully!")
             except Exception as e:
                 st.error(f"Failed to reset environment: {e}")
@@ -52,9 +82,37 @@ with agent_col:
 # Manual Action panel
 with manual_col:
     st.markdown("**Manual Action**")
-    m_machine = st.selectbox("Machine", ["Machine 1", "Machine 2"], key="man_machine")
-    m_job = st.selectbox("Job", ["Job 1", "Job 2"], key="man_job")
-    repetition = st.number_input("Repetition", min_value=1, value=1, key="man_rept")
+    m_machine = st.selectbox(
+        "Machine",
+        st.session_state.get("man_machine_options", []),
+        key="man_machine",
+    )
+    m_job = st.selectbox(
+        "Job",
+        st.session_state.get("man_job_options", []),
+        key="man_job",
+    )
+    # Determine max repetition for the currently selected job
+    if (
+        "env" in st.session_state
+        and st.session_state["env"] is not None
+        and m_job in st.session_state.get("man_job_options", [])
+    ):
+        job_index = st.session_state["man_job_options"].index(m_job)
+        max_rep_for_job = len(
+            st.session_state["env"].scheduler.job_instances[job_index]
+        )
+    else:
+        max_rep_for_job = 1
+
+    repetition = st.number_input(
+        "Repetition",
+        min_value=1,
+        max_value=max_rep_for_job,
+        value=min(st.session_state.get("man_rept", 1), max_rep_for_job),
+        step=1,
+        key="man_rept",
+    )
     st.button("Do it!", key="man_do", disabled=True)
 
 # Random Action panel
@@ -86,3 +144,7 @@ st.subheader("Job Queue")
 st.text("<< Job 1: sequences of operations with expected profit graphs >>")
 st.text("<< Job 2: sequences of operations with expected profit graphs >>")
 st.button("Export", key="export_job_queue", disabled=True)
+
+
+# Ensure manual selectors are initialized at startup
+_refresh_manual_selectors()
