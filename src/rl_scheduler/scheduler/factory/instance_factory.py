@@ -3,9 +3,9 @@ from rl_scheduler.scheduler.job import JobInstance, JobTemplate
 from rl_scheduler.scheduler.machine import MachineInstance, MachineTemplate
 from rl_scheduler.scheduler.operation import OperationInstance, OperationTemplate
 from rl_scheduler.scheduler.profit import ProfitFunction
+import matplotlib.colors as mcolors
 
 
-# instance를 생성하는 factory
 class InstanceFactory:
     def __init__(
         self,
@@ -53,12 +53,37 @@ class InstanceFactory:
         job_instances = []
         for job_template in self.job_templates:
             job_template_id = job_template.job_template_id
-            r = repetitions[job_template_id]
+            repeat = repetitions[job_template_id]
+
+            # Compute an alpha (opacity) value for each repetition such that
+            # the first instance has the lowest opacity (0.4) and the last
+            # reaches 1.0, distributed uniformly across `r` repetitions.
+            base_alpha = 0.4
+            max_alpha = 1.0
+            if repeat > 1:
+                alpha_step = (max_alpha - base_alpha) / (repeat - 1)
+            else:
+                alpha_step = 0.0  # single instance ⇒ full opacity
+
             job_type = []
-            for i in range(r):
+
+            # ------------------------------------------------------------------ #
+            # Color handling: inherit RGB from template, but increase opacity
+            # (alpha channel) as job_instance_id grows so later instances
+            # appear more vivid in the plot.
+            # ------------------------------------------------------------------ #
+            base_color = job_template.color  # '#RRGGBB'
+
+            # Convert to RGB tuple in 0‑1 range
+            r, g, b = mcolors.to_rgb(base_color)
+
+            for i in range(repeat):
+                # Alpha increases uniformly with repetition index
+                alpha = min(max_alpha, base_alpha + i * alpha_step)
                 job_instance = JobInstance(
                     job_instance_id=i,
                     job_template=job_template,
+                    color=(r, g, b, alpha),  # RGBA tuple
                     profit_fn=profit_fn[job_template_id][
                         i
                     ],  # profit_fn을 job_template_id와 i로 인덱싱하여 가져옴
