@@ -2,6 +2,7 @@ import streamlit as st
 from rjsp_gui.services.env_service import load_environment, reset_env
 import base64
 import io
+from rl_scheduler.renderer import PlotlyRenderer
 
 # Use the full browser width instead of Streamlit's default centered layout
 st.set_page_config(page_title="Interaction Page", layout="wide")
@@ -176,13 +177,16 @@ with st.expander("", expanded=True):
     st.button("Export", key="export_job_queue", disabled=True)
 
 
-# --- Machine Schedule ---
+# --- Machine Schedule (collapsible) ---
 st.subheader("Machine Schedule")
-st.markdown("Step **23**")  # dynamic step indicator
+with st.expander("", expanded=True):
+    if "env" in st.session_state and st.session_state["env"] is not None:
+        scheduler = st.session_state["env"].scheduler
+        gantt_fig = PlotlyRenderer.render(scheduler)
 
-# Placeholder for Gantt chart
-st.text("<< Gantt chart of machine schedule goes here >>")
-st.button("Export", key="export_machine_schedule", disabled=True)
+        st.plotly_chart(gantt_fig, use_container_width=True)
+    else:
+        st.info("Load an environment to view the machine schedule.")
 
 st.markdown("---")
 
