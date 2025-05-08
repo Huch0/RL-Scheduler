@@ -1,21 +1,33 @@
-import json
-from pathlib import Path
 import pandas as pd
 import plotly.graph_objs as go
 from .renderer import Renderer
+from rl_scheduler.scheduler import Scheduler
 
 
 class PlotlyRenderer(Renderer):
-    def __init__(self, scheduler, render_info_path: Path):
-        super().__init__(scheduler, render_info_path)
+    @staticmethod
+    def render(
+        scheduler: Scheduler, title: str = "Machine Schedule"
+    ) -> go.Figure | None:
+        """
+        Build a Plotly Gantt‑style figure of the current scheduler state.
 
-    def render(self, title="Interactive Gantt Chart", mode="browser"):
-        machine_instances = self.scheduler.machine_instances
-        # 1) 색상 설정 불러오기
-        render_info = json.loads(self.render_info_path.read_text(encoding="utf-8"))
-        color_map = {str(k): v for k, v in render_info.get("job_colors", {}).items()}
+        Parameters
+        ----------
+        scheduler : Scheduler
+            The scheduler whose machine & job status will be visualised.
+        title : str
+            Figure title.
 
-        # 2) DataFrame 준비
+        Returns
+        -------
+        plotly.graph_objs.Figure | None
+            A Plotly figure ready for `st.plotly_chart`, or *None* if there are
+            no scheduled operations yet.
+        """
+        machine_instances = scheduler.machine_instances
+
+        # DataFrame 준비
         rows = []
         for m_idx, machine in enumerate(machine_instances):
             for op in machine.assigned_operations:
@@ -29,16 +41,33 @@ class PlotlyRenderer(Renderer):
                         "job_label": f"job{jt}-{ji}",
                         "start": float(op.start_time),
                         "duration": float(op.end_time - op.start_time),
-                        "color_key": jt,
-                        "template_id": jt,
-                        "instance_id": ji,
+                        "end": float(op.end_time),
+                        "color": op.job_instance.color,  # RGBA
                         "type_code": op.type_code,
                     }
                 )
 
         if not rows:
-            print("No operations to display.")
-            return
+            # Nothing scheduled yet → return an empty figure with a placeholder.
+            fig = go.Figure()
+            fig.update_layout(
+                title=f"{title} (t = {scheduler.timestep})",
+                xaxis=dict(title="Time", range=[0, 1]),
+                yaxis=dict(title="Machines", visible=False),
+                annotations=[
+                    dict(
+                        text="No scheduled operations",
+                        xref="paper",
+                        yref="paper",
+                        showarrow=False,
+                        font=dict(size=16, color="gray"),
+                        x=0.5,
+                        y=0.5,
+                    )
+                ],
+                margin=dict(l=100, r=50, t=50, b=50),
+            )
+            return fig
 
         df = pd.DataFrame(rows)
 
@@ -48,7 +77,9 @@ class PlotlyRenderer(Renderer):
         # machine 별로 trace 추가
         for m_idx in sorted(df["machine_id"].unique()):
             sub = df[df["machine_id"] == m_idx]
-            customdata = sub[["job_label", "type_code", "start", "duration"]].values
+            customdata = sub[
+                ["job_label", "type_code", "start", "duration", "end"]
+            ].values
 
             fig.add_trace(
                 go.Bar(
@@ -57,7 +88,7 @@ class PlotlyRenderer(Renderer):
                     base=sub["start"],
                     orientation="h",
                     marker=dict(
-                        color=[color_map.get(k, "#cccccc") for k in sub["color_key"]],
+                        color=sub["color"],
                         line=dict(color="black", width=1),
                     ),
                     customdata=customdata,
@@ -65,7 +96,8 @@ class PlotlyRenderer(Renderer):
                         "job: %{customdata[0]}<br>"
                         "Type: %{customdata[1]}<br>"
                         "Start: %{customdata[2]}<br>"
-                        "Duration: %{customdata[3]}<extra></extra>"
+                        "Duration: %{customdata[3]}<br>"
+                        "End: %{customdata[4]}<extra></extra>"
                     ),
                     name=f"Machine {m_idx}",
                     showlegend=False,
@@ -86,24 +118,4 @@ class PlotlyRenderer(Renderer):
             yaxis=dict(title="machines", autorange="reversed"),
         )
 
-        # 5) 레전드용 더미 trace 추가 (job_label별)
-        legend_items = (
-            df[["job_label", "color_key"]]
-            .drop_duplicates()
-            .sort_values("job_label", ascending=True)
-        )
-        for _, row in legend_items.iterrows():
-            fig.add_trace(
-                go.Bar(
-                    x=[0],
-                    y=[None],
-                    marker=dict(color=color_map.get(row["color_key"], "#cccccc")),
-                    name=row["job_label"],
-                    showlegend=True,
-                )
-            )
-
-        if mode == "streamlit":
-            return fig
-        elif mode == "browser":
-            fig.show()
+        return fig
