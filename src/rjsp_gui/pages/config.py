@@ -1,67 +1,40 @@
 import streamlit as st
-from streamlit_sortables import sort_items
+import sys
+import os
+from pathlib import Path
+
+# 현재 파일의 디렉토리 경로를 구함
+current_dir = Path(__file__).parent
+# config 디렉토리 경로 추가
+sys.path.append(str(current_dir))
+
+from config.job import render_job_config
+from config.machine import render_machine_config
+from config.contract import render_contract_config
+from config.training import render_training_config
 
 st.title("Config Page")
 
-# --- Job Template 1 ---
-st.subheader("Job Template 1")
-col1, col2 = st.columns(2)
-with col1:
-    job1_type = st.selectbox("Type", ["Type A", "Type B", "Type C"], key="job1_type")
-    job1_duration = st.number_input(
-        "Duration", min_value=0, value=5, step=1, key="job1_duration"
-    )
-with col2:
-    job1_color = st.color_picker("Color", "#00FF00", key="job1_color")
+# 서브페이지 탭 생성
+tab_job, tab_machine, tab_contract, tab_train = st.tabs(["Job", "Machine", "Contract", "Training"])
 
-# --- Job Template 2 ---
-st.subheader("Job Template 2")
-col3, col4 = st.columns(2)
-with col3:
-    job2_type = st.selectbox("Type", ["Type A", "Type B", "Type C"], key="job2_type")
-    job2_duration = st.number_input(
-        "Duration", min_value=0, value=10, step=1, key="job2_duration"
-    )
-with col4:
-    job2_color = st.color_picker("Color", "#FF0000", key="job2_color")
+# --- Job 탭 ---
+with tab_job:
+    job_saved = render_job_config()
 
-# --- Operation palette & canvas ---
-left_col, right_col = st.columns([1, 3])
-if "operation_templates" not in st.session_state:
-    st.session_state.operation_templates = []
-if "job_sequence" not in st.session_state:
-    st.session_state.job_sequence = []
+# --- Machine 탭 ---
+with tab_machine:
+    machine_saved = render_machine_config()
 
-with left_col:
-    st.subheader("Operation Template")
-    op_type = st.text_input("Type", key="op_type")
-    op_duration = st.number_input(
-        "Duration", min_value=0, value=1, step=1, key="op_duration"
-    )
-    op_color = st.color_picker("Color", "#FF0000", key="op_color")
-    if st.button("Add Operation Template", key="add_operation"):
-        st.session_state.operation_templates.append(
-            {"type": op_type, "duration": op_duration, "color": op_color}
-        )
-    st.markdown("**Palette:**")
-    for op in st.session_state.operation_templates:
-        st.markdown(f"- {op['type']} ({op['duration']})")
+# --- Contract 탭 ---
+with tab_contract:
+    contract_saved = render_contract_config()
 
-with right_col:
-    st.subheader("Build Job Sequence")
-    if st.session_state.operation_templates:
-        seq = sort_items(
-            [
-                f"{op['type']} ({op['duration']})"
-                for op in st.session_state.operation_templates
-            ],
-            key="job_sequence",
-        )
-        st.session_state.job_sequence = seq
-        st.write("Job sequence:", seq)
-    else:
-        st.info("Add operation templates to the palette to build your job.")
+# --- Training Hyperparameter 탭 ---
+with tab_train:
+    training_saved = render_training_config()
 
-# --- Export ---
-if st.button("Export Configuration", key="export_config"):
-    st.success("Configuration has been exported successfully.")
+# --- Export All ---
+st.subheader("Export All Configurations")
+if st.button("Export All Configurations", key="export_all_configs"):
+    st.success("All configurations have been exported successfully.")
