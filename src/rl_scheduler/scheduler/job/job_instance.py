@@ -87,15 +87,16 @@ class JobInstance:
                     facecolors=self.color,
                 )
 
-            # label duration at the center of the bar
+            # label operation type and duration at the center of the bar
+            label = f"{op.type_code}\n{op.duration}"
             ax_ops.text(
                 s + w / 2,
                 idx + 0.4,
-                f"{op.duration}",
+                label,
                 ha="center",
                 va="center",
                 color="black",
-                fontsize=8,
+                fontsize=7,
             )
         ax_ops.set_yticks([])
         ax_ops.set_xlim(left=0, right=total_time)

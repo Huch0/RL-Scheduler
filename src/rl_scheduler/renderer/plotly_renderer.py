@@ -4,6 +4,17 @@ from .renderer import Renderer
 from rl_scheduler.scheduler import Scheduler
 
 
+def _rgba_to_css(rgba) -> str:
+    """
+    Convert an (r, g, b, a) tuple in 0‑1 range to CSS 'rgba(r,g,b,a)' string
+    understood by Plotly.  If the input is already a string, return as‑is.
+    """
+    if isinstance(rgba, str):
+        return rgba
+    r, g, b, a = rgba
+    return f"rgba({int(r*255)},{int(g*255)},{int(b*255)},{a})"
+
+
 class PlotlyRenderer(Renderer):
     @staticmethod
     def render(
@@ -42,18 +53,29 @@ class PlotlyRenderer(Renderer):
                         "start": float(op.start_time),
                         "duration": float(op.end_time - op.start_time),
                         "end": float(op.end_time),
-                        "color": op.job_instance.color,  # RGBA
+                        "color": _rgba_to_css(op.job_instance.color),
                         "type_code": op.type_code,
                     }
                 )
 
         if not rows:
-            # Nothing scheduled yet → return an empty figure with a placeholder.
+            # Nothing scheduled yet → show empty chart but keep machine labels.
+            labels = [
+                f"Machine {idx}<br>(cap={m.supported_operation_type_codes})"
+                for idx, m in enumerate(machine_instances)
+            ]
+
             fig = go.Figure()
             fig.update_layout(
                 title=f"{title} (t = {scheduler.timestep})",
                 xaxis=dict(title="Time", range=[0, 1]),
-                yaxis=dict(title="Machines", visible=False),
+                yaxis=dict(
+                    title="Machines",
+                    tickmode="array",
+                    tickvals=list(range(len(labels))),
+                    ticktext=labels,
+                    autorange="reversed",
+                ),
                 annotations=[
                     dict(
                         text="No scheduled operations",
@@ -74,9 +96,28 @@ class PlotlyRenderer(Renderer):
         # 3) Plotly Figure 생성
         fig = go.Figure()
 
-        # machine 별로 trace 추가
-        for m_idx in sorted(df["machine_id"].unique()):
+        # Iterate over *all* machines so idle ones still appear
+        for m_idx, machine in enumerate(machine_instances):
             sub = df[df["machine_id"] == m_idx]
+            machine_ability = machine.supported_operation_type_codes
+            label = f"Machine {m_idx}<br>(cap={machine_ability})"
+
+            if sub.empty:
+                # Add a transparent zero‑length bar so the y‑tick is rendered
+                fig.add_trace(
+                    go.Bar(
+                        x=[0],
+                        y=[label],
+                        base=[0],
+                        orientation="h",
+                        marker=dict(color="rgba(0,0,0,0)"),
+                        hoverinfo="skip",
+                        showlegend=False,
+                        opacity=0.0,
+                    )
+                )
+                continue
+
             customdata = sub[
                 ["job_label", "type_code", "start", "duration", "end"]
             ].values
@@ -84,7 +125,7 @@ class PlotlyRenderer(Renderer):
             fig.add_trace(
                 go.Bar(
                     x=sub["duration"],
-                    y=[f"Machine {m_idx}"] * len(sub),
+                    y=[label] * len(sub),
                     base=sub["start"],
                     orientation="h",
                     marker=dict(
@@ -93,20 +134,24 @@ class PlotlyRenderer(Renderer):
                     ),
                     customdata=customdata,
                     hovertemplate=(
+                        "machine ability: " + str(machine_ability) + "<br>"
                         "job: %{customdata[0]}<br>"
                         "Type: %{customdata[1]}<br>"
                         "Start: %{customdata[2]}<br>"
                         "Duration: %{customdata[3]}<br>"
                         "End: %{customdata[4]}<extra></extra>"
                     ),
-                    name=f"Machine {m_idx}",
+                    name=label,
                     showlegend=False,
                 )
             )
 
         # 4) Layout 설정
-        min_start = df["start"].min()
-        max_end = (df["start"] + df["duration"]).max()
+        if not df.empty:
+            min_start = df["start"].min()
+            max_end = (df["start"] + df["duration"]).max()
+        else:
+            min_start, max_end = 0, 1
 
         fig.update_layout(
             title=title,

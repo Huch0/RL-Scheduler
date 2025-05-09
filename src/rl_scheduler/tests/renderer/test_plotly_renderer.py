@@ -8,6 +8,9 @@ def test_plotly_renderer():
     machine1 = MagicMock()
     machine2 = MagicMock()
 
+    machine1.supported_operation_type_codes = ["OpTypeA", "OpTypeB"]
+    machine2.supported_operation_type_codes = ["OpTypeC", "OpTypeD"]
+
     fake_op1 = MagicMock()
     fake_op1.start_time = 0
     fake_op1.end_time = 3
