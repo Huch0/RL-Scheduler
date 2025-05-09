@@ -67,12 +67,21 @@ class RJSPEnv(gym.Env):
         try:
             self.scheduler.step(chosen_machine_id, chosen_job_id, chosen_repetition)
         except ValueError as e:
-            # Handle invalid actions (e.g., constraint violations)
+            # Invalid action: keep env state unchanged and notify caller.
+            info = self.info_handler.get_info()
+            info.update(
+                {
+                    "invalid_action": True,
+                    "error": str(e),
+                }
+            )
+            # Small negative reward to discourage invalid moves; no termination.
             return (
                 self.observation_handler.get_observation(),
-                -1.0,
-                True,
-                {"error": str(e)},
+                -0.1,
+                False,  # terminated
+                False,  # truncated
+                info,
             )
 
         # Get the current observation
