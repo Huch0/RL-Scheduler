@@ -1,22 +1,22 @@
 import gymnasium as gym
 from pathlib import Path
 from rl_scheduler.scheduler.scheduler import Scheduler
-from rl_scheduler.contract_generator import ContractGenerator, DeterministicGenerator
-from action_handler import ActionHandler, MJRHandler
-from observation_handler import ObservationHandler, BasicStateHandler
-from reward_handler import RewardHandler, MakespanHandler
-from info_handler import InfoHandler
+from rl_scheduler.contract_generator import ContractGenerator
+from .action_handler import ActionHandler
+from .observation_handler import ObservationHandler
+from .reward_handler import RewardHandler
+from .info_handler import InfoHandler
 
 
 class RJSPEnv(gym.Env):
     def __init__(
         self,
         scheduler: Scheduler,
-        contract_generator: ContractGenerator = DeterministicGenerator,
-        action_handler: ActionHandler = MJRHandler,
-        observation_handler: ObservationHandler = BasicStateHandler,
-        reward_handler: RewardHandler = MakespanHandler,
-        info_handler: InfoHandler = InfoHandler,
+        contract_generator: ContractGenerator,
+        action_handler: ActionHandler,
+        observation_handler: ObservationHandler,
+        reward_handler: RewardHandler,
+        info_handler: InfoHandler,
     ):
         super().__init__()
 
@@ -38,6 +38,11 @@ class RJSPEnv(gym.Env):
 
         # Define info handler
         self.info_handler = info_handler
+
+    @property
+    def timestep(self):
+        """Get the current timestep."""
+        return self.scheduler.timestep
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -67,12 +72,21 @@ class RJSPEnv(gym.Env):
         try:
             self.scheduler.step(chosen_machine_id, chosen_job_id, chosen_repetition)
         except ValueError as e:
-            # Handle invalid actions (e.g., constraint violations)
+            # Invalid action: keep env state unchanged and notify caller.
+            info = self.info_handler.get_info()
+            info.update(
+                {
+                    "invalid_action": True,
+                    "error": str(e),
+                }
+            )
+            # Small negative reward to discourage invalid moves; no termination.
             return (
                 self.observation_handler.get_observation(),
-                -1.0,
-                True,
-                {"error": str(e)},
+                -0.1,
+                False,  # terminated
+                False,  # truncated
+                info,
             )
 
         # Get the current observation

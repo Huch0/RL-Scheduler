@@ -1,21 +1,44 @@
-import json
-from pathlib import Path
 import pandas as pd
 import plotly.graph_objs as go
 from .renderer import Renderer
+from rl_scheduler.scheduler import Scheduler
+
+
+def _rgba_to_css(rgba) -> str:
+    """
+    Convert an (r, g, b, a) tuple in 0‑1 range to CSS 'rgba(r,g,b,a)' string
+    understood by Plotly.  If the input is already a string, return as‑is.
+    """
+    if isinstance(rgba, str):
+        return rgba
+    r, g, b, a = rgba
+    return f"rgba({int(r*255)},{int(g*255)},{int(b*255)},{a})"
 
 
 class PlotlyRenderer(Renderer):
-    def __init__(self, scheduler, render_info_path: Path):
-        super().__init__(scheduler, render_info_path)
+    @staticmethod
+    def render(
+        scheduler: Scheduler, title: str = "Machine Schedule"
+    ) -> go.Figure | None:
+        """
+        Build a Plotly Gantt‑style figure of the current scheduler state.
 
-    def render(self, title="Interactive Gantt Chart", mode="browser"):
-        machine_instances = self.scheduler.machine_instances
-        # 1) 색상 설정 불러오기
-        render_info = json.loads(self.render_info_path.read_text(encoding="utf-8"))
-        color_map = {str(k): v for k, v in render_info.get("job_colors", {}).items()}
+        Parameters
+        ----------
+        scheduler : Scheduler
+            The scheduler whose machine & job status will be visualised.
+        title : str
+            Figure title.
 
-        # 2) DataFrame 준비
+        Returns
+        -------
+        plotly.graph_objs.Figure | None
+            A Plotly figure ready for `st.plotly_chart`, or *None* if there are
+            no scheduled operations yet.
+        """
+        machine_instances = scheduler.machine_instances
+
+        # DataFrame 준비
         rows = []
         for m_idx, machine in enumerate(machine_instances):
             for op in machine.assigned_operations:
@@ -29,52 +52,106 @@ class PlotlyRenderer(Renderer):
                         "job_label": f"job{jt}-{ji}",
                         "start": float(op.start_time),
                         "duration": float(op.end_time - op.start_time),
-                        "color_key": jt,
-                        "template_id": jt,
-                        "instance_id": ji,
+                        "end": float(op.end_time),
+                        "color": _rgba_to_css(op.job_instance.color),
                         "type_code": op.type_code,
                     }
                 )
 
         if not rows:
-            print("No operations to display.")
-            return
+            # Nothing scheduled yet → show empty chart but keep machine labels.
+            labels = [
+                f"Machine {idx}<br>(cap={m.supported_operation_type_codes})"
+                for idx, m in enumerate(machine_instances)
+            ]
+
+            fig = go.Figure()
+            fig.update_layout(
+                title=f"{title} (t = {scheduler.timestep})",
+                xaxis=dict(title="Time", range=[0, 1]),
+                yaxis=dict(
+                    title="Machines",
+                    tickmode="array",
+                    tickvals=list(range(len(labels))),
+                    ticktext=labels,
+                    autorange="reversed",
+                ),
+                annotations=[
+                    dict(
+                        text="No scheduled operations",
+                        xref="paper",
+                        yref="paper",
+                        showarrow=False,
+                        font=dict(size=16, color="gray"),
+                        x=0.5,
+                        y=0.5,
+                    )
+                ],
+                margin=dict(l=100, r=50, t=50, b=50),
+            )
+            return fig
 
         df = pd.DataFrame(rows)
 
         # 3) Plotly Figure 생성
         fig = go.Figure()
 
-        # machine 별로 trace 추가
-        for m_idx in sorted(df["machine_id"].unique()):
+        # Iterate over *all* machines so idle ones still appear
+        for m_idx, machine in enumerate(machine_instances):
             sub = df[df["machine_id"] == m_idx]
-            customdata = sub[["job_label", "type_code", "start", "duration"]].values
+            machine_ability = machine.supported_operation_type_codes
+            label = f"Machine {m_idx}<br>(cap={machine_ability})"
+
+            if sub.empty:
+                # Add a transparent zero‑length bar so the y‑tick is rendered
+                fig.add_trace(
+                    go.Bar(
+                        x=[0],
+                        y=[label],
+                        base=[0],
+                        orientation="h",
+                        marker=dict(color="rgba(0,0,0,0)"),
+                        hoverinfo="skip",
+                        showlegend=False,
+                        opacity=0.0,
+                    )
+                )
+                continue
+
+            customdata = sub[
+                ["job_label", "type_code", "start", "duration", "end"]
+            ].values
 
             fig.add_trace(
                 go.Bar(
                     x=sub["duration"],
-                    y=[f"Machine {m_idx}"] * len(sub),
+                    y=[label] * len(sub),
                     base=sub["start"],
                     orientation="h",
                     marker=dict(
-                        color=[color_map.get(k, "#cccccc") for k in sub["color_key"]],
+                        color=sub["color"],
                         line=dict(color="black", width=1),
                     ),
                     customdata=customdata,
                     hovertemplate=(
+                        "machine ability: " + str(machine_ability) + "<br>"
                         "job: %{customdata[0]}<br>"
                         "Type: %{customdata[1]}<br>"
                         "Start: %{customdata[2]}<br>"
-                        "Duration: %{customdata[3]}<extra></extra>"
+                        "Duration: %{customdata[3]}<br>"
+                        "End: %{customdata[4]}<extra></extra>"
                     ),
-                    name=f"Machine {m_idx}",
+                    name=label,
                     showlegend=False,
                 )
             )
 
         # 4) Layout 설정
-        min_start = df["start"].min()
-        max_end = (df["start"] + df["duration"]).max()
+        if not df.empty:
+            min_start = df["start"].min()
+            max_end = (df["start"] + df["duration"]).max()
+        else:
+            min_start, max_end = 0, 1
 
         fig.update_layout(
             title=title,
@@ -86,24 +163,4 @@ class PlotlyRenderer(Renderer):
             yaxis=dict(title="machines", autorange="reversed"),
         )
 
-        # 5) 레전드용 더미 trace 추가 (job_label별)
-        legend_items = (
-            df[["job_label", "color_key"]]
-            .drop_duplicates()
-            .sort_values("job_label", ascending=True)
-        )
-        for _, row in legend_items.iterrows():
-            fig.add_trace(
-                go.Bar(
-                    x=[0],
-                    y=[None],
-                    marker=dict(color=color_map.get(row["color_key"], "#cccccc")),
-                    name=row["job_label"],
-                    showlegend=True,
-                )
-            )
-
-        if mode == "streamlit":
-            return fig
-        elif mode == "browser":
-            fig.show()
+        return fig

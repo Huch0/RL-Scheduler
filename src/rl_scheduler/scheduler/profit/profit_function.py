@@ -1,3 +1,7 @@
+import matplotlib.pyplot as plt
+from typing import Optional
+
+
 class ProfitFunction:
     def __init__(
         self, job_instance_id: int, price: float, deadline: int, late_penalty: float
@@ -28,6 +32,49 @@ class ProfitFunction:
         return f"""ProfitFunction(job_instance_id={self.job_instance_id},
         price={self.price}, deadline={self.deadline}, late_penalty=
         {self.late_penalty})"""
+
+    def plot(self, *, max_time: Optional[int] = None, ax: Optional[plt.Axes] = None):
+        """
+        Return a Matplotlib Figure (or the supplied Axes) visualising this profit curve.
+
+        Parameters
+        ----------
+        max_time : int, optional
+            X‑axis upper bound.  Defaults to the time where profit reaches zero.
+        ax : matplotlib.axes.Axes, optional
+            If provided, the curve is drawn on this axes and the function returns it.
+            Otherwise, a new Figure+Axes is created and returned.
+        """
+        # determine end‑time where profit hits zero
+        cutoff = (
+            self.price / self.late_penalty + self.deadline
+            if self.late_penalty
+            else self.deadline
+        )
+        max_time = max_time or cutoff
+
+        xs = [0, self.deadline, cutoff]
+        ys = [self.price, self.price, 0]
+
+        if ax is None:
+            fig, ax = plt.subplots()
+            print(f"Creating new figure {fig.number}")
+        else:
+            fig = ax.figure
+            print(f"Using existing figure {fig.number}")
+
+        ax.plot(xs, ys, label=f"Job {self.job_instance_id}")
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Expected Profit")
+        ax.set_ylim(bottom=0)
+        ax.grid(True, linestyle="--", alpha=0.3)
+        # Add custom ticks: deadline on x‑axis, max profit on y‑axis
+        ax.set_xticks([0, self.deadline, max_time])
+        ax.set_yticks([0, self.price])
+        ax.set_xticklabels(["0", f"D={self.deadline}", f"{int(max_time)}"])
+        ax.set_yticklabels(["0", f"P={self.price}"])
+
+        return fig if ax is None else ax
 
 
 # # 사용 예시

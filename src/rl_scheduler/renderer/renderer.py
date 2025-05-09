@@ -1,12 +1,9 @@
-from pathlib import Path
 from abc import ABC, abstractmethod
+from rl_scheduler.scheduler import Scheduler
 
 
 class Renderer(ABC):
-    def __init__(self, scheduler, render_info_path: Path):
-        self.scheduler = scheduler
-        self.render_info_path = render_info_path
-
+    @staticmethod
     @abstractmethod
-    def render(self, title: str = "Renderer"):
+    def render(scheduler: Scheduler, title: str = "Renderer"):
         raise NotImplementedError("You should implement this method.")

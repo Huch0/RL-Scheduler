@@ -30,16 +30,19 @@ class Scheduler:
         )
         # 인스턴스는 reset()에서 생성
         self.machine_instances: List[MachineInstance] = None
-        self.job_instances: List[JobInstance] = None
+        self.job_instances: List[List[JobInstance]] = None
 
         # machine slot allocator Strategy
         self.slot_allocator = slot_allocator
+
+        self.timestep = 0
 
     def reset(self, repetitions, profit_functions):
         self.machine_instances = self.instance_factory.get_new_machine_instances()
         self.job_instances = self.instance_factory.get_new_job_instances(
             repetitions=repetitions, profit_fn=profit_functions
         )
+        self.timestep = 0
 
     def step(self, chosen_machine_id: int, chosen_job_id: int, chosen_repetition: int):
         """
@@ -60,6 +63,8 @@ class Scheduler:
             4. Allocates a slot for the operation on the machine.
             5. Updates the earliest start time of the successor operation.
         """
+        self.timestep += 1
+
         # Find the operation instance for the given job and repetition.
         chosen_op = self.find_op_instance_by_action(chosen_job_id, chosen_repetition)
 
@@ -110,4 +115,9 @@ class Scheduler:
         Returns:
             bool: True if all job instances are scheduled, False otherwise.
         """
-        return all(job_instances.completed for job_instances in self.job_instances)
+
+        return all(
+            job_instance.completed
+            for job_type in self.job_instances
+            for job_instance in job_type
+        )

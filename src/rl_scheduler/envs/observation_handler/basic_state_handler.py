@@ -36,7 +36,10 @@ class BasicStateHandler(ObservationHandler):
                 for machine in self.scheduler.machine_instances
             ],
             "job_states": [
-                len(job.operation_instance_sequence)
-                for job in self.scheduler.job_instances
+                len(
+                    self.scheduler.job_instances[t_id][i_id].operation_instance_sequence
+                )
+                for i_id in range(len(self.scheduler.job_instances[0]))
+                for t_id in range(len(self.scheduler.job_instances))
             ],
         }

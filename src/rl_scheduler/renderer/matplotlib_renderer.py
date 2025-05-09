@@ -1,5 +1,3 @@
-import json
-from pathlib import Path
 import matplotlib.patches as mpatches
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
@@ -8,13 +6,12 @@ from .renderer import Renderer
 
 
 class MatplotRenderer(Renderer):
-    def __init__(self, scheduler, render_info_path: Path):
-        super().__init__(scheduler, render_info_path)
+    @staticmethod
+    def render(scheduler, title: str | None = None):
+        if title is None:
+            title = f"Machine Schedule (t = {scheduler.timestep})"
 
-    def render(self, title="Gantt Chart"):
-        machine_instances = self.scheduler.machine_instances
-        with self.render_info_path.open("r", encoding="utf-8") as f:
-            render_info = json.load(f)
+        machine_instances = scheduler.machine_instances
 
         data = []
         for m_idx, machine in enumerate(machine_instances):
@@ -34,8 +31,11 @@ class MatplotRenderer(Renderer):
                     )
 
         if not data:
-            print("No operations to display.")
-            return
+            fig, ax = plt.subplots(figsize=(8, 2))
+            ax.set_title(title)
+            ax.text(0.5, 0.5, "No scheduled operations", ha="center", va="center")
+            ax.axis("off")
+            return fig
 
         df = pd.DataFrame(data)
         fig, ax = plt.subplots(figsize=(10, 6))
@@ -50,8 +50,7 @@ class MatplotRenderer(Renderer):
             jt = row["job_template_id"]
             ji = row["job_instance_id"]
             job_label = f"Job{jt}-{ji}"
-            c_map = render_info.get("job_colors", {})
-            job_color = c_map.get(str(jt), "#cccccc")
+            job_color = op.job_instance.color
 
             rect = mpatches.Rectangle(
                 (row["start_time"], row["machine_id"] - 0.4),
@@ -77,4 +76,4 @@ class MatplotRenderer(Renderer):
         ax.set_ylim(-1, len(machine_instances))
 
         plt.tight_layout()
-        plt.show()
+        return fig
