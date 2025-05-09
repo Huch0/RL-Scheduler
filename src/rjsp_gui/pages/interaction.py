@@ -2,6 +2,8 @@ import streamlit as st
 from rjsp_gui.services.env_service import load_environment, reset_env
 import base64
 import io
+import numpy as np
+from rl_scheduler.envs.registry import get_action_handler
 from rl_scheduler.renderer import PlotlyRenderer
 from rjsp_gui.services.env_service import step_env
 
@@ -133,8 +135,9 @@ with manual_col:
             try:
                 machine_idx = int(m_machine.split()[1])
                 job_idx = int(m_job.split()[1])
-            except (IndexError, ValueError):
+            except (IndexError, ValueError, AttributeError):
                 st.error("Invalid manual input — please select a machine and job.")
+                st.stop()  # Abort the rest of the callback
 
             user_input = (machine_idx, job_idx, int(repetition))
 
@@ -157,7 +160,86 @@ with manual_col:
 # Random Action panel
 with rand_col:
     st.markdown("**Random Action**")
-    st.button("Do it!", key="rand_do", disabled=True)
+
+    # Persistent RNG and handler for random sampling
+    if "rand_rng" not in st.session_state:
+        st.session_state["rand_rng"] = np.random.default_rng()
+
+    if (
+        "env" in st.session_state
+        and st.session_state["env"] is not None
+        and (
+            "rand_handler" not in st.session_state
+            or st.session_state["rand_handler"].scheduler
+            is not st.session_state["env"].scheduler
+        )
+    ):
+        # (Re)build the handler when environment changes
+        st.session_state["rand_handler"] = get_action_handler(
+            "mjr", st.session_state["env"].scheduler
+        )
+
+    if st.button("Random Step", key="rand_step"):
+        if "env" not in st.session_state or st.session_state["env"] is None:
+            st.warning("Load an environment first.")
+        else:
+            env = st.session_state["env"]
+            handler = st.session_state.get("rand_handler")
+
+            if handler is None:
+                st.error("Random action handler not initialised.")
+                st.stop()
+
+            try:
+                env.action_handler = handler
+                env.action_space = handler.action_space
+                action = handler.sample_valid_action(st.session_state["rand_rng"])
+                # Show action details
+                st.markdown(f"**Action**: {action}")
+                obs, reward, terminated, truncated, info = env.step(action)
+
+                if info.get("invalid_action", False):
+                    st.error(f"Random action invalid: {info['error']}")
+                else:
+                    st.success(f"Random action executed (reward={reward:.2f})")
+                    _refresh_manual_selectors()
+            except RuntimeError as exc:
+                st.error(f"Failed to sample or execute random action: {exc}")
+
+    # ------------------------------------------------------------
+    # Run random actions until the environment terminates
+    # ------------------------------------------------------------
+    if st.button("Run Random Episode", key="rand_run"):
+        if "env" not in st.session_state or st.session_state["env"] is None:
+            st.warning("Load an environment first.")
+        else:
+            env = st.session_state["env"]
+            handler = st.session_state.get("rand_handler")
+            rng = st.session_state["rand_rng"]
+
+            if handler is None:
+                st.error("Random action handler not initialised.")
+            else:
+                total_reward = 0.0
+                try:
+                    env.action_handler = handler
+                    env.action_space = handler.action_space
+                    terminated = False
+                    truncated = False
+                    # safety cap to avoid infinite loops
+                    while not (terminated or truncated) and env.timestep < 10_000:
+                        action = handler.sample_valid_action(rng)
+                        obs, reward, terminated, truncated, info = env.step(action)
+                        if info.get("invalid_action", False):
+                            # skip invalid—it shouldn’t happen with sample_valid_action
+                            continue
+                        total_reward += reward
+                    st.success(
+                        f"Episode finished in {env.timestep} steps, total reward={total_reward:.2f}"
+                    )
+                    _refresh_manual_selectors()
+                except RuntimeError as exc:
+                    st.error(f"Failed during random run: {exc}")
 
 # Log panel
 with log_col:
