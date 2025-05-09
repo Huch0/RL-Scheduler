@@ -39,6 +39,11 @@ class RJSPEnv(gym.Env):
         # Define info handler
         self.info_handler = info_handler
 
+    @property
+    def timestep(self):
+        """Get the current timestep."""
+        return self.scheduler.timestep
+
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
 
