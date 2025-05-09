@@ -3,6 +3,7 @@ from rjsp_gui.services.env_service import load_environment, reset_env
 import base64
 import io
 from rl_scheduler.renderer import PlotlyRenderer
+from rjsp_gui.services.env_service import step_env
 
 # Use the full browser width instead of Streamlit's default centered layout
 st.set_page_config(page_title="Interaction Page", layout="wide")
@@ -110,21 +111,48 @@ with manual_col:
         and m_job in st.session_state.get("man_job_options", [])
     ):
         job_index = st.session_state["man_job_options"].index(m_job)
-        max_rep_for_job = len(
-            st.session_state["env"].scheduler.job_instances[job_index]
+        max_rep_for_job = (
+            len(st.session_state["env"].scheduler.job_instances[job_index]) - 1
         )
     else:
         max_rep_for_job = 1
 
     repetition = st.number_input(
         "Repetition",
-        min_value=1,
+        min_value=0,
         max_value=max_rep_for_job,
-        value=min(st.session_state.get("man_rept", 1), max_rep_for_job),
+        value=min(st.session_state.get("man_rept", 0), max_rep_for_job),
         step=1,
         key="man_rept",
     )
-    st.button("Do it!", key="man_do", disabled=True)
+    if st.button("Do it!", key="man_do"):
+        if "env" not in st.session_state or st.session_state["env"] is None:
+            st.warning("Load an environment first.")
+        else:
+            # Convert the selector strings "Machine N" / "Job N" to integer indices
+            try:
+                machine_idx = int(m_machine.split()[1])
+                job_idx = int(m_job.split()[1])
+            except (IndexError, ValueError):
+                st.error("Invalid manual input — please select a machine and job.")
+
+            user_input = (machine_idx, job_idx, int(repetition))
+
+            env = st.session_state["env"]
+            action_handler_id = "mjr"
+            # Call step_env
+            obs, reward, terminated, truncated, info = step_env(
+                env,
+                action_handler_id=action_handler_id,
+                action=user_input,
+            )
+            if info.get("invalid_action", False):
+                st.error(f"Invalid action: {info['error']}")
+            else:
+                st.success("Step executed!")
+                # Refresh visuals
+                _refresh_manual_selectors()
+
 
 # Random Action panel
 with rand_col:
