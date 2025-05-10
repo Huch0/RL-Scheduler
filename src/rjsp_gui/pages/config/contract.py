@@ -40,6 +40,21 @@ def profit_figure(prices: List[float], deadlines: List[int], penalties: List[flo
 
 def render_contract_config() -> None:
     ensure_state()
+
+    # ────────────────────────────────────────────────
+    # 🔄  Load existing contracts
+    contracts_file = st.file_uploader("Load contracts JSON", type=["json"], key="load_contracts")
+    if contracts_file:
+        try:
+            raw = contracts_file.read().decode('utf-8')
+            # remove // comments
+            clean = '\n'.join(line for line in raw.splitlines() if not line.strip().startswith('//'))
+            data = json.loads(clean)
+            st.session_state.contracts = data.get("contracts", {})
+            st.success("Contracts configuration loaded.")
+        except Exception as e:
+            st.error(f"Failed to load contracts JSON: {e}")
+
     st.header("Contract Configuration")
 
     if not st.session_state.job_templates:
@@ -52,10 +67,16 @@ def render_contract_config() -> None:
     st.subheader("Job‑wise Contracts")
 
     for jt in st.session_state.job_templates:
+        # get existing contracts for this job
         job_key = f"job_{jt['job_template_id']}"
+        existing = st.session_state.contracts.get(job_key, [])
+
         base_colour = jt.get("color", "#aaa")
 
         with st.expander(f"Job Template {jt['job_template_id']}", expanded=False):
+            # ▣ 0) 기존 설정 디버그 출력 -----------------------------------------------
+            if existing:
+                st.write(f"Loaded {len(existing)} instances for {job_key}")
             # ▣ 1) 시각적 타임라인 ------------------------------------------------
             ops = [
                 next(o for o in st.session_state.operation_templates if o["operation_template_id"] == oid)
@@ -64,8 +85,9 @@ def render_contract_config() -> None:
             st.markdown(_timeline_html(ops, base_colour), unsafe_allow_html=True)
 
             # ▣ 2) 반복 횟수 ------------------------------------------------------
+            default_rep = len(existing) if existing else 1
             repetitions = st.number_input(
-                "Repetition", min_value=1, value=1, step=1, key=f"rep_{job_key}"
+                "Repetition", min_value=1, value=default_rep, step=1, key=f"rep_{job_key}"
             )
 
             # ▣ 3) 개별 인스턴스 매개변수 입력 ------------------------------------
@@ -80,9 +102,13 @@ def render_contract_config() -> None:
             for i in range(repetitions):
                 c0, c1, c2, c3 = st.columns(4)
                 c0.markdown(str(i))
-                prices.append(c1.number_input("price", min_value=0.0, value=1000.0, key=f"price_{job_key}_{i}"))
-                deadlines.append(c2.number_input("deadline", min_value=1, value=10 + i, key=f"dl_{job_key}_{i}"))
-                lps.append(c3.number_input("penalty", min_value=0.0, value=50.0, key=f"lp_{job_key}_{i}"))
+                # load defaults if existing
+                price_def = existing[i]["price"] if i < len(existing) else 1000.0
+                dl_def = existing[i]["deadline"] if i < len(existing) else 1
+                lp_def = existing[i]["late_penalty"] if i < len(existing) else 0.0
+                prices.append(c1.number_input("price", min_value=0.0, value=price_def, key=f"price_{job_key}_{i}"))
+                deadlines.append(c2.number_input("deadline", min_value=1, value=dl_def, key=f"dl_{job_key}_{i}"))
+                lps.append(c3.number_input("penalty", min_value=0.0, value=lp_def, key=f"lp_{job_key}_{i}"))
 
             # ▣ 4) Profit curve ----------------------------------------------------
             fig = profit_figure(prices, deadlines, lps)
