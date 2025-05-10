@@ -1,22 +1,24 @@
 import streamlit as st
 import sys
 import os
+import sys
 from pathlib import Path
 
-# 현재 파일의 디렉토리 경로를 구함
-current_dir = Path(__file__).parent
-# config 디렉토리 경로 추가
-sys.path.append(str(current_dir))
+# ───────────────────────────────────────────────────
+# 프로젝트 src 폴더를 PYTHONPATH에 추가 (rjsp_gui 패키지 인식용)
+# __file__ → pages/interaction.py
+# parents[2] → src
+sys.path.insert(0, str(Path(__file__).parents[2]))
 
-from config.job import render_job_config
-from config.machine import render_machine_config
-from config.contract import render_contract_config
-from config.training import render_training_config
+from rjsp_gui.pages.config.job import render_job_config
+from rjsp_gui.pages.config.machine import render_machine_config
+from rjsp_gui.pages.config.contract import render_contract_config
+from rjsp_gui.services.scheduler_service import build_scheduler_pickle
 
 st.title("Scheduler Setup Page")
 
 # 서브페이지 탭 생성
-tab_job, tab_machine, tab_contract, tab_train = st.tabs(["Job", "Machine", "Contract", "Training"])
+tab_job, tab_machine, tab_contract = st.tabs(["Job", "Machine", "Contract"])
 
 # --- Job 탭 ---
 with tab_job:
@@ -30,11 +32,18 @@ with tab_machine:
 with tab_contract:
     contract_saved = render_contract_config()
 
-# --- Training Hyperparameter 탭 ---
-with tab_train:
-    training_saved = render_training_config()
-
-# --- Export All ---
-st.subheader("Export All Configurations")
-if st.button("Export All Configurations", key="export_all_configs"):
-    st.success("All configurations have been exported successfully.")
+# --- Export Scheduler ---
+st.subheader("Export Scheduler")
+# 사용자 지정 파일명 입력
+file_name = st.text_input("Scheduler file name", "scheduler.pkl", key="sched_file_name")
+try:
+    buf = build_scheduler_pickle()
+    st.download_button(
+        f"Download {file_name}",
+        data=buf,
+        file_name=file_name,
+        mime="application/octet-stream",
+        key="download_scheduler"
+    )
+except Exception as e:
+    st.error(str(e))
