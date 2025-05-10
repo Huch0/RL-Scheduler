@@ -15,6 +15,7 @@ _CONTRACT_GENERATORS: Mapping[str, Type[ContractGenerator]] = {
 
 _ACTION_HANDLERS: Mapping[str, Type[ActionHandler]] = {
     "mjr": MJRHandler,
+    "mj": MJRHandler,
 }
 
 _OBSERVATION_HANDLERS: Mapping[str, Type[ObservationHandler]] = {
@@ -39,13 +40,15 @@ def get_contract_generator(name: str | None) -> ContractGenerator:
     return cls()
 
 
-def get_action_handler(name: str | None, scheduler: Scheduler) -> ActionHandler:
+def get_action_handler(
+    name: str | None, scheduler: Scheduler, **kwargs
+) -> ActionHandler:
     if name is None:
         return MJRHandler(scheduler)
     cls = _ACTION_HANDLERS.get(name.lower())
     if cls is None:
         raise KeyError(f"Unknown action handler: {name!r}")
-    return cls(scheduler)
+    return cls(scheduler, **kwargs)
 
 
 def get_observation_handler(
