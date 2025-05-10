@@ -187,18 +187,30 @@ def render_job_config() -> None:
 
     # 4️⃣  Export
     st.divider()
-    cfg = st.text_input("Config name")
-    ver = st.text_input("Version", "v1")
+    cfg = st.text_input("Config name", key="job_cfg")
+    ver = st.text_input("Version", "v1", key="job_ver")
 
-    jobs_json = json.dumps({"jobs": st.session_state.job_templates}, indent=4)
-    ops_json = json.dumps({"operations": st.session_state.operation_templates}, indent=4)
+    # jobs_export 리스트를 명시적으로 만들어 color까지 포함
+    jobs_export = [
+        {
+            "job_template_id": jt["job_template_id"],
+            "operation_template_sequence": jt["operation_template_sequence"],
+            "color": jt["color"],
+        }
+        for jt in st.session_state.job_templates
+    ]
+    jobs_json = json.dumps({"jobs": jobs_export}, indent=4)
 
     st.download_button(
         "Download jobs JSON",
         jobs_json,
-        file_name=f"J-{cfg or 'default'}-0-{len(st.session_state.job_templates)-1}.json",
-        disabled=not st.session_state.job_templates,
+        file_name=f"J-{cfg or 'default'}-0-{len(jobs_export)-1}.json",
+        mime="application/json",
+        disabled=not jobs_export,
     )
+
+    ops_json = json.dumps({"operations": st.session_state.operation_templates}, indent=4)
+
     st.download_button(
         "Download operations JSON",
         ops_json,

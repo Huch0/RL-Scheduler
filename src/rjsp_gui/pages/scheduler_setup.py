@@ -13,7 +13,7 @@ from config.machine import render_machine_config
 from config.contract import render_contract_config
 from config.training import render_training_config
 
-st.title("Config Page")
+st.title("Scheduler Setup Page")
 
 # 서브페이지 탭 생성
 tab_job, tab_machine, tab_contract, tab_train = st.tabs(["Job", "Machine", "Contract", "Training"])
