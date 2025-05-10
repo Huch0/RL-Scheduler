@@ -12,6 +12,20 @@ def render_machine_config() -> None:
     """UI for creating machine templates and exporting to JSON."""
     ensure_state()
 
+    # ────────────────────────────────────────────────
+    # 🔄  Load existing configurations
+    machines_file = st.file_uploader("Load machines JSON", type=["json"], key="load_machines")
+    if machines_file:
+        try:
+            raw = machines_file.read().decode('utf-8')
+            clean = '\n'.join(line for line in raw.splitlines() if not line.strip().startswith('//'))
+            machines_data = json.loads(clean)
+            st.session_state.machines = machines_data.get("machines", [])
+            st.success("Machines configuration loaded.")
+            st.write(f"Loaded {len(st.session_state.machines)} machines.")
+        except Exception as e:
+            st.error(f"Failed to load machines JSON: {e}")
+
     st.header("Machine Configuration")
 
     # 1️⃣ Add machine template
