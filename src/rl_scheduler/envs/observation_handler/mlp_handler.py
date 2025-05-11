@@ -3,6 +3,7 @@ from typing import Dict, Any, List
 from gymnasium import spaces
 from .observation_handler import ObservationHandler
 from rl_scheduler.envs.action_handler import MJHandler
+from rl_scheduler.envs.cost_functions import compute_costs
 
 
 class MLPHandler(ObservationHandler):
@@ -203,7 +204,7 @@ class MLPHandler(ObservationHandler):
                 ),
                 # cost 관련 지표
                 "current_costs": spaces.Box(
-                    low=0, high=50000, shape=(4,), dtype=np.float16
+                    low=0, high=50000, shape=(3,), dtype=np.float16
                 ),
             }
         )
@@ -239,7 +240,7 @@ class MLPHandler(ObservationHandler):
             - "mean_estimated_tardiness_per_job": (J,) float16
             - "std_estimated_tardiness_per_job": (J,) float16
             - "cur_estimated_tardiness_per_job": (J,) float16
-            - "current_costs": (4,) float16
+            - "current_costs": (3,) float16
         """
         scheduler = self.scheduler
 
@@ -377,6 +378,17 @@ class MLPHandler(ObservationHandler):
             dtype=np.int16,
         )
 
+        # 4 cost feature
+        costs = compute_costs(scheduler)
+        current_costs = np.array(
+            [
+                costs["C_max"],
+                costs["C_mup"],
+                costs["C_mid"],
+            ],
+            dtype=np.float16,
+        )
+
         return {
             "action_masks": masks,
             "total_count_per_type": self.op_type_counts,
@@ -401,5 +413,5 @@ class MLPHandler(ObservationHandler):
             # "mean_estimated_tardiness_per_job": mean_est_tardy,
             # "std_estimated_tardiness_per_job": std_est_tardy,
             # "cur_estimated_tardiness_per_job": cur_est_tardy,
-            # "current_costs": current_costs,
+            "current_costs": current_costs,
         }
