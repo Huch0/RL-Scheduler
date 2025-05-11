@@ -117,3 +117,13 @@ class JobInstance:
 
         fig.tight_layout()
         return fig
+
+    def get_profit(self) -> float:
+        """
+        Calculate the profit at a given time.
+        If the job is completed, return the profit function value.
+        """
+        if self.completed:
+            return self.profit_fn(self.operation_instance_sequence[-1].end_time)
+        else:
+            return 0.0
