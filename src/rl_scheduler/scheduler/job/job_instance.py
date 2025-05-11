@@ -24,6 +24,7 @@ class JobInstance:
 
         self.profit_fn = profit_fn
         self.operation_instance_sequence = None
+        self.next_op_idx = 0  # Tracks the next operation to be scheduled
         self.completed = False  # Tracks whether the job is completed
 
     def set_operation_instance_sequence(

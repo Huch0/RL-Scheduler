@@ -89,17 +89,19 @@ class Scheduler:
         # job instances가 몇 번째 반복인지를 기준으로 오름차순 정렬되어있다 가정
         job_instance = self.job_instances[chosen_job_id][chosen_repetition]
 
-        for operation_instance in job_instance.operation_instance_sequence:
-            # 아직 할당되지 않은 operation_instance 중 첫 번째로 찾은 것을 반환한다.
-            # 이 부분 job_instance의 멤버 변수에 operation_pointer 변수 추가해서 개선하고 싶다.
-            if operation_instance.end_time is None:
-                return operation_instance
-
-        raise ValueError(
-            f"Operation instance not found for job {chosen_job_id} "
-            f"repetition {chosen_repetition}."
-            f"Probably all operations are already assigned."
-        )
+        return job_instance.operation_instance_sequence[job_instance.next_op_idx]
+        #
+        # for operation_instance in job_instance.operation_instance_sequence:
+        #     # 아직 할당되지 않은 operation_instance 중 첫 번째로 찾은 것을 반환한다.
+        #     # 이 부분 job_instance의 멤버 변수에 operation_pointer 변수 추가해서 개선하고 싶다.
+        #     if operation_instance.end_time is None:
+        #         return operation_instance
+        #
+        # raise ValueError(
+        #     f"Operation instance not found for job {chosen_job_id} "
+        #     f"repetition {chosen_repetition}."
+        #     f"Probably all operations are already assigned."
+        # )
 
     def check_constraint(self, machine_instance, operation_instance):
         # 기계 처리 능력과 operation의 유형이 일치하는지 확인
