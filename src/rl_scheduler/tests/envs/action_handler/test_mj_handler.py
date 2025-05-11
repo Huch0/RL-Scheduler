@@ -34,10 +34,10 @@ def test_mj_handler_with_real_etd_priority_rule():
     # Initialize MJHandler with real ETDPriorityRule
     handler = MJHandler(scheduler, priority_rule_id="etd")
 
-    # The action space should cover machines x jobs
+    # The action space should be Discrete with size machines * jobs
     action_space = handler.create_action_space()
-    assert isinstance(action_space, spaces.MultiDiscrete)
-    assert action_space.nvec.tolist() == [n_machines, n_jobs]
+    assert isinstance(action_space, spaces.Discrete)
+    assert action_space.n == n_machines * n_jobs
 
     # The priority_rule should be an ETDPriorityRule instance
     assert isinstance(handler.priority_rule, ETDPriorityRule)
@@ -48,11 +48,12 @@ def test_mj_handler_with_real_etd_priority_rule():
     assert len(expected_priorities) == n_jobs
 
     # Test convert_action returns (machine, job, correct repetition)
-    for machine_idx in range(n_machines):
-        for job_idx in range(n_jobs):
-            converted = handler.convert_action((machine_idx, job_idx))
-            assert len(converted) == 3
-            assert converted[0] == machine_idx
-            assert converted[1] == job_idx
-            # Converted repetition must match the rule's output
-            assert converted[2] == expected_priorities[job_idx]
+    for action in range(n_machines * n_jobs):
+        converted = handler.convert_action(action)
+        machine_idx = action // n_jobs
+        job_idx = action % n_jobs
+        assert len(converted) == 3
+        assert converted[0] == machine_idx
+        assert converted[1] == job_idx
+        # Converted repetition must match the rule's output
+        assert converted[2] == expected_priorities[job_idx]
