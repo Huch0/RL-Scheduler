@@ -77,4 +77,6 @@ def render_hyperparam_tab() -> Dict[str, Any]:
         mime="text/yaml",
     )
 
+    # Persist to session_state for downstream tabs
+    st.session_state["hparam_cfg"] = cfg
     return cfg
