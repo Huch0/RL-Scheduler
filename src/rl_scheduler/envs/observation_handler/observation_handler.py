@@ -27,6 +27,14 @@ class ObservationHandler(ABC):
         pass
 
     @abstractmethod
+    def update_static_observation_features(self):
+        """
+        Update static observation features based on the Scheduler's configuration.
+        This method is called when the environment is reset.
+        """
+        pass
+
+    @abstractmethod
     def get_observation(self) -> ObsType:
         """
         Generate the current observation of the environment using the Scheduler.

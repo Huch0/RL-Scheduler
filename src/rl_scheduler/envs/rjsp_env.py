@@ -61,6 +61,9 @@ class RJSPEnv(gym.Env):
         # Reset the scheduler
         self.scheduler.reset(repetitions=repetitions, profit_functions=profit_functions)
 
+        # Update static observation features
+        self.observation_handler.update_static_observation_features()
+
         # Return the initial obs, info
         return self.observation_handler.get_observation(), self.info_handler.get_info()
 

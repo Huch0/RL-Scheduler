@@ -3,7 +3,7 @@ from typing import Mapping, Type
 
 from rl_scheduler.contract_generator import ContractGenerator, DeterministicGenerator
 from .action_handler import MJRHandler, ActionHandler
-from .observation_handler import BasicStateHandler, ObservationHandler
+from .observation_handler import MLPHandler, BasicStateHandler, ObservationHandler
 from .reward_handler import MakespanHandler, RewardHandler
 from .info_handler import InfoHandler, BasicInfoHandler
 from rl_scheduler.scheduler import Scheduler
@@ -20,6 +20,7 @@ _ACTION_HANDLERS: Mapping[str, Type[ActionHandler]] = {
 
 _OBSERVATION_HANDLERS: Mapping[str, Type[ObservationHandler]] = {
     "basic": BasicStateHandler,
+    "mlp": MLPHandler,
 }
 
 _REWARD_HANDLERS: Mapping[str, Type[RewardHandler]] = {
@@ -52,14 +53,14 @@ def get_action_handler(
 
 
 def get_observation_handler(
-    name: str | None, scheduler: Scheduler
+    name: str | None, scheduler: Scheduler, **kwargs
 ) -> ObservationHandler:
     if name is None:
         return BasicStateHandler(scheduler)
     cls = _OBSERVATION_HANDLERS.get(name.lower())
     if cls is None:
         raise KeyError(f"Unknown observation handler: {name!r}")
-    return cls(scheduler)
+    return cls(scheduler, **kwargs)
 
 
 def get_reward_handler(name: str | None, scheduler: Scheduler) -> RewardHandler:
