@@ -64,6 +64,34 @@ def _timeline_html(ops, colour: str) -> str:
 
 def render_job_config() -> None:
     ensure_state()
+
+    # ────────────────────────────────────────────────
+    # 🔄  Load existing configurations
+    ops_file = st.file_uploader("Load operations JSON", type=["json"], key="load_ops")
+    if ops_file:
+        try:
+            raw = ops_file.read().decode('utf-8')
+            clean = '\n'.join(line for line in raw.splitlines() if not line.strip().startswith('//'))
+            ops_data = json.loads(clean)
+            st.session_state.operation_templates = ops_data.get("operations", [])
+            # derive type codes from operations
+            st.session_state.type_codes = sorted({op.get("type_code") for op in st.session_state.operation_templates if op.get("type_code")})
+            st.success("Operations configuration loaded.")
+            st.write(f"Loaded {len(st.session_state.operation_templates)} operations.")
+        except Exception as e:
+            st.error(f"Failed to load operations JSON: {e}")
+    jobs_file = st.file_uploader("Load jobs JSON", type=["json"], key="load_jobs")
+    if jobs_file:
+        try:
+            raw = jobs_file.read().decode('utf-8')
+            clean = '\n'.join(line for line in raw.splitlines() if not line.strip().startswith('//'))
+            jobs_data = json.loads(clean)
+            st.session_state.job_templates = jobs_data.get("jobs", [])
+            st.success("Jobs configuration loaded.")
+            st.write(f"Loaded {len(st.session_state.job_templates)} jobs.")
+        except Exception as e:
+            st.error(f"Failed to load jobs JSON: {e}")
+
     st.header("Job Configuration")
 
     # 0️⃣  Operation Type Codes
