@@ -24,6 +24,9 @@ from typing import Dict, Any, Optional
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
+import json
+
+from rjsp_gui.services.train_service import build_env
 
 # SB3 imports are inside try to avoid hard dependency when UI loads
 try:
@@ -113,15 +116,20 @@ def render_train_viz_tab() -> None:
         if not env_file or "hparam_cfg" not in st.session_state:
             st.error("Please upload Env.pkl and configure hyperparameters first.")
             return
-        # load environment payload and build Gym env
+        # load environment payload and build Gym env via train_service
         payload = pickle.load(env_file)
-        scheduler = pickle.loads(payload["scheduler_pickle"])
-        from rl_scheduler.envs.utils import make_env
-        env = make_env(
-            scheduler=scheduler,
+        scheduler_buf = io.BytesIO(payload["scheduler_pickle"])
+        # prepare contract file; use sampling JSON if available
+        contract_buf = None
+        if payload.get("sampling"):
+            contract_buf = io.BytesIO(json.dumps({"sampling": payload["sampling"]}).encode())
+        env = build_env(
+            scheduler_buf=scheduler_buf,
+            contract_file=contract_buf,
             action_handler=payload.get("action_handler"),
             observation_handler=payload.get("observation_handler"),
             reward_handler=payload.get("reward_handler"),
+            info_handler=payload.get("info_handler"),
         )
         env.reset()
         # instantiate SB3 model with selected algorithm and hyperparams
@@ -131,6 +139,8 @@ def render_train_viz_tab() -> None:
             st.error(f"Unknown algorithm: {cfg['algorithm']}")
             return
         log_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Todo : Yaml 파일을 입력받으면 이에 맞춰 코딩
         model = ALG(
             policy="MultiInputPolicy",
             env=env,
