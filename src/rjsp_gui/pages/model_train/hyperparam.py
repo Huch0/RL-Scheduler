@@ -54,13 +54,40 @@ def render_hyperparam_tab() -> Dict[str, Any]:
     # --- SB3 YAML hyper‑parameters ----------------------------------
     up_file = st.file_uploader("Upload SB3 hyper‑param YAML (optional)", type=["yml", "yaml"], key="hp_yaml")
 
+    # default hyperparameter YAML
+    default_yaml = '''algorithm: ppo
+
+model:
+  policy_type: MultiInputPolicy
+  net_arch:
+    pi: [512, 256, 128]
+    vf: [512, 256, 256, 256]
+  activation_fn: relu
+
+train:
+  learning_rate: 0.0003
+  gamma: 0.99
+  gae_lambda: 0.95
+  n_steps: 2048
+  batch_size: 256
+  minibatch_size: 64
+  n_epochs: 10
+  clip_range: 0.2
+  ent_coef: 0.0
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+''' 
     if up_file:
         yaml_text = up_file.getvalue().decode()
         yaml_dict = _load_yaml(yaml_text)
-        st.success("YAML loaded ✅")
+        st.success("YAML loaded ✅")
     else:
+        # initialize default text only on first load
+        if "hp_text" not in st.session_state:
+            st.session_state["hp_text"] = default_yaml
+        # use text_area bound to session state; value is managed by Streamlit
         yaml_text = st.text_area("Paste / edit SB3 YAML", height=200, key="hp_text")
-        yaml_dict = _load_yaml(yaml_text)
+        yaml_dict = _load_yaml(st.session_state["hp_text"])
 
     # Sampling Strategy removed (handled by handler)
     cfg: Dict[str, Any] = {
