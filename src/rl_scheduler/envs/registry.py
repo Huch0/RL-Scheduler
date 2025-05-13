@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Mapping, Type
 
 from rl_scheduler.contract_generator import ContractGenerator, DeterministicGenerator
+from rl_scheduler.contract_generator.stochastic_generator.stochastic_generator import StochasticGenerator
 from .action_handler import MJRHandler, ActionHandler
 from .observation_handler import BasicStateHandler, ObservationHandler
 from .reward_handler import MakespanHandler, RewardHandler
@@ -11,6 +12,7 @@ from rl_scheduler.scheduler import Scheduler
 
 _CONTRACT_GENERATORS: Mapping[str, Type[ContractGenerator]] = {
     "deterministic": DeterministicGenerator,
+    "stochastic": StochasticGenerator,
 }
 
 _ACTION_HANDLERS: Mapping[str, Type[ActionHandler]] = {
