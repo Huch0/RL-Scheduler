@@ -1,7 +1,6 @@
 from .job_type_scope_priority_rule import JobTypeScopedPriorityRule
 from typing import List
 
-
 class EDDPriorityRule(JobTypeScopedPriorityRule):
     def assign_priority(self) -> List[int]:
         """
@@ -32,3 +31,17 @@ class EDDPriorityRule(JobTypeScopedPriorityRule):
             result.append(top_priority_instance.job_instance_id)
 
         return result
+
+    def compute_metrics(self) -> dict[tuple[int, int], float]:
+        """
+            Return (job_template_id, instance_id) → deadline slack
+        """
+        metrics = {}
+        for jt_id, group in enumerate(self.scheduler.job_instances):
+            for job in group:
+                if job.completed:
+                    metrics[(jt_id, job.job_instance_id)] = float('nan')
+                    continue
+                dline = job.profit_fn.deadline if job.profit_fn else float('inf')
+                metrics[(jt_id, job.job_instance_id)] = dline
+        return metrics
