@@ -24,6 +24,7 @@ class JobInstance:
 
         self.profit_fn = profit_fn
         self.operation_instance_sequence = None
+        self.next_op_idx = 0  # Tracks the next operation to be scheduled
         self.completed = False  # Tracks whether the job is completed
 
     def set_operation_instance_sequence(
@@ -116,3 +117,13 @@ class JobInstance:
 
         fig.tight_layout()
         return fig
+
+    def get_profit(self) -> float:
+        """
+        Calculate the profit at a given time.
+        If the job is completed, return the profit function value.
+        """
+        if self.completed:
+            return self.profit_fn(self.operation_instance_sequence[-1].end_time)
+        else:
+            return 0.0
