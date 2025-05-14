@@ -63,10 +63,16 @@ class Scheduler:
             4. Allocates a slot for the operation on the machine.
             5. Updates the earliest start time of the successor operation.
         """
-        self.timestep += 1
-
         # Find the operation instance for the given job and repetition.
-        chosen_op = self.find_op_instance_by_action(chosen_job_id, chosen_repetition)
+        try:
+            chosen_op = self.find_op_instance_by_action(
+                chosen_job_id, chosen_repetition
+            )
+        except IndexError as e:  # The selected job instance is already completed.
+            raise ValueError(
+                f"Operation instance not found for job {chosen_job_id} "
+                f"repetition {chosen_repetition}. Probably all operations are already assigned."
+            ) from e
 
         # Check constraints between the chosen machine and operation.
         chosen_machine = self.machine_instances[chosen_machine_id]
@@ -84,6 +90,8 @@ class Scheduler:
         # Update the earliest start time of the successor operation.
         if chosen_op.successor is not None:
             chosen_op.successor.earliest_start_time = chosen_op.end_time
+
+        self.timestep += 1
 
     def find_op_instance_by_action(self, chosen_job_id: int, chosen_repetition: int):
         # job instances가 몇 번째 반복인지를 기준으로 오름차순 정렬되어있다 가정
