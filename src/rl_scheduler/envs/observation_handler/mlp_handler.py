@@ -4,23 +4,20 @@ from gymnasium import spaces
 from .observation_handler import ObservationHandler
 from rl_scheduler.envs.action_handler import MJHandler
 from rl_scheduler.envs.cost_functions import compute_costs
+from rl_scheduler.scheduler import Scheduler
 
 
 class MLPHandler(ObservationHandler):
-    def __init__(self, scheduler, mj_action_handler: MJHandler, time_horizon: int):
-        super().__init__(scheduler)
-
-        self.M = len(self.scheduler.machine_templates)
-        self.J = len(self.scheduler.job_templates)
+    def __init__(
+        self, scheduler: Scheduler, mj_action_handler: MJHandler, time_horizon: int
+    ):
+        self.M = len(scheduler.machine_templates)
+        self.J = len(scheduler.job_templates)
         self.time_horizon = time_horizon
         self.mj_action_handler = mj_action_handler
 
         # operation types mapping
-        self.type_set = {
-            op_template.type_code
-            for job_template in scheduler.job_templates
-            for op_template in job_template.operation_template_sequence
-        }
+        self.type_set = {op.type_code for op in scheduler.operation_templates}
         # Get the total number of distinct operation types
         self.num_op_types = len(self.type_set)
 
@@ -28,6 +25,8 @@ class MLPHandler(ObservationHandler):
         self.type_index = {
             type_code: idx for idx, type_code in enumerate(sorted(self.type_set))
         }
+
+        super().__init__(scheduler)
 
         # static observation features
         # 1-1 #
@@ -69,18 +68,14 @@ class MLPHandler(ObservationHandler):
         scheduler = self.scheduler
 
         # 1-1 total count per operation type
-        for job_template in scheduler.job_templates:
-            for op_template in job_template.operation_template_sequence:
-                self.op_type_counts[self.type_index[op_template.type_code]] += 1
+        for op_template in scheduler.operation_templates:
+            self.op_type_counts[self.type_index[op_template.type_code]] += 1
 
         # 1-2 duration statistics per operation type
-        for job_template in scheduler.job_templates:
-            for op_template in job_template.operation_template_sequence:
-                idx = self.type_index[op_template.type_code]
-                # append duration to the corresponding type
-                self.durations[idx] = np.append(
-                    self.durations[idx], op_template.duration
-                )
+        for op_template in scheduler.operation_templates:
+            idx = self.type_index[op_template.type_code]
+            # append duration to the corresponding type
+            self.durations[idx] = np.append(self.durations[idx], op_template.duration)
 
         # calculate mean and std for each type
         for idx in range(self.num_op_types):
@@ -111,8 +106,8 @@ class MLPHandler(ObservationHandler):
 
         for mt_idx, machine_template in enumerate(scheduler.machine_templates):
             supported_type_indices = [
-                self.type_index[op_template.type_code]
-                for op_template in machine_template.operation_template_sequence
+                self.type_index[type_code]
+                for type_code in machine_template.supported_operation_type_codes
             ]
             self.machine_ability[mt_idx] = encode_ability(supported_type_indices)
 
@@ -193,15 +188,15 @@ class MLPHandler(ObservationHandler):
                     low=0, high=10, shape=(self.J,), dtype=np.int16
                 ),
                 # 추정 tardiness 관련 지표
-                "mean_estimated_tardiness_per_job": spaces.Box(
-                    low=-100, high=100, shape=(self.J,), dtype=np.float16
-                ),
-                "std_estimated_tardiness_per_job": spaces.Box(
-                    low=-100, high=100, shape=(self.J,), dtype=np.float16
-                ),
-                "cur_estimated_tardiness_per_job": spaces.Box(
-                    low=-100, high=100, shape=(self.J,), dtype=np.float16
-                ),
+                # "mean_estimated_tardiness_per_job": spaces.Box(
+                #     low=-100, high=100, shape=(self.J,), dtype=np.float16
+                # ),
+                # "std_estimated_tardiness_per_job": spaces.Box(
+                #     low=-100, high=100, shape=(self.J,), dtype=np.float16
+                # ),
+                # "cur_estimated_tardiness_per_job": spaces.Box(
+                #     low=-100, high=100, shape=(self.J,), dtype=np.float16
+                # ),
                 # cost 관련 지표
                 "current_costs": spaces.Box(
                     low=0, high=50000, shape=(3,), dtype=np.float16
