@@ -1,8 +1,9 @@
 from __future__ import annotations
+from pathlib import Path
 from typing import Mapping, Type
 
 from rl_scheduler.contract_generator import ContractGenerator, DeterministicGenerator
-from .action_handler import MJRHandler, ActionHandler
+from .action_handler import MJHandler, MJRHandler, ActionHandler
 from .observation_handler import MLPHandler, BasicStateHandler, ObservationHandler
 from .reward_handler import ProfitCostHandler, MakespanHandler, RewardHandler
 from .info_handler import InfoHandler, BasicInfoHandler
@@ -15,7 +16,7 @@ _CONTRACT_GENERATORS: Mapping[str, Type[ContractGenerator]] = {
 
 _ACTION_HANDLERS: Mapping[str, Type[ActionHandler]] = {
     "mjr": MJRHandler,
-    "mj": MJRHandler,
+    "mj": MJHandler,
 }
 
 _OBSERVATION_HANDLERS: Mapping[str, Type[ObservationHandler]] = {
@@ -33,13 +34,16 @@ _INFO_HANDLERS: Mapping[str, Type[InfoHandler]] = {
 }
 
 
-def get_contract_generator(name: str | None) -> ContractGenerator:
+def get_contract_generator(
+    name: str | None,
+    contract_path: str | Path,
+) -> ContractGenerator:
     if name is None:
-        return DeterministicGenerator()
+        return DeterministicGenerator(contract_path)
     cls = _CONTRACT_GENERATORS.get(name.lower())
     if cls is None:
         raise KeyError(f"Unknown contract generator: {name!r}")
-    return cls()
+    return cls(contract_path)
 
 
 def get_action_handler(
