@@ -4,6 +4,8 @@ from rl_scheduler.scheduler.slot_allocator.linear_slot_allocator import (
     LinearSlotAllocator,
 )
 from rl_scheduler.scheduler.operation import OperationInstance, OperationTemplate
+from rl_scheduler.scheduler.job import JobInstance, JobTemplate
+from rl_scheduler.scheduler.profit import ProfitFunction
 
 
 @pytest.fixture
@@ -15,10 +17,31 @@ def machine_instance():
 
 
 @pytest.fixture
-def operation_instance():
-    operation = MagicMock()
-    operation.earliest_start_time = 10
-    operation.duration = 5
+def job_instance():
+    job_template = MagicMock(spec=JobTemplate)
+    profit_function = MagicMock(spec=ProfitFunction)
+    job = JobInstance(
+        job_instance_id=1,
+        job_template=job_template,
+        color=(1.0, 0.0, 0.0, 1.0),
+        profit_fn=profit_function,
+    )
+    return job
+
+
+@pytest.fixture
+def operation_instance(job_instance):
+    operation_template = OperationTemplate(
+        operation_template_id=0, job_template_id=0, type_code="A", duration=5
+    )
+    operation = OperationInstance(
+        operation_template=operation_template,
+        predecessor=None,
+        successor=None,
+        earliest_start_time=10,
+    )
+    operation.set_job_instance(job_instance)
+    job_instance.set_operation_instance_sequence([operation])
     return operation
 
 
@@ -70,18 +93,7 @@ def test_find_slot_after_last_operation(machine_instance, operation_instance):
     assert index == 1
 
 
-def test_allocate_operation(machine_instance):
-    # Create a real OperationTemplate and OperationInstance
-    operation_template = OperationTemplate(
-        operation_template_id=0, job_template_id=0, type_code="A", duration=5
-    )
-    operation_instance = OperationInstance(
-        operation_template=operation_template,
-        predecessor=None,
-        successor=MagicMock(),
-        earliest_start_time=10,
-    )
-
+def test_allocate_operation(machine_instance, operation_instance):
     slot = {"start_time": 10, "end_time": 15}
     insert_index = 0
 
@@ -94,3 +106,4 @@ def test_allocate_operation(machine_instance):
     assert operation_instance.end_time == 15
     assert operation_instance.processing_machine == machine_instance
     assert machine_instance.assigned_operations[0] == operation_instance
+    assert operation_instance.job_instance.next_op_idx == 1

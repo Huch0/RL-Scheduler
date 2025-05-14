@@ -59,6 +59,9 @@ class OperationInstance:
             machine_instance.last_assigned_end_time, end_time
         )
 
+        # Update the job instance's next operation
+        self.job_instance.next_op_idx += 1
+
         # If the operation is the last in the sequence, mark the job as completed
         if self.successor is None:
             self.job_instance.completed = True

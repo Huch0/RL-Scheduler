@@ -9,17 +9,18 @@ class ContractGenerator(ABC):
     Abstract base class for generating contracts.
     """
 
-    @staticmethod
+    def __init__(self, contract_path: Path):
+        self.contract_path = contract_path
+
     @abstractmethod
-    def load_profit_fn(file_path: Path) -> List[List[ProfitFunction]]:
+    def load_profit_fn() -> List[List[ProfitFunction]]:
         """
         Load profit functions from a file.
         """
         pass
 
-    @staticmethod
     @abstractmethod
-    def load_repetition(file_path: Path) -> List[int]:
+    def load_repetition() -> List[int]:
         """
         Load repetition data from a file.
         """

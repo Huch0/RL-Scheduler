@@ -45,7 +45,8 @@ def load_environment(
 
         # 4. reset the environment to load the contract
         try:
-            env.reset(seed=seed, options={"contract_path": c_path})
+            env.contract_generator.contract_path = c_path
+            env.reset(seed=seed)
         except Exception:
             tb = traceback.format_exc()
             print(tb, file=sys.stderr)
@@ -75,7 +76,8 @@ def reset_env(env, contract_file):
         c_path = _dump_to_temp(contract_file)
 
         # 2. reset the environment with the new contract
-        env.reset(options={"contract_path": c_path})
+        env.contract_generator.contract_path = c_path
+        env.reset()
 
     except Exception:
         tb = traceback.format_exc()
