@@ -1,5 +1,6 @@
 import gymnasium as gym
 from pathlib import Path
+import pickle
 from rl_scheduler.scheduler.scheduler import Scheduler
 from rl_scheduler.contract_generator import ContractGenerator
 from .action_handler import ActionHandler
@@ -47,16 +48,9 @@ class RJSPEnv(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
 
-        # Extract contract_path from options if provided
-        contract_path = None
-        if options and "contract_path" in options:
-            contract_path = Path(options["contract_path"])
-        else:
-            raise ValueError("contract_path must be provided in options.")
-
         # Load repetitions and profit functions
-        repetitions = self.contract_generator.load_repetition(contract_path)
-        profit_functions = self.contract_generator.load_profit_fn(contract_path)
+        repetitions = self.contract_generator.load_repetition()
+        profit_functions = self.contract_generator.load_profit_fn()
 
         # Reset the scheduler
         self.scheduler.reset(repetitions=repetitions, profit_functions=profit_functions)
@@ -68,11 +62,10 @@ class RJSPEnv(gym.Env):
         return self.observation_handler.get_observation(), self.info_handler.get_info()
 
     def step(self, action):
-        converted_action = self.action_handler.convert_action(action)
-        chosen_machine_id, chosen_job_id, chosen_repetition = converted_action
-
         # Execute a scheduling step
         try:
+            converted_action = self.action_handler.convert_action(action)
+            chosen_machine_id, chosen_job_id, chosen_repetition = converted_action
             self.scheduler.step(chosen_machine_id, chosen_job_id, chosen_repetition)
         except ValueError as e:
             # Invalid action: keep env state unchanged and notify caller.
@@ -118,3 +111,30 @@ class RJSPEnv(gym.Env):
     def close(self):
         # Optional: Clean up resources
         pass
+
+    def save(self, dir_path: str | Path):
+        """
+        Save the entire environment state to a single file for later restoration.
+        """
+
+        # Ensure the target directory exists
+        dir_path = Path(dir_path)
+        dir_path.mkdir(parents=True, exist_ok=True)
+
+        # Save environment to env.pkl inside the directory
+        file_path = dir_path / "env.pkl"
+        with file_path.open("wb") as f:
+            pickle.dump(self, f)
+
+    @classmethod
+    def load(cls, path: str | Path) -> "RJSPEnv":
+        """
+        Load an environment saved via `save()` from the given file.
+        """
+        import pickle
+        from pathlib import Path
+
+        path = Path(path)
+        with path.open("rb") as f:
+            env = pickle.load(f)
+        return env
