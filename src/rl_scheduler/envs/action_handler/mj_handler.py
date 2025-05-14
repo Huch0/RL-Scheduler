@@ -57,10 +57,11 @@ class MJHandler(ActionHandler):
         # `assign_priority()` returns a list of chosen repetition per job
         # template
         priorities = self.priority_rule.assign_priority()
-        try:
-            repetition_idx = priorities[job_idx]
-        except IndexError:
-            raise IndexError(f"Priority rule returned no entry for job index {job_idx}")
+        repetition_idx = priorities[job_idx]
+        if repetition_idx == -1:
+            raise ValueError(
+                f"All job instances are already assigned for job {job_idx}"
+            )
 
         return machine_idx, job_idx, repetition_idx
 
