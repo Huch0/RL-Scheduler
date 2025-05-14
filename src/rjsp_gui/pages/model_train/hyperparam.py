@@ -35,7 +35,7 @@ def _load_yaml(text: str) -> Dict[str, Any]:
 
 def render_hyperparam_tab() -> Dict[str, Any]:
     """Render the Hyper‑Parameter tab and return config dict."""
-    st.subheader("Model Algorithm & Hyper‑Parameters")
+    st.subheader("Model Algorithm & Hyperparameters")
 
     # SB3 algorithm documentation links
     DOCS = {
