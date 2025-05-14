@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Mapping, Type
 
 from rl_scheduler.contract_generator import ContractGenerator, DeterministicGenerator
+
 from .action_handler import MJHandler, MJRHandler, ActionHandler
 from .observation_handler import MLPHandler, BasicStateHandler, ObservationHandler
 from .reward_handler import ProfitCostHandler, MakespanHandler, RewardHandler
@@ -12,6 +13,7 @@ from rl_scheduler.scheduler import Scheduler
 
 _CONTRACT_GENERATORS: Mapping[str, Type[ContractGenerator]] = {
     "deterministic": DeterministicGenerator,
+    "stochastic": StochasticGenerator,
 }
 
 _ACTION_HANDLERS: Mapping[str, Type[ActionHandler]] = {

@@ -4,12 +4,6 @@ import os
 import sys
 from pathlib import Path
 
-# ───────────────────────────────────────────────────
-# 프로젝트 src 폴더를 PYTHONPATH에 추가 (rjsp_gui 패키지 인식용)
-# __file__ → pages/interaction.py
-# parents[2] → src
-sys.path.insert(0, str(Path(__file__).parents[2]))
-
 from rjsp_gui.pages.config.job import render_job_config
 from rjsp_gui.pages.config.machine import render_machine_config
 from rjsp_gui.pages.config.contract import render_contract_config
