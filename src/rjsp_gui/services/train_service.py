@@ -113,26 +113,16 @@ def train_model(
     with (run_dir / "scheduler.pkl").open("wb") as f:
         pickle.dump(env.scheduler, f)
 
-    tmp_dir = Path(env._tmp_dir)
-    m_cfg_path = tmp_dir / "machines.json"
-    j_cfg_path = tmp_dir / "jobs.json"
-    o_cfg_path = tmp_dir / "operations.json"
-    # Load JSON contents for embedding
-    machine_cfg   = json.loads(m_cfg_path.read_text())
-    job_cfg       = json.loads(j_cfg_path.read_text())
-    operation_cfg = json.loads(o_cfg_path.read_text())
-
+    # Extract scheduler template data for embedding as serializable dictionaries
+    scheduler_templates = env.scheduler.get_templates_as_dicts()
+    
+    # contract.json 파일의 내용을 직접 로드
+    contract_content = json.loads(contract_path.read_text())
+    
     env_config: Dict[str, Any] = {
-        "scheduler": {
-            "machine_config_path": str(m_cfg_path),
-            "job_config_path": str(j_cfg_path),
-            "operation_config_path": str(o_cfg_path),
-            "machine_config": machine_cfg,
-            "job_config": job_cfg,
-            "operation_config": operation_cfg,
-        },
+        "scheduler": scheduler_templates,
         "contract_generator": "stochastic" if isinstance(contract_file, dict) else "deterministic",
-        "contract_path": str(tmp_dir / "contract.json"),
+        "contracts": contract_content,
         "action_handler": action_handler,
         "action_handler_kwargs": {"priority_rule_id": "etd"},
         "observation_handler": observation_handler,
@@ -181,7 +171,5 @@ def train_model(
         num_envs            = num_envs,
         max_episode_steps   = max_epi_steps,
     )
-
-    # 7) 결과 zip 생성 (GUI 다운로드용)
-    (run_dir / "artifacts.zip").write_bytes(zip_artifacts(run_dir).getvalue())
+        
     return run_dir
