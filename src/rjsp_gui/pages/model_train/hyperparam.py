@@ -12,22 +12,9 @@ from pathlib import Path
 from typing import Dict, Any
 
 import streamlit as st
-import yaml
+import json
 
 __all__ = ["render_hyperparam_tab"]
-
-# -------------------------------------------------------------------
-# Helper
-# -------------------------------------------------------------------
-
-def _load_yaml(text: str) -> Dict[str, Any]:
-    """Safely parse YAML text → dict; fallback to empty dict on error."""
-    try:
-        return yaml.safe_load(text) or {}
-    except Exception:
-        st.warning("⚠️ Invalid YAML — ignored.")
-        return {}
-
 
 # -------------------------------------------------------------------
 # Main Render Function
@@ -37,73 +24,68 @@ def render_hyperparam_tab() -> Dict[str, Any]:
     """Render the Hyper‑Parameter tab and return config dict."""
     st.subheader("Model Algorithm & Hyperparameters")
 
-    # SB3 algorithm documentation links
-    DOCS = {
-        "PPO": "https://stable-baselines3.readthedocs.io/en/master/modules/ppo.html#parameters",
-        "DQN": "https://stable-baselines3.readthedocs.io/en/master/modules/dqn.html#parameters",
-        "A2C": "https://stable-baselines3.readthedocs.io/en/master/modules/a2c.html#parameters",
-        "DDPG": "https://stable-baselines3.readthedocs.io/en/master/modules/ddpg.html#parameters",
+    # ---------- Algorithm selector ----------
+    algo = st.selectbox("Algorithm", ["PPO", "MaskablePPO", "DQN", "A2C", "DDPG"], key="mt_algo")
+
+    # ---------- Upload or edit JSON ----------
+    up_file = st.file_uploader("Upload SB3 hyper-param JSON (optional)", type=["json"], key="hp_json")
+
+    default_json = {
+        "hyperparameters": {
+            "policy": "MultiInputPolicy",
+            "n_steps": 2048,
+            "batch_size": 256,
+            "learning_rate": 3e-4,
+            "gamma": 0.99,
+            "gae_lambda": 0.95,
+            "n_epochs": 10,
+            "clip_range": 0.2,
+            "ent_coef": 0.0,
+            "vf_coef": 0.5,
+            "max_grad_norm": 0.5,
+            "device": "auto",
+            "seed": 42,
+            "verbose": 1,
+        }
     }
-    # Algorithm selector with link to docs
-    algo = st.selectbox("Algorithm", list(DOCS), key="mt_algo")
-    st.markdown(
-        f"ℹ️ Detailed hyper-parameter list: [SB3 {algo} docs]({DOCS[algo]})",
-        unsafe_allow_html=True,
-    )
 
-    # --- SB3 YAML hyper‑parameters ----------------------------------
-    up_file = st.file_uploader("Upload SB3 hyper‑param YAML (optional)", type=["yml", "yaml"], key="hp_yaml")
-
-    # default hyperparameter YAML
-    default_yaml = '''algorithm: ppo
-
-model:
-  policy_type: MultiInputPolicy
-  net_arch:
-    pi: [512, 256, 128]
-    vf: [512, 256, 256, 256]
-  activation_fn: relu
-
-train:
-  learning_rate: 0.0003
-  gamma: 0.99
-  gae_lambda: 0.95
-  n_steps: 2048
-  batch_size: 256
-  minibatch_size: 64
-  n_epochs: 10
-  clip_range: 0.2
-  ent_coef: 0.0
-  vf_coef: 0.5
-  max_grad_norm: 0.5
-''' 
     if up_file:
-        yaml_text = up_file.getvalue().decode()
-        yaml_dict = _load_yaml(yaml_text)
-        st.success("YAML loaded ✅")
+        json_text = up_file.getvalue().decode()
+        try:
+            cfg_dict = json.loads(json_text)
+            st.success("JSON loaded ✅")
+        except Exception as e:
+            st.error(f"Invalid JSON: {e}")
+            cfg_dict = default_json
     else:
-        # initialize default text only on first load
         if "hp_text" not in st.session_state:
-            st.session_state["hp_text"] = default_yaml
-        # use text_area bound to session state; value is managed by Streamlit
-        yaml_text = st.text_area("Paste / edit SB3 YAML", height=200, key="hp_text")
-        yaml_dict = _load_yaml(st.session_state["hp_text"])
+            st.session_state["hp_text"] = json.dumps(default_json, indent=4)
+        json_text = st.text_area("Paste SB3 hyper-parameters JSON", height=260, key="hp_text")
+        try:
+            cfg_dict = json.loads(json_text)
+        except Exception:
+            st.warning("⚠️ Invalid JSON — using defaults.")
+            cfg_dict = default_json
 
-    # Sampling Strategy removed (handled by handler)
-    cfg: Dict[str, Any] = {
+    # ---------- Save to session_state ----------
+    final_cfg = {
         "algorithm": algo,
-        "sb3_hyperparams": yaml_dict,
+        "hyperparameters": cfg_dict.get("hyperparameters", {}),
     }
+    # Store hyperparameter config for use in train_viz_tab
+    st.session_state["hparam_cfg"] = final_cfg
 
-    # YAML download ---------------------------------------------------
-    yaml_text = yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True)
-    st.download_button(
-        "Download train_config.yaml",
-        data=yaml_text,
-        file_name="train_config.yaml",
-        mime="text/yaml",
-    )
-
-    # Persist to session_state for downstream tabs
-    st.session_state["hparam_cfg"] = cfg
-    return cfg
+    # Preview and download only when not loading from file
+    if not up_file:
+        st.markdown("### Generated Hyperparameter JSON")
+        st.code(json.dumps(final_cfg, indent=4), language="json")
+        st.download_button(
+            "Download hyper-parameters JSON",
+            data=json.dumps(final_cfg, indent=4),
+            file_name=f"hp_{algo}.json",
+            mime="application/json",
+            key="hp_json_dl",
+        )
+    # Ensure hyperparams available for training tab
+    st.session_state["hparam_cfg"] = final_cfg
+    return final_cfg

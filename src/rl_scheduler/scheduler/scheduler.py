@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Dict, Any
 from pathlib import Path
 from .factory import InstanceFactory, TemplateLoader
 from .job import JobInstance
@@ -44,6 +44,14 @@ class Scheduler:
         )
         self.timestep = 0
 
+    def get_templates_as_dicts(self) -> Dict[str, Any]:
+        """템플릿들을 JSON 직렬화 가능한 사전 형태로 반환합니다."""
+        return {
+            "machine_config": [template.to_dict() for template in self.machine_templates],
+            "job_config": [template.to_dict() for template in self.job_templates],
+            "operation_config": [template.to_dict() for template in self.operation_templates]
+        }
+        
     def step(self, chosen_machine_id: int, chosen_job_id: int, chosen_repetition: int):
         """
         Executes a single scheduling step based on the provided action.

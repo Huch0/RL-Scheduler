@@ -105,6 +105,7 @@ def render_handler_tab() -> Dict[str, Any]:
                 mu_dl=dl_mu,  sd_dl=dl_sd,
                 mu_pr=price_mu, sd_pr=price_sd,
                 mu_lp=pen_mu,   sd_lp=pen_sd,
+                key=f"profit_{jid}",
             )
 
             # 3‑4) Save sampling dict -------------------------------------------
