@@ -147,7 +147,7 @@ with left_col:
                     # Execute the action in the environment
                     obs, reward, terminated, truncated, info = env.step(action)
                     st.success(f"Sampled action: {action}\n(reward={reward:.2f})")
-                    st.session_state.setdefault("action_log", []).append(action)
+                    st.session_state.setdefault("action_log", []).append(action.item())
                     _refresh_manual_selectors()
                 except Exception as e:
                     st.error(f"Failed to sample action: {e}")
@@ -175,7 +175,7 @@ with left_col:
                     # Execute the action in the environment
                     obs, reward, terminated, truncated, info = env.step(action)
                     st.success(f"Sampled action: {action}\n(reward={reward:.2f})")
-                    st.session_state.setdefault("action_log", []).append(action)
+                    st.session_state.setdefault("action_log", []).append(action.item())
                     _refresh_manual_selectors()
 
                 except Exception as e:
@@ -210,7 +210,9 @@ with left_col:
                             deterministic=False,
                         )
                         obs, reward, terminated, truncated, info = env.step(action)
-                        st.session_state.setdefault("action_log", []).append(action)
+                        st.session_state.setdefault("action_log", []).append(
+                            action.item()
+                        )
                         total_reward += reward
                         steps += 1
 
@@ -250,7 +252,9 @@ with left_col:
                             deterministic=True,
                         )
                         obs, reward, terminated, truncated, info = env.step(action)
-                        st.session_state.setdefault("action_log", []).append(action)
+                        st.session_state.setdefault("action_log", []).append(
+                            action.item()
+                        )
                         total_reward += reward
                         steps += 1
 
@@ -424,6 +428,7 @@ with left_col:
         seq_file = st.file_uploader(
             "Load Action Sequence", type=["json"], key="log_seq_file"
         )
+    with log_cols[1]:
         if st.button("Load Action Sequence", key="log_load", disabled=seq_file is None):
             if "env" not in st.session_state or st.session_state["env"] is None:
                 st.warning("Load an environment first.")
@@ -450,7 +455,7 @@ with left_col:
                     st.success("Action sequence loaded and executed.")
                 except Exception as e:
                     st.error(f"Failed to load action sequence: {e}")
-    with log_cols[1]:
+
         if st.button(
             "Save Current Action Sequence",
             key="log_save",
@@ -499,8 +504,8 @@ with right_col:
         else:
             st.info("Load an environment to view Job Queue")
 
-        # Disable export until implemented
-        st.button("Export", key="export_job_queue", disabled=True)
+        # # Disable export until implemented
+        # st.button("Export", key="export_job_queue", disabled=True)
 
     # --- Machine Schedule (collapsible) ---
     st.subheader("Machine Schedule")
