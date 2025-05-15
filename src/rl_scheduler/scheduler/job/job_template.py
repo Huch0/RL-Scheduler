@@ -9,9 +9,7 @@ class JobTemplate:
         color: str = "#FF0000",
     ):
         self.job_template_id = job_template_id
-        # self.color = color
-        # Red for now, to be replaced with a color scheme
-        self.color = "#FF0000"
+        self.color = color
         self.operation_template_sequence = operation_template_sequence
 
     def __str__(self):
