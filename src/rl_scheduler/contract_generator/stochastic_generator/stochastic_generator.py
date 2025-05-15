@@ -17,8 +17,9 @@ class StochasticGenerator(ContractGenerator):
     }
     base_contracts should be dict from deterministic JSON: {"job_<id>": [{...}, ...]}
     """
-    # cache to store last samples per sampling file
-    _cache: Dict[str, Dict[str, Any]] = {}
+    def __init__(self, contract_path: Path):
+        super().__init__(contract_path)
+        self._cache: Dict[str, Dict[str, Any]] = {}
 
     def load_repetition(self) -> List[int]:
         """
@@ -58,7 +59,7 @@ class StochasticGenerator(ContractGenerator):
             penalties.append(penlist)
         # cache samples
         key = str(self.contract_path.resolve())
-        StochasticGenerator._cache[key] = {
+        self._cache[key] = {
             'repetition': reps,
             'deadlines': deadlines,
             'prices': prices,
@@ -69,7 +70,7 @@ class StochasticGenerator(ContractGenerator):
     def load_profit_fn(self) -> List[List[ProfitFunction]]:
         # Construct profit functions using cached samples
         key = str(self.contract_path.resolve())
-        state = StochasticGenerator._cache.get(key, {})
+        state = self._cache.get(key, {})
         reps = state.get('repetition', [])
         deadlines = state.get('deadlines', [])
         prices = state.get('prices', [])
