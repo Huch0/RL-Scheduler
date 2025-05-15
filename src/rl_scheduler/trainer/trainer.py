@@ -15,6 +15,25 @@ from stable_baselines3.common.monitor import Monitor
 import copy
 import time
 from gymnasium.wrappers import TimeLimit
+import shutil
+
+_SUPPORTED_ALGOS = {
+    "PPO": PPO,
+    "MaskablePPO": MaskablePPO,
+    # Add other algorithms here as needed
+}
+
+
+def load_sb3_algo(algo_name: str):
+    """
+    Load the specified algorithm from Stable Baselines3 or SB3 Contrib.
+    """
+    algo_name = algo_name.strip()
+    if algo_name in _SUPPORTED_ALGOS:
+        return _SUPPORTED_ALGOS[algo_name]
+    else:
+        print(f"Algorithm '{algo_name}' not found in Stable Baselines3.")
+        return None
 
 
 def train_agent(
@@ -97,15 +116,16 @@ def train_agent(
             callback=[checkpoint_callback, eval_callback],
             progress_bar=True,
         )
-    except KeyboardInterrupt as e:
+    except KeyboardInterrupt:
         print("Training interrupted. Saving model...")
-        raise e
-
-    print("Training finished.")
 
     # Save final model
     model_path = os.path.join(save_dir, "final_model.zip")
     model.save(model_path)
+
+    # zip the training directory
+    save_train_zip(save_dir)
+    print("Training finished.")
 
 
 def prepare_training(
@@ -170,6 +190,29 @@ def prepare_training(
     train_kwargs["save_dir"] = save_dir
     train_kwargs.pop("agent_name")
     return train_kwargs
+
+
+def save_train_zip(save_dir: str):
+    """
+    Save the training directory as a zip file.
+    """
+    # Determine the parent directory and the target folder name
+    parent_dir, dir_name = os.path.split(save_dir)
+    # Handle case if save_dir ends with a trailing slash
+    if not dir_name:
+        parent_dir, dir_name = os.path.split(parent_dir)
+
+    # Base name (path without extension) for the zip file
+    base_name = os.path.join(parent_dir, dir_name)
+    # Create a zip archive of the directory
+    zip_file_path = shutil.make_archive(
+        base_name=base_name,
+        format="zip",
+        root_dir=parent_dir,
+        base_dir=dir_name,
+    )
+
+    print(f"Training files saved to {zip_file_path}")
 
 
 def main():
