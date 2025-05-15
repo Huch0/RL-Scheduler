@@ -1,71 +1,187 @@
-import io
-import json
-import pickle
-import tempfile
+# src/rjsp_gui/services/train_service.py
+from __future__ import annotations
+import io, json, pickle, tempfile, zipfile
 from pathlib import Path
+from datetime import datetime
+from typing import Any, Dict
 
 from rl_scheduler.envs.utils import make_env
+from rl_scheduler.trainer.trainer import load_sb3_algo, train_agent
 from rl_scheduler.envs.rjsp_env import RJSPEnv
 
-__all__ = ["build_env"]
+__all__ = ["build_env", "train_model", "make_run_dir", "zip_artifacts"]
 
+# ───────────────────────── helpers ──────────────────────────
+def make_run_dir(root: Path, agent: str) -> Path:
+    run_dir = root / agent / datetime.now().strftime("%Y%m%d-%H%M%S")
+    run_dir.mkdir(parents=True, exist_ok=True)
+    return run_dir
 
-def build_env(scheduler_buf: io.BytesIO,
-              contract_file,  # file-like object or path to contract JSON
-              action_handler,
-              observation_handler,
-              reward_handler,
-              info_handler) -> RJSPEnv:
+def zip_artifacts(run_dir: Path) -> io.BytesIO:
+    """run_dir 내 결과물을 하나의 zip 버퍼로 반환"""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for p in run_dir.rglob("*"):
+            if p.is_file() and p.suffix.lower() in {".zip", ".csv", ".npz",
+                                                    ".json", ".pkl"}:
+                zf.write(p, p.relative_to(run_dir))
+    buf.seek(0)
+    return buf
+
+# ────────────────── environment builder ─────────────────────
+def build_env(
+    scheduler_buf: io.BytesIO,
+    contract_file: Any | None,          # dict | file-like | Path | None
+    *,
+    action_handler: str | None,
+    observation_handler: str | None,
+    reward_handler: str | None,
+    info_handler: str | None,
+) -> tuple[RJSPEnv, Path]:
     """
-    Build and initialize the RJSP environment from scheduler pickle buffer and contract JSON.
-
-    Parameters
-    ----------
-    scheduler_buf : io.BytesIO
-        Pickle buffer containing the Scheduler object.
-    contract_file : Uploaded file or file path for contracts JSON.
-    action_handler : ActionHandler instance
-    observation_handler : ObservationHandler instance
-    reward_handler : RewardHandler instance
-    info_handler : InfoHandler instance
-
-    Returns
-    -------
-    env : RJSPEnv
-        Initialized Gym environment ready for reset/step.
+    Returns (env, contract_path)
     """
-    # Create temporary directory
-    tmp_dir = tempfile.TemporaryDirectory()
-    tmp_path = Path(tmp_dir.name)
+    scheduler = pickle.loads(scheduler_buf.getvalue())
 
-    # Write scheduler pickle to file
-    sched_path = tmp_path / "scheduler.pkl"
-    with sched_path.open("wb") as f:
-        f.write(scheduler_buf.getvalue())
-
-    # Write contract JSON to file
-    if hasattr(contract_file, "read"):
+    # contract JSON → tmp 폴더 영구화
+    tmp_dir        = Path(tempfile.mkdtemp(prefix="rjsp_"))
+    contract_path  = tmp_dir / "contract.json"
+    if isinstance(contract_file, dict):
+        contract_data = contract_file
+    elif hasattr(contract_file, "read"):
         contract_data = json.load(contract_file)
+    elif contract_file:
+        contract_data = json.loads(Path(contract_file).read_text())
     else:
-        contract_data = json.load(open(contract_file, "r"))
-    contract_path = tmp_path / "contracts.json"
-    with contract_path.open("w", encoding="utf-8") as f:
-        json.dump(contract_data, f, indent=4)
+        contract_data = {"contracts": {}}
+    contract_path.write_text(json.dumps(contract_data, indent=4))
 
-    # Determine which contract generator to use (sampling vs deterministic)
-    cg_name = "stochastic" if "sampling" in contract_data else None
-    config_path = contract_path
+    cg_name = "stochastic" if "sampling" in contract_data else "deterministic"
 
-    # Load scheduler and build environment via factory
-    scheduler = pickle.load(open(sched_path, "rb"))
     env = make_env(
-        scheduler=scheduler,
-        contract_generator=cg_name,
-        action_handler=action_handler,
-        observation_handler=observation_handler,
-        reward_handler=reward_handler,
-        info_handler=info_handler,
+        scheduler              = scheduler,
+        contract_generator     = cg_name,
+        contract_path          = contract_path,
+        action_handler         = action_handler,
+        action_handler_kwargs  = {"priority_rule_id": "etd"},
+        observation_handler    = observation_handler,
+        observation_handler_kwargs = {"time_horizon": 1000},
+        reward_handler         = reward_handler,
+        reward_handler_kwargs  = {"weights": {"C_max": 10., "C_mup": 2., "C_mid": 1.}},
+        info_handler           = info_handler,
     )
-    # Initialize environment with contracts JSON
-    env.reset(options={"contract_path": str(config_path)})
-    return env
+    env.reset()
+    return env, contract_path
+
+# ───────────────────── 학습 실행기 ───────────────────────────
+def train_model(
+    *,
+    scheduler_buf: io.BytesIO,
+    contract_file: Any | None,
+    hp_cfg: Dict[str, Any],          # {"algorithm": str, "hyperparameters": {...}}
+    agent_name: str,
+    log_root: Path,
+    total_steps: int,
+    eval_freq: int,
+    ckpt_freq: int,
+    action_handler: str | None = None,
+    observation_handler: str | None = None,
+    reward_handler: str | None = None,
+    info_handler: str | None = None,
+    num_envs: int = 1,
+    max_epi_steps: int = 1_000,
+) -> Path:
+    """
+    End-to-end trainer (blocking). 반환값: run_dir Path
+    """
+    # 1) run 디렉터리
+    run_dir = make_run_dir(log_root, agent_name)
+
+    # 2) 환경 생성
+    env, contract_path = build_env(
+        scheduler_buf        = scheduler_buf,
+        contract_file        = contract_file,
+        action_handler       = action_handler,
+        observation_handler  = observation_handler,
+        reward_handler       = reward_handler,
+        info_handler         = info_handler,
+    )
+
+    # 3) env.pkl 저장
+    env.save(run_dir)                         # env.pkl
+    #    scheduler.pkl (재현성을 위해)
+    with (run_dir / "scheduler.pkl").open("wb") as f:
+        pickle.dump(env.scheduler, f)
+
+    tmp_dir = Path(env._tmp_dir)
+    m_cfg_path = tmp_dir / "machines.json"
+    j_cfg_path = tmp_dir / "jobs.json"
+    o_cfg_path = tmp_dir / "operations.json"
+    # Load JSON contents for embedding
+    machine_cfg   = json.loads(m_cfg_path.read_text())
+    job_cfg       = json.loads(j_cfg_path.read_text())
+    operation_cfg = json.loads(o_cfg_path.read_text())
+
+    env_config: Dict[str, Any] = {
+        "scheduler": {
+            "machine_config_path": str(m_cfg_path),
+            "job_config_path": str(j_cfg_path),
+            "operation_config_path": str(o_cfg_path),
+            "machine_config": machine_cfg,
+            "job_config": job_cfg,
+            "operation_config": operation_cfg,
+        },
+        "contract_generator": "stochastic" if isinstance(contract_file, dict) else "deterministic",
+        "contract_path": str(tmp_dir / "contract.json"),
+        "action_handler": action_handler,
+        "action_handler_kwargs": {"priority_rule_id": "etd"},
+        "observation_handler": observation_handler,
+        "observation_handler_kwargs": {"time_horizon": 1000},
+        "reward_handler": reward_handler,
+        "reward_handler_kwargs": {"weights": {"C_max": 10.0, "C_mup": 2.0, "C_mid": 1.0}},
+        "info_handler": info_handler,
+    }
+    (run_dir / "env_config.json").write_text(json.dumps(env_config, indent=4))
+
+    # 5) train_config.json 저장
+    train_cfg = {
+        "agent_name": agent_name,
+        "ALGO": hp_cfg["algorithm"],
+        "total_timesteps": total_steps,
+        "checkpoint_freq": ckpt_freq,
+        "eval_freq": eval_freq,
+        "num_envs": num_envs,
+        "max_episode_steps": max_epi_steps,
+        "hyperparameters": hp_cfg["hyperparameters"],
+    }
+    (run_dir / "train_config.json").write_text(json.dumps(train_cfg, indent=4))
+
+    # 6) 학습 실행
+
+    from stable_baselines3 import PPO, A2C, DQN, DDPG
+    from sb3_contrib import MaskablePPO
+    ALGO_TABLE = {
+        "PPO": PPO,
+        "MaskablePPO": MaskablePPO,
+        "DQN": DQN,
+        "A2C": A2C,
+        "DDPG": DDPG,
+    }
+    ALGO = ALGO_TABLE.get(hp_cfg["algorithm"])
+
+    train_agent(
+        env                 = env,
+        save_dir            = str(run_dir),
+        ALGO                = ALGO,
+        total_timesteps     = total_steps,
+        checkpoint_freq     = ckpt_freq,
+        num_eval_episodes   = 5,
+        eval_freq           = eval_freq,
+        hyperparameters     = hp_cfg["hyperparameters"],
+        num_envs            = num_envs,
+        max_episode_steps   = max_epi_steps,
+    )
+
+    # 7) 결과 zip 생성 (GUI 다운로드용)
+    (run_dir / "artifacts.zip").write_bytes(zip_artifacts(run_dir).getvalue())
+    return run_dir
