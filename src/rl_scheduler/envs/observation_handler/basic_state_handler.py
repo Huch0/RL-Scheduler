@@ -23,6 +23,14 @@ class BasicStateHandler(ObservationHandler):
             }
         )
 
+    def update_static_observation_features(self):
+        """
+        Update static observation features based on the Scheduler's configuration.
+        This method is called when the environment is reset.
+        """
+        # BasicStateHandler does not have static features to update.
+        pass
+
     def get_observation(self) -> dict:
         """
         Generate a dictionary-based observation.
