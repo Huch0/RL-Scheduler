@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Mapping, Type
 
 from rl_scheduler.contract_generator import ContractGenerator, DeterministicGenerator
+from rl_scheduler.contract_generator.stochastic_generator.stochastic_generator import StochasticGenerator
 
 from .action_handler import MJHandler, MJRHandler, ActionHandler
 from .observation_handler import MLPHandler, BasicStateHandler, ObservationHandler
