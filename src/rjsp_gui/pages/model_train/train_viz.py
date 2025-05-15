@@ -1,190 +1,131 @@
-"""Training & Visualization Tab – with Pause / Resume / Checkpoint Zip
-
-Features
-========
-• Run / Pause / Resume SB3 training
-• Auto‑save checkpoint zip (model.zip, env.pkl, metrics.csv) on *Pause*
-• Live metrics line chart (reward, episode length)
-• Validation rollout & GIF preview
-
-Implementation Notes
---------------------
-*   Uses a background `threading.Thread` with `Event` flags for stop / pause.
-*   Stores SB3 `model`, `env`, and log‑path in `st.session_state`.
-*   Checkpoint saved to `{log_dir}/checkpoint_{step}.zip` and offered for download.
 """
-
+Training & Visualization Tab
+────────────────────────────
+• Env.pkl + Hyper-Param(JSON) → background thread 학습
+• ▶ Start / ⏹ Stop
+• 진행 상황 Plotly 그래프
+• 학습 끝나면 artifacts.zip 다운로드
+"""
 from __future__ import annotations
 
-import io, os, pickle, threading, time, zipfile
-from datetime import datetime
+import io, pickle, threading, time, zipfile, sys
+from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any
 
 import pandas as pd
+import plotly.express as px
 import streamlit as st
-import matplotlib.pyplot as plt
-import json
 
-from rjsp_gui.services.train_service import build_env
+from rjsp_gui.services.train_service import (
+    make_run_dir,
+    train_model,
+    zip_artifacts,
+)
 
-# SB3 imports are inside try to avoid hard dependency when UI loads
-try:
-    from stable_baselines3 import PPO, DQN, A2C, DDPG
-except ImportError:  # pragma: no cover – allow UI w/o SB3
-    PPO = DQN = A2C = DDPG = object  # type: ignore
+def render_train_viz_tab():
+    """Render the training & visualization UI for RL training."""
+    # Initialize session state
+    def _init_state():
+        for key in ("thread", "run_dir", "start_time", "log_buf"): st.session_state.setdefault(key, None)
+    def _clear_state():
+        for key in ("thread", "run_dir", "start_time", "log_buf"): st.session_state.pop(key, None)
+    _init_state()
 
-__all__ = ["render_train_viz_tab"]
+    # Configuration inputs (no sidebar)
+    st.title("⚙️ Training Configuration")
+    agent_name = st.text_input("Agent name", "AGENT_NAME")
+    log_root = Path(st.text_input("Log directory", "./logs"))
+    total_steps = st.number_input("Total timesteps", 10_000, 10_000_000, 100_000, 10_000)
+    eval_freq = st.number_input("Eval freq (steps)", 1_000, 100_000, 10_000, 1_000)
+    ckpt_freq = st.number_input("Checkpoint freq (steps)", 1_000, 100_000, 10_000, 1_000)
+    env_file = st.file_uploader("Env.pkl (from Handler tab)", type="pkl")
+    hp_cfg = st.session_state.get("hparam_cfg")
+    if hp_cfg:
+        st.success(f"Hyper-params loaded ✔ ({hp_cfg['algorithm']})")
+    else:
+        st.warning("먼저 Hyper-Parameter 탭에서 설정하세요.")
 
-# -------------------------------------------------------------
-# Helper: background training thread
-# -------------------------------------------------------------
+    # Control buttons
+    col1, col2 = st.columns(2)
+    start_btn = col1.button("▶ Start", disabled=bool(st.session_state.thread))
+    stop_btn = col2.button("⏹ Stop", disabled=not st.session_state.thread)
 
-def _train_loop(model, total_steps: int, ckpt_interval: int, flags, log_csv: Path):
-    """Background SB3 learn() with pause / resume support."""
-    steps = 0
-    last_ckpt = 0
-    rewards = []
+    # Dashboard header and placeholders
+    st.header("🚀 RL Training Dashboard")
+    progress_bar = st.progress(0.0)
+    reward_metric = st.empty()
+    tabs = st.tabs(["📈 Live Plot", "📝 Logs"])
+    plot_placeholder = tabs[0].empty()
+    log_container    = tabs[1].container()
 
-    while steps < total_steps and not flags["stop"].is_set():
-        if flags["pause"].is_set():
-            time.sleep(0.5)
-            continue
-
-        model.learn(total_timesteps=1, reset_num_timesteps=False, progress_bar=False)
-        steps += 1
-        last_ckpt += 1
-
-        # dummy reward logging (replace with env info in callback)
-        rewards.append(model.num_timesteps)
-        if last_ckpt >= ckpt_interval:
-            last_ckpt = 0
-            _save_checkpoint(model, rewards, log_csv)
-
-    # final save when finished
-    _save_checkpoint(model, rewards, log_csv)
-    flags["finished"].set()
-
-
-def _save_checkpoint(model, rewards, log_csv: Path):
-    """Save model.zip + metrics csv and zip them for download."""
-    ts = int(time.time())
-    ckpt_dir = log_csv.parent
-    model_path = ckpt_dir / f"model_{ts}.zip"
-    csv_path = ckpt_dir / "metrics.csv"
-
-    model.save(model_path)
-    pd.DataFrame({"step": range(len(rewards)), "reward": rewards}).to_csv(csv_path, index=False)
-
-    # zip
-    zip_buf = io.BytesIO()
-    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.write(model_path, arcname=model_path.name)
-        zf.write(csv_path, arcname=csv_path.name)
-    zip_buf.seek(0)
-
-    st.session_state["last_ckpt"] = zip_buf
-
-# -------------------------------------------------------------
-# Main render
-# -------------------------------------------------------------
-
-def render_train_viz_tab() -> None:
-    st.subheader("Training & Visualization")
-
-    # ── Config inputs ─────────────────────────────────────────
-    # Upload environment bundle (Env.pkl from Handler tab)
-    env_file = st.file_uploader("Upload Env.pkl", type="pkl", key="env_pkl")
-    log_dir = Path(st.text_input("Log directory", "./logs"))
-    total_steps = st.number_input("Total steps", 1_000, 1_000_000, 10_000, step=1_000)
-    ckpt_interval = st.number_input("Checkpoint interval", 100, 50_000, 1_000, step=100)
-
-    # session flags
-    for k in ("train_flags", "last_ckpt"):
-        st.session_state.setdefault(k, None)
-
-    # ── Control buttons ───────────────────────────────────────
-    cols = st.columns(4)
-    start_btn = cols[0].button("▶️ Start", disabled=bool(st.session_state.train_flags))
-    pause_btn = cols[1].button("⏸️ Pause", disabled=not st.session_state.train_flags)
-    resume_btn = cols[2].button("↩️ Resume", disabled=not st.session_state.train_flags)
-    stop_btn = cols[3].button("⏹️ Stop", disabled=not st.session_state.train_flags)
-
-    # ── Button actions────────────────────────────────────────
+    # Start training in background
     if start_btn:
-        # require Env.pkl and hyperparameters
-        if not env_file or "hparam_cfg" not in st.session_state:
-            st.error("Please upload Env.pkl and configure hyperparameters first.")
+        if not env_file or not hp_cfg:
+            st.error("Env.pkl 과 Hyper-Parameter JSON 이 필요합니다.")
             return
-        # load environment payload and build Gym env via train_service
+        run_dir = make_run_dir(log_root, agent_name)
+        st.session_state.run_dir = run_dir
+        st.session_state.start_time = time.time()
+        raw_bytes = env_file.read(); env_file.seek(0)
         payload = pickle.load(env_file)
-        scheduler_buf = io.BytesIO(payload["scheduler_pickle"])
-        # prepare contract file; use sampling JSON if available
-        contract_buf = None
-        if payload.get("sampling"):
-            contract_buf = io.BytesIO(json.dumps({"sampling": payload["sampling"]}).encode())
-        env = build_env(
-            scheduler_buf=scheduler_buf,
-            contract_file=contract_buf,
-            action_handler=payload.get("action_handler"),
-            observation_handler=payload.get("observation_handler"),
-            reward_handler=payload.get("reward_handler"),
-            info_handler=payload.get("info_handler"),
-        )
-        env.reset()
-        # instantiate SB3 model with selected algorithm and hyperparams
-        cfg = st.session_state["hparam_cfg"]
-        ALG = globals().get(cfg["algorithm"], None)
-        if ALG is None:
-            st.error(f"Unknown algorithm: {cfg['algorithm']}")
-            return
-        log_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Todo : Yaml 파일을 입력받으면 이에 맞춰 코딩
-        model = ALG(
-            policy="MultiInputPolicy",
-            env=env,
-            verbose=0,
-            tensorboard_log=str(log_dir),
-            **cfg.get("sb3_hyperparams", {}),
-        )
-        flags = {k: threading.Event() for k in ("pause", "stop", "finished")}
-        t = threading.Thread(
-            target=_train_loop,
-            args=(model, total_steps, ckpt_interval, flags, log_dir / "metrics.csv"),
-            daemon=True,
-        )
-        t.start()
-        st.session_state.train_flags = flags
-        st.success("Training started…")
+        sched_buf = io.BytesIO(payload.get("scheduler_pickle", raw_bytes))
+        contract = ({"sampling": payload.get("sampling")} if isinstance(payload, dict) and payload.get("sampling") else None)
+        def _bg_learn():
+            log_buf = io.StringIO()
+            st.session_state.log_buf = log_buf  # expose to UI
 
-    if pause_btn and st.session_state.train_flags:
-        st.session_state.train_flags["pause"].set()
-        st.info("Training paused. You can resume or download checkpoint.")
+            with redirect_stdout(log_buf), redirect_stderr(log_buf):
+                run_path = train_model(
+                    scheduler_buf   = sched_buf,
+                    contract_file   = contract,
+                    hp_cfg          = hp_cfg,
+                    agent_name      = agent_name,
+                    log_root        = log_root,
+                    total_steps     = int(total_steps),
+                    eval_freq       = int(eval_freq),
+                    ckpt_freq       = int(ckpt_freq),
+                    action_handler      = payload.get("action_handler"),
+                    observation_handler = payload.get("observation_handler"),
+                    reward_handler      = payload.get("reward_handler"),
+                    info_handler        = None,
+                )
+            st.session_state.run_dir = run_path
+            st.session_state.thread  = None
+        threading.Thread(target=_bg_learn, daemon=True).start(); st.session_state.thread = True
+        st.success(f"Training started → {run_dir}")
 
-    if resume_btn and st.session_state.train_flags:
-        st.session_state.train_flags["pause"].clear()
-        st.success("Training resumed.")
+    # Stop logic
+    if stop_btn and st.session_state.thread:
+        st.warning("종료 요청… 잠시 기다려주세요.")
+        st.session_state.thread = None
 
-    if stop_btn and st.session_state.train_flags:
-        st.session_state.train_flags["stop"].set()
-        st.session_state.train_flags = None
-        st.warning("Training stopped.")
+    # Live progress update
+    if st.session_state.run_dir and isinstance(st.session_state.run_dir, (str, Path)):
+        prog_csv = Path(st.session_state.run_dir) / "progress.csv"
+        if prog_csv.exists():
+            df = pd.read_csv(prog_csv)
+            if not df.empty:
+                latest = df.iloc[-1]
+                reward_metric.metric("Latest reward", f"{latest['reward']:.2f}")
+                progress_bar.progress(min(latest["timesteps"] / total_steps, 1.0))
 
-    # ── Checkpoint download───────────────────────────────────
-    if st.session_state.get("last_ckpt"):
-        st.download_button(
-            "Download checkpoint.zip",
-            data=st.session_state.last_ckpt,
-            file_name="checkpoint.zip",
-            mime="application/zip",
-        )
+                fig = px.line(
+                    df,
+                    x="timesteps",
+                    y=["reward", "episode_length"],
+                    labels={"value": "metric", "variable": "type"},
+                    title="Training curves"
+                )
+                plot_placeholder.plotly_chart(fig, use_container_width=True)
 
-    # ── Metrics preview───────────────────────────────────────
-    if (log_dir / "metrics.csv").exists():
-        data = pd.read_csv(log_dir / "metrics.csv")
-        st.line_chart(data, x="step", y="reward")
+    # ── ⑤‑b Live log stream ─────────────────────────────────────
+    if st.session_state.get("log_buf"):
+        log_container.code(st.session_state.log_buf.getvalue(), language="bash")
 
-    # ── Validation placeholder────────────────────────────────
-    with st.expander("Validation Rollout", expanded=False):
-        st.text("Coming soon: run N episodes, render GIF, compute stats…")
+    # Download artifacts when done
+    if st.session_state.run_dir and st.session_state.thread is None:
+        zbuf = zip_artifacts(Path(st.session_state.run_dir))
+        st.download_button("Download artifacts.zip", zbuf, file_name="artifacts.zip", mime="application/zip")
+        st.success("Training finished ✅")
+        _clear_state()
