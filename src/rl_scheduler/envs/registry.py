@@ -5,7 +5,7 @@ from typing import Mapping, Type
 from rl_scheduler.contract_generator import (
     ContractGenerator,
     DeterministicGenerator,
-    StochasticGenerator,
+    StochasticGenerator
 )
 
 from .action_handler import MJHandler, MJRHandler, ActionHandler

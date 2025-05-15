@@ -65,8 +65,9 @@ def build_scheduler_pickle() -> io.BytesIO:
         )
 
         # 3. apply deterministic generator for repetition & profit fn
-        repetitions = DeterministicGenerator.load_repetition(con_p)
-        profit_fn = DeterministicGenerator.load_profit_fn(con_p)
+        deterministicGenerator = DeterministicGenerator(contract_path=con_p)
+        repetitions = deterministicGenerator.load_repetition()
+        profit_fn = deterministicGenerator.load_profit_fn()
         sched.reset(repetitions=repetitions, profit_functions=profit_fn)
 
         # 4. pickle to BytesIO

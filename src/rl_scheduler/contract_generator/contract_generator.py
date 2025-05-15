@@ -13,15 +13,19 @@ class ContractGenerator(ABC):
         self.contract_path = contract_path
 
     @abstractmethod
-    def load_profit_fn() -> List[List[ProfitFunction]]:
+    def load_profit_fn(self) -> List[List[ProfitFunction]]:
         """
         Load profit functions from a file.
         """
-        pass
+        NotImplementedError(
+            "load_profit_fn() must be implemented in the subclass."
+        )
 
     @abstractmethod
-    def load_repetition() -> List[int]:
+    def load_repetition(self) -> List[int]:
         """
         Load repetition data from a file.
         """
-        pass
+        NotImplementedError(
+            "load_repetition() must be implemented in the subclass."
+        )
