@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Dict, Any
 
 
 class MachineTemplate:
@@ -14,3 +14,10 @@ class MachineTemplate:
             f"\tmachine_template_id: {self.machine_template_id}\n"
             f"\tsupported_operation_type_codes: {self.supported_operation_type_codes}\n)"
         )
+        
+    def to_dict(self) -> Dict[str, Any]:
+        """템플릿을 JSON 직렬화 가능한 사전으로 변환합니다."""
+        return {
+            "machine_template_id": self.machine_template_id,
+            "supported_operation_type_codes": self.supported_operation_type_codes
+        }

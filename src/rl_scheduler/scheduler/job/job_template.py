@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Dict, Any
 
 
 class JobTemplate:
@@ -18,3 +18,11 @@ class JobTemplate:
             f"\tjob_template_id: {self.job_template_id}\n"
             f"\toperation_template_sequence: {self.operation_template_sequence}\n)"
         )
+        
+    def to_dict(self) -> Dict[str, Any]:
+        """템플릿을 JSON 직렬화 가능한 사전으로 변환합니다."""
+        return {
+            "job_template_id": self.job_template_id,
+            "color": self.color,
+            "operation_template_sequence": self.operation_template_sequence
+        }
