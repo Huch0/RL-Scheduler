@@ -51,7 +51,7 @@ def make_env(
 
     if not isinstance(action_handler, ActionHandler):
         action_handler = get_action_handler(
-            action_handler, scheduler, **action_handler_kwargs
+            action_handler, scheduler, **(action_handler_kwargs or {})
         )
 
     if not isinstance(observation_handler, ObservationHandler):
@@ -67,16 +67,16 @@ def make_env(
                 observation_handler,
                 scheduler,
                 mj_action_handler=action_handler,
-                **observation_handler_kwargs,
+                **(observation_handler_kwargs or {}),
             )
         else:
             observation_handler = get_observation_handler(
-                observation_handler, scheduler, **observation_handler_kwargs
+                observation_handler, scheduler, **(observation_handler_kwargs or {})
             )
 
     if not isinstance(reward_handler, RewardHandler):
         reward_handler = get_reward_handler(
-            reward_handler, scheduler, **reward_handler_kwargs
+            reward_handler, scheduler, **(reward_handler_kwargs or {})
         )
 
     if not isinstance(info_handler, InfoHandler):
