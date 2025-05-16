@@ -45,6 +45,9 @@ class RJSPEnv(gym.Env):
         """Get the current timestep."""
         return self.scheduler.timestep
 
+    def action_masks(self) -> list[bool]:
+        return self.action_handler.compute_action_mask().tolist()
+
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
 

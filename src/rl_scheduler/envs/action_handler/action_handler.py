@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from gymnasium import spaces
 from rl_scheduler.scheduler.scheduler import Scheduler
+import numpy as np
 
 
 class ActionHandler(ABC):
@@ -35,5 +36,15 @@ class ActionHandler(ABC):
 
         Returns:
             tuple: A converted action.
+        """
+        pass
+
+    @abstractmethod
+    def compute_action_mask(self) -> "np.ndarray":
+        """
+        Compute the action mask for the current state.
+
+        Returns:
+            np.ndarray: A boolean array indicating valid actions.
         """
         pass
