@@ -9,6 +9,10 @@ from rl_scheduler.envs.utils import make_env
 from rl_scheduler.trainer.trainer import load_sb3_algo, train_agent
 from rl_scheduler.envs.rjsp_env import RJSPEnv
 
+from tensorboard.backend.event_processing import event_accumulator
+import pandas as pd
+
+
 __all__ = ["build_env", "train_model", "make_run_dir", "zip_artifacts"]
 
 # ───────────────────────── helpers ──────────────────────────
@@ -173,3 +177,29 @@ def train_model(
     )
         
     return run_dir
+
+
+def load_tb_scalars(tb_dir: Path, tags: list[str] | None = None) -> pd.DataFrame:
+    """
+    Returns a tidy DataFrame with columns:
+        step, wall_time, tag, value
+    If `tags` is None, read all scalar tags found.
+    """
+    # 여러 tfevents 파일이 있으면 가장 최신 mtime 파일만 읽는다
+    events = sorted(tb_dir.glob("**/events.out.tfevents.*"), key=lambda p: p.stat().st_mtime)
+    if not events:
+        return pd.DataFrame()
+    ea = event_accumulator.EventAccumulator(str(events[-1]), size_guidance={'scalars': 0})
+    ea.Reload()
+
+    wanted = tags or ea.Tags()["scalars"]
+    rows = []
+    for tag in wanted:
+        for ev in ea.Scalars(tag):
+            rows.append({
+                "step": ev.step,
+                "wall_time": ev.wall_time,
+                "tag": tag,
+                "value": ev.value,
+            })
+    return pd.DataFrame(rows)
