@@ -21,7 +21,7 @@ __all__ = ["render_hyperparam_tab"]
 # -------------------------------------------------------------------
 
 def render_hyperparam_tab() -> Dict[str, Any]:
-    """Render the Hyper‑Parameter tab and return config dict."""
+    """Render the Hyperparameter tab and return config dict."""
     st.subheader("Model Algorithm & Hyperparameters")
 
     # ---------- Algorithm selector ----------
