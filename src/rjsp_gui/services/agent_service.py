@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from rl_scheduler.trainer import load_sb3_algo
 from .utils import dump_to_temp
+from sb3_contrib import MaskablePPO
 
 
 def load_agent_and_env(agent_zip):
@@ -97,9 +98,18 @@ def sample_agent_action(
     Sample an action from the agent using the environment.
     """
     try:
-        action, _ = agent.predict(
-            env.observation_handler.get_observation(), deterministic=deterministic
-        )
+        if isinstance(agent, MaskablePPO):
+            # MaskablePPO requires action masking
+            action, _ = agent.predict(
+                env.observation_handler.get_observation(),
+                deterministic=deterministic,
+                action_masks=env.action_masks(),
+            )
+            print(f"action_masks: {env.action_masks()}")
+        else:
+            action, _ = agent.predict(
+                env.observation_handler.get_observation(), deterministic=deterministic
+            )
         return action
     except Exception as e:
         tb = traceback.format_exc()
