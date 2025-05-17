@@ -1,5 +1,3 @@
-import copy
-
 import streamlit as st
 import json
 from rjsp_gui.services.env_service import load_environment, reset_env
@@ -118,7 +116,9 @@ with left_col:
                     else:
                         st.session_state["agent"] = agent
                         st.session_state["env"] = env
-                        st.session_state["agent_env"] = copy.deepcopy(env)
+                        st.session_state["agent_action_handler"] = (
+                            env.action_handler.__class__
+                        )
                         _refresh_manual_selectors()
                         st.success("Agent and environment loaded successfully!")
                 except Exception as e:
@@ -129,15 +129,16 @@ with left_col:
             key="ag_sample_action",
             disabled="agent" not in st.session_state,
         ):
-            if "agent" not in st.session_state or "agent_env" not in st.session_state:
+            if "agent" not in st.session_state:
                 st.warning("Load an agent and environment first.")
             else:
                 try:
                     # Change Action Handler and Action Space to the agent's
                     env = st.session_state["env"]
-                    agent_env = st.session_state["agent_env"]
-                    env.action_handler = agent_env.action_handler
-                    env.action_space = agent_env.action_space
+                    env.action_handler = st.session_state["agent_action_handler"](
+                        env.scheduler
+                    )
+                    env.action_space = env.action_handler.action_space
 
                     action = sample_agent_action(
                         st.session_state["agent"],
@@ -157,15 +158,16 @@ with left_col:
             key="ag_best_action",
             disabled="agent" not in st.session_state,
         ):
-            if "agent" not in st.session_state or "agent_env" not in st.session_state:
+            if "agent" not in st.session_state:
                 st.warning("Load an agent and environment first.")
             else:
                 try:
                     # Change Action Handler and Action Space to the agent's
                     env = st.session_state["env"]
-                    agent_env = st.session_state["agent_env"]
-                    env.action_handler = agent_env.action_handler
-                    env.action_space = agent_env.action_space
+                    env.action_handler = st.session_state["agent_action_handler"](
+                        env.scheduler
+                    )
+                    env.action_space = env.action_handler.action_space
 
                     action = sample_agent_action(
                         st.session_state["agent"],
@@ -188,15 +190,16 @@ with left_col:
             key="ag_sample_episode",
             disabled="agent" not in st.session_state,
         ):
-            if "agent" not in st.session_state or "agent_env" not in st.session_state:
+            if "agent" not in st.session_state:
                 st.warning("Load an agent and environment first.")
             else:
                 try:
+                    # Change Action Handler and Action Space to the agent's
                     env = st.session_state["env"]
-                    agent_env = st.session_state["agent_env"]
-                    # Sync action handler and space
-                    env.action_handler = agent_env.action_handler
-                    env.action_space = agent_env.action_space
+                    env.action_handler = st.session_state["agent_action_handler"](
+                        env.scheduler
+                    )
+                    env.action_space = env.action_handler.action_space
 
                     total_reward = 0.0
                     steps = 0
@@ -230,15 +233,16 @@ with left_col:
             key="ag_best_episode",
             disabled="agent" not in st.session_state,
         ):
-            if "agent" not in st.session_state or "agent_env" not in st.session_state:
+            if "agent" not in st.session_state:
                 st.warning("Load an agent and environment first.")
             else:
                 try:
+                    # Change Action Handler and Action Space to the agent's
                     env = st.session_state["env"]
-                    agent_env = st.session_state["agent_env"]
-                    # Sync action handler and space
-                    env.action_handler = agent_env.action_handler
-                    env.action_space = agent_env.action_space
+                    env.action_handler = st.session_state["agent_action_handler"](
+                        env.scheduler
+                    )
+                    env.action_space = env.action_handler.action_space
 
                     total_reward = 0.0
                     steps = 0
