@@ -3,7 +3,8 @@ import math
 from typing import Dict, List, Tuple
 
 from .job_type_scope_priority_rule import JobTypeScopedPriorityRule
-from .utils import estimated_job_finish 
+from .utils import estimated_job_finish
+from .edd_priority_rule import EDDPriorityRule  # tie‐break용
 
 class EPVPriorityRule(JobTypeScopedPriorityRule):
     """
@@ -39,18 +40,35 @@ class EPVPriorityRule(JobTypeScopedPriorityRule):
 
     def assign_priority(self) -> List[int]:
         """
-        metric이 nan인 인스턴스 제외 후 profit이 가장 큰 인스턴스 선택, 모두 nan 시 -1.
+        각 JobTemplate 그룹 내에서 EPV(metric)이 가장 작은 인스턴스를 선택.
+        metric이 nan이거나 완료된 경우 제외. 동점이면 EDD(metric) 기준으로 선택.
         """
-        metrics = self.compute_metrics()
+        epv_metrics = self.compute_metrics()
+        # EDD metrics for tie-breaking
+        edd_metrics = EDDPriorityRule(self.scheduler).compute_metrics()
+
         result: List[int] = []
-        for tid, group in enumerate(self.scheduler.job_instances):
-            unfinished = [
-                (job.job_instance_id, metrics[(tid, job.job_instance_id)])
-                for job in group if not job.completed
+        for jt_id, group in enumerate(self.scheduler.job_instances):
+            # unfinished & valid(epv not nan)
+            valid = [
+                (job.job_instance_id, epv_metrics[(jt_id, job.job_instance_id)])
+                for job in group
+                if not getattr(job, "completed", False)
+                  and not math.isnan(epv_metrics[(jt_id, job.job_instance_id)])
             ]
-            valid = [(jid, m) for jid, m in unfinished if not math.isnan(m)]
             if not valid:
                 result.append(-1)
+                continue
+
+            # find min EPV value
+            min_epv = min(v for _, v in valid)
+            # candidates with same EPV
+            cands = [jid for jid, v in valid if v == min_epv]
+            if len(cands) == 1:
+                result.append(cands[0])
             else:
-                result.append(max(valid, key=lambda x: x[1])[0])
+                # tie-break by smallest EDD (deadline slack)
+                chosen = min(cands, key=lambda jid: edd_metrics[(jt_id, jid)])
+                result.append(chosen)
+
         return result

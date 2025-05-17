@@ -1,0 +1,41 @@
+{
+    "operations": [
+        {
+            "operation_template_id": 0,
+            "type_code": "A",
+            "duration": 3,
+            "job_template_id": 1
+        },
+        {
+            "operation_template_id": 1,
+            "type_code": "B",
+            "duration": 5,
+            "job_template_id": 1
+        },
+        {
+            "operation_template_id": 2,
+            "type_code": "A",
+            "duration": 7,
+            "job_template_id": 1
+        },
+
+        {
+            "operation_template_id": 3,
+            "type_code": "B",
+            "duration": 7,
+            "job_template_id": 2
+        },
+        {
+            "operation_template_id": 4,
+            "type_code": "B",
+            "duration": 10,
+            "job_template_id": 2
+        },
+        {
+            "operation_template_id": 5,
+            "type_code": "A",
+            "duration": 3,
+            "job_template_id": 2
+        }
+    ]
+}

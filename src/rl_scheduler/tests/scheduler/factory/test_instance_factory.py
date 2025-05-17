@@ -25,8 +25,9 @@ def test_job_instances():
     operation_templates = TemplateLoader.load_operation_templates(
         operation_example_path
     )
-    profit_functions = DeterministicGenerator.load_profit_fn(contract_path)
-    repetitions = DeterministicGenerator.load_repetition(contract_path)
+    deterministicGenerator = DeterministicGenerator(contract_path)
+    profit_functions = deterministicGenerator.load_profit_fn()
+    repetitions = deterministicGenerator.load_repetition()
 
     factory = InstanceFactory([], operation_templates, job_templates)
     job_instances = factory.get_new_job_instances(repetitions, profit_functions)
@@ -50,8 +51,9 @@ def test_operation_instances():
     operation_templates = TemplateLoader.load_operation_templates(
         operation_example_path
     )
-    profit_functions = DeterministicGenerator.load_profit_fn(contract_path)
-    repetitions = DeterministicGenerator.load_repetition(contract_path)
+    deterministicGenerator = DeterministicGenerator(contract_path)
+    profit_functions = deterministicGenerator.load_profit_fn()
+    repetitions = deterministicGenerator.load_repetition()
 
     factory = InstanceFactory([], operation_templates, job_templates)
     job_instances = factory.get_new_job_instances(repetitions, profit_functions)

@@ -8,12 +8,14 @@ CONTRACTS_PATH = INSTANCES_DIR / "contracts" / "C-example0-5.json"
 
 @pytest.fixture
 def profit_functions():
-    return DeterministicGenerator.load_profit_fn(CONTRACTS_PATH)
+    deterministic_generator = DeterministicGenerator(CONTRACTS_PATH)
+    return deterministic_generator.load_profit_fn()
 
 
 @pytest.fixture
 def repetition():
-    return DeterministicGenerator.load_repetition(CONTRACTS_PATH)
+    deterministic_generator = DeterministicGenerator(CONTRACTS_PATH)
+    return deterministic_generator.load_repetition()
 
 
 def test_load_profit_fn(profit_functions):
