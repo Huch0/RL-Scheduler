@@ -1,3 +1,5 @@
+from typing import Dict, Any
+
 class OperationTemplate:
     def __init__(
         self,
@@ -19,3 +21,12 @@ class OperationTemplate:
             f"\tduration: {self.duration}\n"
             f"\tjob_template_id: {self.job_template_id}\n)"
         )
+        
+    def to_dict(self) -> Dict[str, Any]:
+        """템플릿을 JSON 직렬화 가능한 사전으로 변환합니다."""
+        return {
+            "operation_template_id": self.operation_template_id,
+            "type_code": self.type_code,
+            "duration": self.duration,
+            "job_template_id": self.job_template_id
+        }

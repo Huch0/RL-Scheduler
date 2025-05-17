@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Dict, Any
 from pathlib import Path
 from .factory import InstanceFactory, TemplateLoader
 from .job import JobInstance
@@ -44,6 +44,14 @@ class Scheduler:
         )
         self.timestep = 0
 
+    def get_templates_as_dicts(self) -> Dict[str, Any]:
+        """템플릿들을 JSON 직렬화 가능한 사전 형태로 반환합니다."""
+        return {
+            "machine_config": [template.to_dict() for template in self.machine_templates],
+            "job_config": [template.to_dict() for template in self.job_templates],
+            "operation_config": [template.to_dict() for template in self.operation_templates]
+        }
+        
     def step(self, chosen_machine_id: int, chosen_job_id: int, chosen_repetition: int):
         """
         Executes a single scheduling step based on the provided action.
@@ -63,10 +71,16 @@ class Scheduler:
             4. Allocates a slot for the operation on the machine.
             5. Updates the earliest start time of the successor operation.
         """
-        self.timestep += 1
-
         # Find the operation instance for the given job and repetition.
-        chosen_op = self.find_op_instance_by_action(chosen_job_id, chosen_repetition)
+        try:
+            chosen_op = self.find_op_instance_by_action(
+                chosen_job_id, chosen_repetition
+            )
+        except IndexError as e:  # The selected job instance is already completed.
+            raise ValueError(
+                f"Operation instance not found for job {chosen_job_id} "
+                f"repetition {chosen_repetition}. Probably all operations are already assigned."
+            ) from e
 
         # Check constraints between the chosen machine and operation.
         chosen_machine = self.machine_instances[chosen_machine_id]
@@ -85,21 +99,25 @@ class Scheduler:
         if chosen_op.successor is not None:
             chosen_op.successor.earliest_start_time = chosen_op.end_time
 
+        self.timestep += 1
+
     def find_op_instance_by_action(self, chosen_job_id: int, chosen_repetition: int):
         # job instances가 몇 번째 반복인지를 기준으로 오름차순 정렬되어있다 가정
         job_instance = self.job_instances[chosen_job_id][chosen_repetition]
 
-        for operation_instance in job_instance.operation_instance_sequence:
-            # 아직 할당되지 않은 operation_instance 중 첫 번째로 찾은 것을 반환한다.
-            # 이 부분 job_instance의 멤버 변수에 operation_pointer 변수 추가해서 개선하고 싶다.
-            if operation_instance.end_time is None:
-                return operation_instance
-
-        raise ValueError(
-            f"Operation instance not found for job {chosen_job_id} "
-            f"repetition {chosen_repetition}."
-            f"Probably all operations are already assigned."
-        )
+        return job_instance.operation_instance_sequence[job_instance.next_op_idx]
+        #
+        # for operation_instance in job_instance.operation_instance_sequence:
+        #     # 아직 할당되지 않은 operation_instance 중 첫 번째로 찾은 것을 반환한다.
+        #     # 이 부분 job_instance의 멤버 변수에 operation_pointer 변수 추가해서 개선하고 싶다.
+        #     if operation_instance.end_time is None:
+        #         return operation_instance
+        #
+        # raise ValueError(
+        #     f"Operation instance not found for job {chosen_job_id} "
+        #     f"repetition {chosen_repetition}."
+        #     f"Probably all operations are already assigned."
+        # )
 
     def check_constraint(self, machine_instance, operation_instance):
         # 기계 처리 능력과 operation의 유형이 일치하는지 확인

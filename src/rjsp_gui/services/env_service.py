@@ -1,12 +1,10 @@
-import pathlib
 import sys
-import tempfile
 import traceback
 from rl_scheduler.envs.registry import get_action_handler
 from rl_scheduler.envs.rjsp_env import RJSPEnv
-from streamlit.runtime.uploaded_file_manager import UploadedFile
 from rl_scheduler.envs.utils import make_env
 from rl_scheduler.scheduler import Scheduler
+from .utils import dump_to_temp
 
 
 def load_environment(
@@ -23,10 +21,10 @@ def load_environment(
 
     try:
         # 1. dump each upload to disk
-        m_path = _dump_to_temp(machine_file)
-        j_path = _dump_to_temp(job_file)
-        o_path = _dump_to_temp(operation_file)
-        c_path = _dump_to_temp(contract_file)
+        m_path = dump_to_temp(machine_file)
+        j_path = dump_to_temp(job_file)
+        o_path = dump_to_temp(operation_file)
+        c_path = dump_to_temp(contract_file)
 
         # 2. hand the *paths* to Scheduler
         scheduler = Scheduler(
@@ -37,7 +35,7 @@ def load_environment(
 
         # 3. create the Gymnasium environment via factory helper
         try:
-            env = make_env(scheduler=scheduler)
+            env = make_env(scheduler=scheduler, contract_path=c_path)
         except Exception:
             tb = traceback.format_exc()
             print(tb, file=sys.stderr)
@@ -45,7 +43,8 @@ def load_environment(
 
         # 4. reset the environment to load the contract
         try:
-            env.reset(seed=seed, options={"contract_path": c_path})
+            env.contract_generator.contract_path = c_path
+            env.reset(seed=seed)
         except Exception:
             tb = traceback.format_exc()
             print(tb, file=sys.stderr)
@@ -71,11 +70,13 @@ def load_environment(
 def reset_env(env, contract_file):
     """Reset the environment with a new contract."""
     try:
-        # 1. dump each upload to disk
-        c_path = _dump_to_temp(contract_file)
+        if contract_file:
+            # 1. dump each upload to disk
+            c_path = dump_to_temp(contract_file)
 
-        # 2. reset the environment with the new contract
-        env.reset(options={"contract_path": c_path})
+            # 2. reset the environment with the new contract
+            env.contract_generator.contract_path = c_path
+        env.reset()
 
     except Exception:
         tb = traceback.format_exc()
@@ -90,14 +91,6 @@ def reset_env(env, contract_file):
             c_path.unlink(missing_ok=True)
         except Exception:
             pass
-
-
-def _dump_to_temp(uploaded: UploadedFile) -> pathlib.Path:
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
-    tmp.write(uploaded.read())
-    tmp.flush()
-    tmp.close()
-    return pathlib.Path(tmp.name)
 
 
 def step_env(
