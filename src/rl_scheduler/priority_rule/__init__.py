@@ -1,4 +1,4 @@
-from src.rl_scheduler.priority_rule.job_type_scope.epv_priority_rule import EPVPriorityRule
+from rl_scheduler.priority_rule.job_type_scope.epv_priority_rule import EPVPriorityRule
 from .priority_rule import PriorityRule
 from .job_type_scope.job_type_scope_priority_rule import JobTypeScopedPriorityRule
 from .job_type_scope.edd_priority_rule import EDDPriorityRule
