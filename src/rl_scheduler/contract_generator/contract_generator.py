@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import json
 from pathlib import Path
 from typing import List
 from rl_scheduler.scheduler.profit import ProfitFunction
@@ -11,6 +12,9 @@ class ContractGenerator(ABC):
 
     def __init__(self, contract_path: Path):
         self.contract_path = contract_path
+        self.data = None
+        with self.contract_path.open("r") as file:
+            self.data = json.load(file)
 
     @abstractmethod
     def load_profit_fn(self) -> List[List[ProfitFunction]]:
