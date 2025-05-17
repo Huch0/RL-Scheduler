@@ -28,8 +28,7 @@ class StochasticGenerator(ContractGenerator):
         Returns list of repetition counts in order of sorted job IDs.
         """
         # Sample repetition, deadlines, price, and penalties; store in cache
-        data = json.load(self.contract_path.open('r'))
-        sampling = data.get('sampling', {})
+        sampling = self.data.get('sampling', {})
         reps: List[int] = []
         deadlines: List[List[int]] = []
         prices: List[List[float]] = []
