@@ -1,6 +1,8 @@
 # for this project:
 .idea/
 .python-version
+# logs
+logs/
 
 # Python.gitignore:
 # Byte-compiled / optimized / DLL files
