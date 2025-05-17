@@ -2,20 +2,20 @@
   "sampling": {
     "0": {
       "repetition": {
-        "mean": 3,
+        "mean": 4,
         "std": 1.0
       },
       "deadline": {
         "mean": 20,
-        "std": 5.0
+        "std": 2.0
       },
       "price": {
         "mean": 1000.0,
-        "std": 0.0
+        "std": 20.0
       },
       "late_penalty": {
         "mean": 50.0,
-        "std": 0.0
+        "std": 5.0
       }
     },
     "1": {
@@ -24,21 +24,21 @@
         "std": 1.0
       },
       "deadline": {
-        "mean": 20,
-        "std": 5.0
+        "mean": 30,
+        "std": 3.0
       },
       "price": {
         "mean": 1500.0,
-        "std": 0.0
+        "std": 15.0
       },
       "late_penalty": {
         "mean": 75.0,
-        "std": 0.0
+        "std": 10.0
       }
     },
     "2": {
       "repetition": {
-        "mean": 3,
+        "mean": 4,
         "std": 1.0
       },
       "deadline": {
@@ -47,47 +47,47 @@
       },
       "price": {
         "mean": 1200.0,
-        "std": 0.0
+        "std": 30.0
       },
       "late_penalty": {
         "mean": 60.0,
-        "std": 0.0
+        "std": 5.0
       }
     },
     "3": {
       "repetition": {
-        "mean": 3,
-        "std": 1.0
+        "mean": 4,
+        "std": 2.0
       },
       "deadline": {
-        "mean": 20,
-        "std": 5.0
+        "mean": 28,
+        "std": 2.0
       },
       "price": {
         "mean": 1800.0,
-        "std": 0.0
+        "std": 30.0
       },
       "late_penalty": {
         "mean": 80.0,
-        "std": 0.0
+        "std": 8.0
       }
     },
     "4": {
       "repetition": {
-        "mean": 3,
+        "mean": 5,
         "std": 1.0
       },
       "deadline": {
-        "mean": 20,
-        "std": 5.0
+        "mean": 30,
+        "std": 3.0
       },
       "price": {
         "mean": 2000.0,
-        "std": 0.0
+        "std": 20.0
       },
       "late_penalty": {
         "mean": 100.0,
-        "std": 0.0
+        "std": 5.0
       }
     }
   }
