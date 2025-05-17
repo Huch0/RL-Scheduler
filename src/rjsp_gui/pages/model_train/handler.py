@@ -61,10 +61,54 @@ def render_handler_tab() -> Dict[str, Any]:
     act = st.selectbox("Action Handler", ACT_OPTIONS, index=0, key="hdl_act")
     rwd = st.selectbox("Reward Function", RWD_OPTIONS, index=0, key="hdl_rew")
 
+    # 2-1️⃣ Action handler kwargs (priority rule) --------------------------
+    action_kwargs: dict[str, Any] = {}
+    if act.lower() in ("mj", "mjr"):
+        pr_options = ["edd", "etd", "epv"]
+        pr_default = st.session_state.get("action_handler_kwargs", {}).get("priority_rule_id", "etd")
+        pr = st.selectbox("Priority Rule", pr_options, index=pr_options.index(pr_default), key="hdl_act_pr")
+        action_kwargs["priority_rule_id"] = pr
+
+    # 2-2️⃣ Observation handler kwargs (time horizon) -----------------------
+    obs_kwargs: dict[str, Any] = {}
+    if obs.lower() == "mlp":
+        th_default = st.session_state.get("observation_handler_kwargs", {}).get("time_horizon", 1000)
+        th = st.number_input("Time Horizon", min_value=1, value=th_default, key="hdl_obs_th")
+        obs_kwargs["time_horizon"] = th
+
+    # 2-3️⃣ Reward handler kwargs (weights) ---------------------------------
+    rwd_kwargs: dict[str, Any] = {}
+    if rwd.lower() == "profit_cost":
+        weights = st.session_state.get("reward_handler_kwargs", {}).get("weights", {})
+        col_w1, col_w2, col_w3 = st.columns(3)
+        with col_w1:
+            w1 = st.number_input("Weight C_max", value=weights.get("C_max", 10.0), key="hdl_rwd_w1")
+        with col_w2:
+            w2 = st.number_input("Weight C_mup", value=weights.get("C_mup", 2.0), key="hdl_rwd_w2")
+        with col_w3:
+            w3 = st.number_input("Weight C_mid", value=weights.get("C_mid", 1.0), key="hdl_rwd_w3")
+        rwd_kwargs["weights"] = {"C_max": w1, "C_mup": w2, "C_mid": w3}
+
+    # Optional: load existing Sampling JSON -------------------------------
+    sample_file = st.file_uploader("Load sampling JSON", type=["json"], key="load_sampling")
+    if sample_file:
+        try:
+            raw = sample_file.read().decode("utf-8")
+            # strip out comment lines
+            clean = "\n".join(l for l in raw.splitlines() if not l.strip().startswith("//"))
+            loaded = json.loads(clean).get("sampling", {})
+            st.session_state.setdefault("sampling", {})  # init if missing
+            # merge loaded into session_state
+            st.session_state["sampling"].update(loaded)
+            st.success("Sampling configuration loaded.")
+        except Exception as exc:
+            st.error(f"Failed to load sampling JSON: {exc}")
+
     # 3️⃣ Per‑template sampling parameters --------------------------------------
     st.divider()
     st.markdown("### Sampling (Normal distribution, rounded to int)")
 
+    # will collect the current values (overwrites any loaded defaults)
     sampling: Dict[str, Dict[str, Dict[str, float]]] = {}
 
     for jid in job_ids:
@@ -85,18 +129,56 @@ def render_handler_tab() -> Dict[str, Any]:
 
             # 3‑2) Numeric inputs ----------------------------------------------
             col1, col2, col3, col4 = st.columns(4)
+            # existing defaults from upload (if any)
+            existing = st.session_state.get("sampling", {}).get(str(jid), {})
             with col1:
-                rep_mu = st.number_input("Repetition μ", 1, 100, 3, key=f"rep_mu_{jid}")
-                rep_sd = st.number_input("Repetition σ", 0.0, 50.0, 1.0, 0.1, key=f"rep_sd_{jid}")
+                rep_mu = st.number_input(
+                    "Repetition μ", 1, 100,
+                    existing.get("repetition", {}).get("mean", 3),
+                    key=f"rep_mu_{jid}"
+                )
+                rep_sd = st.number_input(
+                    "Repetition σ", 0.0, 50.0,
+                    existing.get("repetition", {}).get("std", 1.0),
+                    0.1, key=f"rep_sd_{jid}"
+                )
             with col2:
-                dl_mu = st.number_input("Deadline μ", 1, 500, 20, key=f"dl_mu_{jid}")
-                dl_sd = st.number_input("Deadline σ", 0.0, 200.0, 5.0, 0.1, key=f"dl_sd_{jid}")
+                dl_mu = st.number_input(
+                    "Deadline μ", 1, 500,
+                    existing.get("deadline", {}).get("mean", 20),
+                    key=f"dl_mu_{jid}"
+                )
+                dl_sd = st.number_input(
+                    "Deadline σ", 0.0, 200.0,
+                    existing.get("deadline", {}).get("std", 5.0),
+                    0.1, key=f"dl_sd_{jid}"
+                )
             with col3:
-                price_mu = st.number_input("Price μ", min_value=0.0, value=1000.0, key=f"price_mu_{jid}")
-                price_sd = st.number_input("Price σ", min_value=0.0, value=0.0, key=f"price_sd_{jid}")
+                price_mu = st.number_input(
+                    "Price μ",
+                    min_value=0.0,
+                    value=existing.get("price", {}).get("mean", 1000.0),
+                    key=f"price_mu_{jid}"
+                )
+                price_sd = st.number_input(
+                    "Price σ",
+                    min_value=0.0,
+                    value=existing.get("price", {}).get("std", 0.0),
+                    key=f"price_sd_{jid}"
+                )
             with col4:
-                pen_mu = st.number_input("Penalty μ", min_value=0.0, value=50.0, key=f"penalty_mu_{jid}")
-                pen_sd = st.number_input("Penalty σ", min_value=0.0, value=0.0, key=f"penalty_sd_{jid}")
+                pen_mu = st.number_input(
+                    "Penalty μ",
+                    min_value=0.0,
+                    value=existing.get("late_penalty", {}).get("mean", 50.0),
+                    key=f"penalty_mu_{jid}"
+                )
+                pen_sd = st.number_input(
+                    "Penalty σ",
+                    min_value=0.0,
+                    value=existing.get("late_penalty", {}).get("std", 0.0),
+                    key=f"penalty_sd_{jid}"
+                )
 
             # 3‑3) Plotly profit preview ----------------------------------------
             st.caption("Profit‑curve preview (Plotly)")
@@ -131,8 +213,11 @@ def render_handler_tab() -> Dict[str, Any]:
         env_dict = {
             "scheduler_pickle": sched_file.getvalue(),
             "observation_handler": obs,
+            "observation_handler_kwargs": obs_kwargs,
             "action_handler": act,
+            "action_handler_kwargs": action_kwargs,
             "reward_handler": rwd,
+            "reward_handler_kwargs": rwd_kwargs,
             "sampling": sampling,
         }
         buf = io.BytesIO()
@@ -144,7 +229,11 @@ def render_handler_tab() -> Dict[str, Any]:
     return {
         "observation_handler": obs,
         "action_handler": act,
+        "action_handler_kwargs": action_kwargs,
+        "observation_handler": obs,
+        "observation_handler_kwargs": obs_kwargs,
         "reward_handler": rwd,
+        "reward_handler_kwargs": rwd_kwargs,
         "sampling": sampling,
         "scheduler_file_name": Path(sched_file.name).name if sched_file else None,
     }
