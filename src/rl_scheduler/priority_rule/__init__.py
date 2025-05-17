@@ -1,3 +1,4 @@
+from src.rl_scheduler.priority_rule.job_type_scope.epv_priority_rule import EPVPriorityRule
 from .priority_rule import PriorityRule
 from .job_type_scope.job_type_scope_priority_rule import JobTypeScopedPriorityRule
 from .job_type_scope.edd_priority_rule import EDDPriorityRule
@@ -10,6 +11,7 @@ from rl_scheduler.scheduler import Scheduler
 _JOB_TYPE_RULES: dict[str, type[JobTypeScopedPriorityRule]] = {
     "edd": EDDPriorityRule,
     "etd": ETDPriorityRule,
+    "epv": EPVPriorityRule,
 }
 
 # Map IDs to GlobalScopedPriorityRule subclasses
@@ -23,6 +25,7 @@ __all__ = [
     "GlobalScopedPriorityRule",
     "EDDPriorityRule",
     "ETDPriorityRule",
+    "EPVPriorityRule",
     "get_job_type_rule",
     "get_global_rule",
 ]
