@@ -1,0 +1,32 @@
+{
+    "contracts": {
+        "job_0": [
+            {
+                "job_instance_id": 0,
+                "price": 1000.0,
+                "deadline": 15,
+                "late_penalty": 50.0
+            },
+            {
+                "job_instance_id": 1,
+                "price": 1000.0,
+                "deadline": 16,
+                "late_penalty": 50.0
+            }
+        ],
+        "job_1": [
+            {
+                "job_instance_id": 0,
+                "price": 1500.0,
+                "deadline": 25,
+                "late_penalty": 75.0
+            },
+            {
+                "job_instance_id": 1,
+                "price": 1500.0,
+                "deadline": 26,
+                "late_penalty": 75.0
+            }
+        ]
+    }
+}

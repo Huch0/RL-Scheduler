@@ -1,0 +1,12 @@
+{
+    "machines": [
+        {
+            "machine_template_id": 0,
+            "supported_operation_type_codes": ["A", "B"]
+        },
+        {
+            "machine_template_id": 1,
+            "supported_operation_type_codes": ["A"]
+        }
+    ]
+}
