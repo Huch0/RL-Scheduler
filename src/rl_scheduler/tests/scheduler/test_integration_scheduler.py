@@ -1,7 +1,7 @@
 import pytest
 from rl_scheduler.scheduler.scheduler import Scheduler
 from rl_scheduler.scheduler.slot_allocator import LinearSlotAllocator
-from rl_scheduler.contract_generator import DeterministicGenerator as ContractGenerator
+from rl_scheduler.contract_generator import DeterministicGenerator
 from rl_scheduler.config_path import INSTANCES_DIR
 
 # 통합 테스트: json 파일들로부터 템플릿을 파싱, reset으로 instance 할당, 그리고 step 메서드 검증.
@@ -25,8 +25,9 @@ def scheduler_integration():
 @pytest.fixture
 def contracts():
     contract_file = INSTANCES_DIR / "contracts" / "C-example0-5.json"
-    repetitions = ContractGenerator.load_repetition(contract_file)
-    profit_functions = ContractGenerator.load_profit_fn(contract_file)
+    deterministicGenerator = DeterministicGenerator(contract_file)
+    repetitions = deterministicGenerator.load_repetition()
+    profit_functions = deterministicGenerator.load_profit_fn()
     return repetitions, profit_functions
 
 
