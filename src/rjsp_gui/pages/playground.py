@@ -429,37 +429,9 @@ with left_col:
     st.markdown("**Action Log**")
     log_cols = st.columns(2)
     with log_cols[0]:
-        seq_file = st.file_uploader(
-            "Load Action Sequence", type=["json"], key="log_seq_file"
-        )
-    with log_cols[1]:
-        if st.button("Load Action Sequence", key="log_load", disabled=seq_file is None):
-            if "env" not in st.session_state or st.session_state["env"] is None:
-                st.warning("Load an environment first.")
-            else:
-                try:
-                    actions = json.load(seq_file)
-                    if not isinstance(actions, list) or not all(
-                        isinstance(a, (list, tuple)) and len(a) == 3 for a in actions
-                    ):
-                        raise ValueError("Invalid action sequence format.")
-                    # Reset env and log
-                    reset_env(st.session_state["env"], contract_file=contract)
-                    st.session_state["action_log"] = []
-                    _refresh_manual_selectors()
-                    for action in actions:
-                        obs, reward, terminated, truncated, info = step_env(
-                            st.session_state["env"],
-                            action_handler_id="mjr",
-                            action=tuple(action),
-                        )
-                        st.session_state.setdefault("action_log", []).append(
-                            tuple(action)
-                        )
-                    st.success("Action sequence loaded and executed.")
-                except Exception as e:
-                    st.error(f"Failed to load action sequence: {e}")
-
+        # seq_file = st.file_uploader(
+        #     "Load Action Sequence", type=["json"], key="log_seq_file"
+        # )
         if st.button(
             "Save Current Action Sequence",
             key="log_save",
@@ -472,6 +444,35 @@ with left_col:
                 file_name="action_sequence.json",
                 mime="application/json",
             )
+    with log_cols[1]:
+        pass
+        # if st.button("Load Action Sequence", key="log_load", disabled=seq_file is None):
+        #     if "env" not in st.session_state or st.session_state["env"] is None:
+        #         st.warning("Load an environment first.")
+        #     else:
+        #         try:
+        #             actions = json.load(seq_file)
+        #             if not isinstance(actions, list) or not all(
+        #                 isinstance(a, (list, tuple)) and len(a) == 3 for a in actions
+        #             ):
+        #                 raise ValueError("Invalid action sequence format.")
+        #             # Reset env and log
+        #             reset_env(st.session_state["env"], contract_file=contract)
+        #             st.session_state["action_log"] = []
+        #             _refresh_manual_selectors()
+        #             for action in actions:
+        #                 obs, reward, terminated, truncated, info = step_env(
+        #                     st.session_state["env"],
+        #                     action_handler_id="mjr",
+        #                     action=tuple(action),
+        #                 )
+        #                 st.session_state.setdefault("action_log", []).append(
+        #                     tuple(action)
+        #                 )
+        #             st.success("Action sequence loaded and executed.")
+        #         except Exception as e:
+        #             st.error(f"Failed to load action sequence: {e}")
+
 
 # --- Job Queue (collapsible) ---
 with right_col:
