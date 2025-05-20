@@ -21,37 +21,32 @@ class SchedulerGraphSync:
         m_feat["queue_len"]   = len(machine.assigned_operations)
         m_feat["busy_until"]  = machine.last_assigned_end_time
 
-        # (2) Eligibility edge(기본) 제거 → Assignment edge 추가
-        elig_key = f"elig_{machine.machine_template.machine_template_id}_{o_node}"
-        if self.G.has_edge(m_node, o_node, key=elig_key):
-            self.G.remove_edge(m_node, o_node, key=elig_key)
-
         self.G.add_edge(
             m_node, o_node,
-            key=f"assign_{op.operation_template.operation_template_id}",
+            key=f"assign_{op.operation_template.operation_template_id}_{op.job_instance.job_instance_id}",
             etype="assignment",
             features={
-                "start_time": op.start_time,
-                "end_time":   op.end_time,
-                "job_instance_id": op.job_instance.job_instance_id
+                "start_time":   op.start_time,
+                "end_time":     op.end_time,
+                "repetition":   op.job_instance.job_instance_id,   # ✔ job_instance_id를 repetition으로 사용
+                "label":        f"A({op.job_instance.job_instance_id})",
             }
         )
 
     # ---------- 호출 지점 ②: OperationInstance.schedule 내부 ----------
     def on_completion(self, op):
-        """Update graph when an operation finishes (end_time set)."""
         if op.successor is None or op.end_time is None:
-            return  # nothing to do
-
+            return
         u_node = f"op_{op.operation_template.operation_template_id}"
         v_node = f"op_{op.successor.operation_template.operation_template_id}"
 
+        rep = op.job_instance.job_instance_id  # job_instance_id를 repetition으로 사용
         self.G.add_edge(
             u_node, v_node,
-            key=f"compl_{op.operation_template.operation_template_id}_{datetime.utcnow().timestamp()}",
+            key=f"compl_{u_node}_{v_node}_{rep}",
             etype="completion",
             features={
-                "completion_time": op.end_time,
-                "job_instance_id": op.job_instance.job_instance_id
+                "repetition": rep,             # ✔ 하나만 저장
+                "label":      f"C({rep})",
             }
         )
