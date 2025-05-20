@@ -1,9 +1,10 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Type
 from pathlib import Path
 from .factory import InstanceFactory, TemplateLoader
 from .job import JobInstance
 from .machine import MachineInstance
 from .slot_allocator import SlotAllocator, LinearSlotAllocator
+from rl_scheduler.graph.sync import SchedulerGraphSync
 
 
 class Scheduler:
@@ -12,7 +13,7 @@ class Scheduler:
         machine_config_path: Path,
         job_config_path: Path,
         operation_config_path: Path,
-        slot_allocator: type(SlotAllocator) = LinearSlotAllocator,
+        slot_allocator: Type[SlotAllocator] = LinearSlotAllocator,
     ):
         self.machine_templates = TemplateLoader.load_machine_templates(
             machine_config_path
@@ -36,6 +37,7 @@ class Scheduler:
         self.slot_allocator = slot_allocator
 
         self.timestep = 0
+        self.graph_sync = None  # Initialized in reset
 
     def reset(self, repetitions, profit_functions):
         self.machine_instances = self.instance_factory.get_new_machine_instances()
@@ -43,6 +45,8 @@ class Scheduler:
             repetitions=repetitions, profit_fn=profit_functions
         )
         self.timestep = 0
+        # Initialize graph synchronization
+        self.graph_sync = SchedulerGraphSync(self)
 
     def get_templates_as_dicts(self) -> Dict[str, Any]:
         """템플릿들을 JSON 직렬화 가능한 사전 형태로 반환합니다."""
@@ -94,9 +98,15 @@ class Scheduler:
         self.slot_allocator.find_and_allocate_slot(
             machine_instance=chosen_machine, operation_instance=chosen_op
         )
+        # Notify graph sync of assignment event
+        if self.graph_sync:
+            self.graph_sync.on_assignment(chosen_machine, chosen_op)
 
         # Update the earliest start time of the successor operation.
         if chosen_op.successor is not None:
+            # Notify graph sync of completion event for previous op
+            if self.graph_sync:
+                self.graph_sync.on_completion(chosen_op)
             chosen_op.successor.earliest_start_time = chosen_op.end_time
 
         self.timestep += 1
