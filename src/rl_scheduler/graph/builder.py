@@ -1,101 +1,124 @@
-# ── builder.py ────────────────────────────────────────────
+# ── builder.py (patched) ──────────────────────────────────
 import networkx as nx
+from typing import Dict, Set, Union, Sequence
 
-# ---------- 1. NetworkX 그래프 생성 ----------
+def _safe_busy_until(last_end: Union[int, float, Sequence[int]]) -> float:
+    """Return scalar busy_until regardless of scalar/list input."""
+    if isinstance(last_end, (list, tuple)):
+        return max(last_end) if last_end else 0.0
+    return float(last_end) if last_end is not None else 0.0
+
 def build_graph_from_scheduler(sch) -> nx.MultiDiGraph:
-    """
-    Convert a Scheduler instance into a directed multigraph.
-
-    Node ids:
-        op_{instance_id}
-        mach_{machine_id}
-    """
     G = nx.MultiDiGraph()
 
-    # 1-A. Machine nodes
+    # ---------- type-code encoding ----------
+    type_code_set: Set[str] = set()
+    for job_type in sch.job_instances:
+        for job_inst in job_type:
+            for op in job_inst.operation_instance_sequence:
+                type_code_set.add(op.type_code)
+    for m in sch.machine_instances:
+        type_code_set.update(m.machine_template.supported_operation_type_codes)
+
+    type_code_to_int: Dict[str, int] = {
+        code: idx for idx, code in enumerate(sorted(type_code_set))
+    }
+
+    # ---------- 1-A. machine nodes ----------
     for m in sch.machine_instances:
         mt_id = m.machine_template.machine_template_id
+        busy_raw = getattr(m, "last_assigned_end_time", 0)
         G.add_node(
-            f"mach_{mt_id}", ntype="machine",
+            f"mach_{mt_id}",
+            ntype="machine",
             features={
                 "id": mt_id,
-                "supported_types": m.machine_template.supported_operation_type_codes,
                 "queue_len": len(getattr(m, "assigned_operations", [])),
-                "busy_until": getattr(m, "last_assigned_end_time", 0.0),
+                "busy_until": _safe_busy_until(busy_raw),
             },
         )
 
-    # 1-B. Operation nodes
+    # ---------- 1-B. operation nodes + logical edges ----------
     for job_type in sch.job_instances:
         for job_inst in job_type:
             for op in job_inst.operation_instance_sequence:
                 ot_id = op.operation_template.operation_template_id
                 G.add_node(
-                    f"op_{ot_id}", ntype="operation",
+                    f"op_{ot_id}",
+                    ntype="operation",
                     features={
                         "id": ot_id,
-                        "type": op.type_code,
+                        "type": type_code_to_int[op.type_code],
                         "duration": op.duration,
                         "job_id": job_inst.job_template.job_template_id,
                     },
                 )
-
-                # logical edge for precedence
                 if op.successor:
-                    succ_ot_id = op.successor.operation_template.operation_template_id
-                    G.add_edge(
-                        f"op_{ot_id}", f"op_{succ_ot_id}",
-                        key=f"log_{ot_id}_{succ_ot_id}", etype="logical",
-                        features={"label": "L"},
-                    )
-                    G.add_edge(
-                        f"op_{succ_ot_id}", f"op_{ot_id}",
-                        key=f"log_{succ_ot_id}_{ot_id}", etype="logical",
-                        features={"label": "L"},
-                    )
+                    succ_ot = op.successor.operation_template.operation_template_id
+                    for u, v in ((ot_id, succ_ot), (succ_ot, ot_id)):
+                        G.add_edge(
+                            f"op_{u}",
+                            f"op_{v}",
+                            key=f"log_{u}_{v}",
+                            etype="logical",
+                            features={"label": "L"},
+                        )
 
-    # 1-C. Eligibility edges (type_valid)
+    # ---------- 1-C. type-valid edges (op → mach) ----------
     for m in sch.machine_instances:
         m_id = m.machine_template.machine_template_id
-        for n, d in G.nodes(data=True):
-            if d.get("ntype") != "operation":
+        supported = {type_code_to_int[c]
+                     for c in m.machine_template.supported_operation_type_codes}
+        for n, data in G.nodes(data=True):
+            if data["ntype"] != "operation":
                 continue
-            if d["features"]["type"] in m.machine_template.supported_operation_type_codes:
+            if data["features"]["type"] in supported:
                 G.add_edge(
-                    f"mach_{m_id}", n,
-                    key=f"type_valid_{m_id}_{n}", etype="type_valid",
+                    n,
+                    f"mach_{m_id}",
+                    key=f"type_valid_{n}_{m_id}",
+                    etype="type_valid",
                     features={"label": "T"},
                 )
 
-    # 1-D. Dynamic assignment and completion edges
+    # ---------- 1-D. assignment / completion edges ----------
     for job_type in sch.job_instances:
         for job_inst in job_type:
+            rep = job_inst.job_instance_id  # job_instance_id를 repetition으로 사용
             for op in job_inst.operation_instance_sequence:
-                # assignment edge
+                ot_id = op.operation_template.operation_template_id
+
+                # assignment (m → o)
                 if op.processing_machine:
                     mt_id = op.processing_machine.machine_template.machine_template_id
-                    ot_id = op.operation_template.operation_template_id
                     G.add_edge(
-                        f"mach_{mt_id}", f"op_{ot_id}",
-                        key=f"assign_{ot_id}", etype="assignment",
+                        f"mach_{mt_id}",
+                        f"op_{ot_id}",
+                        key=f"assign_{mt_id}_{ot_id}_{rep}",
+                        etype="assignment",
                         features={
                             "start_time": op.start_time,
                             "end_time": op.end_time,
-                            "job_instance_id": job_inst.job_instance_id,
-                            "label": f"A({job_inst.job_instance_id})",
+                            "repetition": rep,
+                            "label": f"A({rep})",
                         },
                     )
-                # completion edge
+
+                # completion (o → succ-o)
                 if op.end_time is not None and op.successor:
-                    ot_id = op.operation_template.operation_template_id
-                    succ_ot_id = op.successor.operation_template.operation_template_id
+                    succ_ot = op.successor.operation_template.operation_template_id
                     G.add_edge(
-                        f"op_{ot_id}", f"op_{succ_ot_id}",
-                        key=f"compl_{ot_id}", etype="completion",
+                        f"op_{ot_id}",
+                        f"op_{succ_ot}",
+                        key=f"compl_{ot_id}_{succ_ot}_{rep}",
+                        etype="completion",
                         features={
-                            "completion_time": op.end_time,
-                            "job_instance_id": job_inst.job_instance_id,
-                            "label": f"C({job_inst.job_instance_id})",
+                            "repetition": rep,        # spec-compliant
+                            "label": f"C({rep})",
                         },
                     )
+
+    # store mapping
+    G.graph["type_code_encoding"] = type_code_to_int
+    G.graph["int_to_type_code"] = {v: k for k, v in type_code_to_int.items()}
     return G
