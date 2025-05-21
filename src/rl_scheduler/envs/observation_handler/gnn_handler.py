@@ -8,13 +8,26 @@ from rl_scheduler.scheduler import Scheduler
 from rl_scheduler.graph import graph_to_heterodata
 
 
+MAX_NUM_MACHINES = 10
+MAX_NUM_OPERATIONS = 300
+MAX_NUM_ASSIGNMENTS = 300
+MAX_NUM_COMPLETIONS = 300
+MAX_NUM_TYPE_VALID = 300
+MAX_NUM_LOGICAL = 300
+
+
+NUM_FEATURES_MACHINE = 3
+NUM_FEATURES_OPERATION = 4
+NUM_FEATURES_ASSIGNMENT = 3
+NUM_FEATURES_COMPLETION = 1
+
+
 class GNNHandler(ObservationHandler):
     def __init__(
         self,
         scheduler: Scheduler,
         mj_action_handler: MJHandler,
         time_horizon: int,
-        # gnn: RJSPGNN,
     ):
         self.M = len(scheduler.machine_templates)
         self.J = len(scheduler.job_templates)
@@ -168,9 +181,58 @@ class GNNHandler(ObservationHandler):
                 # "schedule_heatmap": spaces.Box(
                 #     low=-1, high=2, shape=(self.M, self.time_horizon), dtype=np.int8
                 # ),
-                "schedule_heatmap": spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(128,), dtype=np.float32
+                "g_machine_x": spaces.Box(
+                    low=0,
+                    high=self.time_horizon,
+                    shape=(MAX_NUM_MACHINES, NUM_FEATURES_MACHINE),
+                    dtype=np.int16,
                 ),
+                "g_operation_x": spaces.Box(
+                    low=0,
+                    high=self.time_horizon,
+                    shape=(MAX_NUM_OPERATIONS, NUM_FEATURES_OPERATION),
+                    dtype=np.int16,
+                ),
+                "g_edge_idx_assignment": spaces.Box(
+                    low=0,
+                    high=MAX_NUM_OPERATIONS,
+                    shape=(2, MAX_NUM_ASSIGNMENTS),
+                    dtype=np.int16,
+                ),
+                "g_edge_attr_assignment": spaces.Box(
+                    low=0,
+                    high=self.time_horizon,
+                    shape=(MAX_NUM_ASSIGNMENTS, NUM_FEATURES_ASSIGNMENT),
+                    dtype=np.int16,
+                ),
+                "g_edge_idx_completion": spaces.Box(
+                    low=0,
+                    high=MAX_NUM_OPERATIONS,
+                    shape=(2, MAX_NUM_COMPLETIONS),
+                    dtype=np.int16,
+                ),
+                "g_edge_attr_completion": spaces.Box(
+                    low=0,
+                    high=self.time_horizon,
+                    shape=(MAX_NUM_COMPLETIONS, NUM_FEATURES_COMPLETION),
+                    dtype=np.int16,
+                ),
+                "g_edge_idx_type_valid": spaces.Box(
+                    low=0,
+                    high=MAX_NUM_OPERATIONS,
+                    shape=(2, MAX_NUM_TYPE_VALID),
+                    dtype=np.int16,
+                ),
+                "g_edge_idx_logical": spaces.Box(
+                    low=0,
+                    high=MAX_NUM_OPERATIONS,
+                    shape=(2, MAX_NUM_LOGICAL),
+                    dtype=np.int16,
+                ),
+                # No need to define correct Space
+                # "RJSPGraph": spaces.Box(
+                #     low=-np.inf, high=np.inf, shape=(128, ), dtype=np.float32
+                # ),
                 # schedule_buffer 관련 지표
                 "schedule_buffer_job_repeat": spaces.Box(
                     low=-1, high=10, shape=(self.J,), dtype=np.int16
@@ -283,14 +345,78 @@ class GNNHandler(ObservationHandler):
         #         start_time = op.start_time
         #         end_time = op.end_time
         #         schedule_heatmap[machine_id, start_time:end_time] = 1
+        # ---------- Graph part ----------------------------------------- #
         data = graph_to_heterodata(self.scheduler.graph_sync.G)
-        if data.get("edge_attr_dict") is not None:
-            edge_attr_dict = data.edge_attr_dict
-        else:
-            edge_attr_dict = None
 
-        out_x_dict, g = self.gnn(data.x_dict, data.edge_index_dict, edge_attr_dict)
-        schedule_heatmap = g.detach().cpu().numpy()
+        # helper to pad or create zero arrays
+        def pad_edge_index(raw_idx, max_edges):
+            out = np.zeros((2, max_edges), dtype=np.int16)
+            if raw_idx is not None and raw_idx.size > 0:
+                n = min(raw_idx.shape[1], max_edges)
+                out[:, :n] = raw_idx[:, :n]
+            return out
+
+        def pad_edge_attr(raw_attr, max_edges, feat_dim):
+            out = np.zeros((max_edges, feat_dim), dtype=np.int16)
+            if raw_attr is not None and raw_attr.size > 0:
+                n = min(raw_attr.shape[0], max_edges)
+                out[:n, :] = raw_attr[:n, :]
+            return out
+
+        # machine → operation assignment
+        if ("machine", "assignment", "operation") in data.edge_index_dict:
+            raw_idx = (
+                data["machine", "assignment", "operation"].edge_index.cpu().numpy()
+            )
+            raw_attr = (
+                data["machine", "assignment", "operation"].edge_attr.cpu().numpy()
+                if "edge_attr" in data["machine", "assignment", "operation"]
+                else None
+            )
+        else:
+            raw_idx = raw_attr = None
+
+        edge_idx_assignment = pad_edge_index(raw_idx, MAX_NUM_ASSIGNMENTS)
+        edge_attr_assignment = pad_edge_attr(
+            raw_attr, MAX_NUM_ASSIGNMENTS, NUM_FEATURES_ASSIGNMENT
+        )
+
+        # operation → operation completion
+        if ("operation", "completion", "operation") in data.edge_index_dict:
+            raw_idx_c = (
+                data["operation", "completion", "operation"].edge_index.cpu().numpy()
+            )
+            raw_attr_c = (
+                data["operation", "completion", "operation"].edge_attr.cpu().numpy()
+                if "edge_attr" in data["operation", "completion", "operation"]
+                else None
+            )
+        else:
+            raw_idx_c = raw_attr_c = None
+
+        edge_idx_completion = pad_edge_index(raw_idx_c, MAX_NUM_COMPLETIONS)
+        edge_attr_completion = pad_edge_attr(
+            raw_attr_c, MAX_NUM_COMPLETIONS, NUM_FEATURES_COMPLETION
+        )
+
+        # other relations always exist; still pad to fixed size
+        edge_idx_type_valid = pad_edge_index(
+            data["operation", "type_valid", "machine"].edge_index.cpu().numpy(),
+            MAX_NUM_TYPE_VALID,
+        )
+        edge_idx_logical = pad_edge_index(
+            data["operation", "logical", "operation"].edge_index.cpu().numpy(),
+            MAX_NUM_LOGICAL,
+        )
+
+        machine_x = pad_edge_attr(
+            data["machine"].x.cpu().numpy(), MAX_NUM_MACHINES, NUM_FEATURES_MACHINE
+        ).squeeze()  # -> (MAX_NUM_MACHINES,)
+        operation_x = pad_edge_attr(
+            data["operation"].x.cpu().numpy(),
+            MAX_NUM_OPERATIONS,
+            NUM_FEATURES_OPERATION,
+        ).squeeze()
 
         # 3 job buffer features
         # 3-1 remaining repeats
@@ -413,7 +539,15 @@ class GNNHandler(ObservationHandler):
             "hole_length_per_machine": machine_idletime,
             "machine_utilization_rate": machine_util_rate,
             "remaining_repeats": remaining_repeats,
-            "schedule_heatmap": schedule_heatmap,
+            # "RJSPGraph": rjsp_graph,
+            "g_machine_x": machine_x,
+            "g_operation_x": operation_x,
+            "g_edge_idx_assignment": edge_idx_assignment,
+            "g_edge_attr_assignment": edge_attr_assignment,
+            "g_edge_idx_completion": edge_idx_completion,
+            "g_edge_attr_completion": edge_attr_completion,
+            "g_edge_idx_type_valid": edge_idx_type_valid,
+            "g_edge_idx_logical": edge_idx_logical,
             "schedule_buffer_job_repeat": highest_priority_job_instance,
             "schedule_buffer_operation_index": next_op_indices,
             "cur_op_earliest_start": next_op_earliest_starts,

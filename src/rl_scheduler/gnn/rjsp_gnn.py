@@ -68,21 +68,19 @@ class RJSPGNN(nn.Module):
 
         self.out_dim = 2 * hidden_dim
 
-    def forward(self, x_dict, edge_index_dict, edge_attr_dict=None):
-        # 1) Encoding node features
+    # --- helper: run on a *single* graph ------------------------------ #
+    def _forward_single(self, x_dict, edge_index_dict, edge_attr_dict):
+        # 1) Encode
         x_dict["machine"] = self.machine_encoder(x_dict["machine"])
         x_dict["operation"] = self.operation_encoder(x_dict["operation"])
 
-        # 2) Ensure edge_attr_dict exists for GINEConv relations
+        # 2) zero‑fill edge_attr if needed
         if edge_attr_dict is None:
             edge_attr_dict = {}
-
-        # Provide zero‑filled dummies for relations that expect features
-        feature_dims = {
+        for rel, dim in {
             ("machine", "assignment", "operation"): self.num_features_assignment,
             ("operation", "completion", "operation"): self.num_features_completion,
-        }
-        for rel, dim in feature_dims.items():
+        }.items():
             if rel in edge_index_dict and rel not in edge_attr_dict:
                 num_e = edge_index_dict[rel].size(1)
                 edge_attr_dict[rel] = torch.zeros(
@@ -90,30 +88,37 @@ class RJSPGNN(nn.Module):
                     dtype=x_dict["machine"].dtype,
                     device=edge_index_dict[rel].device,
                 )
-
-        # 2) Message passing
+        # 3) message passing
         for conv in self.convs:
             x_dict = conv(x_dict, edge_index_dict, edge_attr_dict)
 
-        # 3) Global embedding
+        # 4) global pooling (single graph → mean/attention)
         if self.use_global_attention:
-            # Global attention pooling
-            g_machine = self.global_machine_attention(
-                x_dict["machine"]
-            )  # [1, hidden_dim]
-            g_operation = self.global_operation_attention(
-                x_dict["operation"]
-            )  # [1, hidden_dim]
+            g_m = self.global_machine_attention(x_dict["machine"])
+            g_o = self.global_operation_attention(x_dict["operation"])
         else:
-            # Average pooling
-            g_machine = x_dict["machine"].mean(dim=0, keepdim=True)
-            g_operation = x_dict["operation"].mean(dim=0, keepdim=True)
+            g_m = x_dict["machine"].mean(dim=0, keepdim=True)
+            g_o = x_dict["operation"].mean(dim=0, keepdim=True)
+        return torch.cat([g_m, g_o], dim=-1)  # [1, 2*h]
 
-        # Concatenate global embeddings
-        # [1, 2 * hidden_dim]
-        g = torch.cat([g_machine, g_operation], dim=-1)
+    def forward(self, x_dict, edge_index_dict, edge_attr_dict=None):
+        # Detect batched input (3‑dim tensors)
+        if x_dict["machine"].dim() == 3:
+            B = x_dict["machine"].size(0)
+            g_list = []
+            for b in range(B):
+                sub_x = {k: v[b] for k, v in x_dict.items()}
+                sub_ei = {k: v[b] for k, v in edge_index_dict.items()}
+                sub_ea = (
+                    {k: v[b] for k, v in edge_attr_dict.items()}
+                    if edge_attr_dict is not None
+                    else None
+                )
+                g_list.append(self._forward_single(sub_x, sub_ei, sub_ea))
+            return torch.cat(g_list, dim=0)  # [B, 2*h]
 
-        return x_dict, g
+        # Non‑batched path
+        return self._forward_single(x_dict, edge_index_dict, edge_attr_dict)
 
     def check_validity(self, x_dict, edge_index_dict, edge_attr_dict):
         required_node_types = ["machine", "operation"]
@@ -265,6 +270,6 @@ if __name__ == "__main__":
     model.check_validity(data.x_dict, data.edge_index_dict, data.edge_attr_dict)
 
     # Forward pass
-    out_x_dict, g = model(data.x_dict, data.edge_index_dict, data.edge_attr_dict)
-    print(f"Output x_dict shapes: {[x.shape for x in out_x_dict.values()]}")
+    g = model(data.x_dict, data.edge_index_dict, data.edge_attr_dict)
+    # print(f"Output x_dict shapes: {[x.shape for x in out_x_dict.values()]}")
     print(f"Global embedding g shape: {g.shape}")
