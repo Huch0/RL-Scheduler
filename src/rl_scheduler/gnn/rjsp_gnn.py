@@ -3,6 +3,7 @@ from torch_geometric.nn import HeteroConv, GINEConv, SAGEConv
 from torch_geometric.nn import Linear
 import torch.nn as nn
 from torch_geometric.data import HeteroData
+from torch_geometric.nn import AttentionalAggregation
 
 NUM_FEATURES_MACHINE = 3
 NUM_FEATURES_OPERATION = 4
@@ -18,6 +19,7 @@ class RJSPGNN(nn.Module):
         num_features_operation=NUM_FEATURES_OPERATION,
         num_features_assignment=NUM_FEATURES_ASSIGNMENT,
         num_features_completion=NUM_FEATURES_COMPLETION,
+        use_global_attention=False,
     ):
         super().__init__()
         self.convs = nn.ModuleList()
@@ -54,24 +56,69 @@ class RJSPGNN(nn.Module):
             )
         )
 
-    def forward(self, x_dict, edge_index_dict, edge_attr_dict):
-        # 1) Encoding node features
+        # Global Attention Layer (if needed)
+        self.use_global_attention = use_global_attention
+        if self.use_global_attention:
+            self.global_machine_attention = AttentionalAggregation(
+                gate_nn=Linear(hidden_dim, hidden_dim)
+            )
+            self.global_operation_attention = AttentionalAggregation(
+                gate_nn=Linear(hidden_dim, hidden_dim)
+            )
+
+        self.out_dim = 2 * hidden_dim
+
+    # --- helper: run on a *single* graph ------------------------------ #
+    def _forward_single(self, x_dict, edge_index_dict, edge_attr_dict):
+        # 1) Encode
         x_dict["machine"] = self.machine_encoder(x_dict["machine"])
         x_dict["operation"] = self.operation_encoder(x_dict["operation"])
 
-        # 2) Message passing
+        # 2) zero‑fill edge_attr if needed
+        if edge_attr_dict is None:
+            edge_attr_dict = {}
+        for rel, dim in {
+            ("machine", "assignment", "operation"): self.num_features_assignment,
+            ("operation", "completion", "operation"): self.num_features_completion,
+        }.items():
+            if rel in edge_index_dict and rel not in edge_attr_dict:
+                num_e = edge_index_dict[rel].size(1)
+                edge_attr_dict[rel] = torch.zeros(
+                    (num_e, dim),
+                    dtype=x_dict["machine"].dtype,
+                    device=edge_index_dict[rel].device,
+                )
+        # 3) message passing
         for conv in self.convs:
             x_dict = conv(x_dict, edge_index_dict, edge_attr_dict)
 
-        # 3) Global Embedding for each node type
-        g_machine = x_dict["machine"].mean(dim=0, keepdim=True)
-        g_operation = x_dict["operation"].mean(dim=0, keepdim=True)
+        # 4) global pooling (single graph → mean/attention)
+        if self.use_global_attention:
+            g_m = self.global_machine_attention(x_dict["machine"])
+            g_o = self.global_operation_attention(x_dict["operation"])
+        else:
+            g_m = x_dict["machine"].mean(dim=0, keepdim=True)
+            g_o = x_dict["operation"].mean(dim=0, keepdim=True)
+        return torch.cat([g_m, g_o], dim=-1)  # [1, 2*h]
 
-        # 4) Concatenate global embeddings
-        # [1, 2 * hidden_dim]
-        g = torch.cat([g_machine, g_operation], dim=-1)
+    def forward(self, x_dict, edge_index_dict, edge_attr_dict=None):
+        # Detect batched input (3‑dim tensors)
+        if x_dict["machine"].dim() == 3:
+            B = x_dict["machine"].size(0)
+            g_list = []
+            for b in range(B):
+                sub_x = {k: v[b] for k, v in x_dict.items()}
+                sub_ei = {k: v[b] for k, v in edge_index_dict.items()}
+                sub_ea = (
+                    {k: v[b] for k, v in edge_attr_dict.items()}
+                    if edge_attr_dict is not None
+                    else None
+                )
+                g_list.append(self._forward_single(sub_x, sub_ei, sub_ea))
+            return torch.cat(g_list, dim=0)  # [B, 2*h]
 
-        return x_dict, g
+        # Non‑batched path
+        return self._forward_single(x_dict, edge_index_dict, edge_attr_dict)
 
     def check_validity(self, x_dict, edge_index_dict, edge_attr_dict):
         required_node_types = ["machine", "operation"]
@@ -92,12 +139,15 @@ class RJSPGNN(nn.Module):
                 f"Edge types in edge_index_dict should be " f"{required_edge_types}."
             )
 
-        # Assignment and Completion edges should have features
-        if edge_attr_dict[("machine", "assignment", "operation")] is None:
-            raise ValueError("Edge attributes for assignment edges should not be None.")
-
-        if edge_attr_dict[("operation", "completion", "operation")] is None:
-            raise ValueError("Edge attributes for completion edges should not be None.")
+        # assignment / completion may be absent; if present, must match dim
+        for rel, dim in [
+            (("machine", "assignment", "operation"), self.num_features_assignment),
+            (("operation", "completion", "operation"), self.num_features_completion),
+        ]:
+            if rel in edge_index_dict:
+                if rel in edge_attr_dict and edge_attr_dict[rel] is not None:
+                    if edge_attr_dict[rel].size(1) != dim:
+                        raise ValueError(f"Edge_attr dim mismatch for {rel}.")
 
         # Type_valid edges should have no features
         if edge_attr_dict.get(("operation", "type_valid", "machine")) is not None:
@@ -216,10 +266,10 @@ if __name__ == "__main__":
     print(f"Data: {data}")
 
     # Initialize the model
-    model = RJSPGNN(hidden_dim=64)
+    model = RJSPGNN(hidden_dim=64, use_global_attention=True)
     model.check_validity(data.x_dict, data.edge_index_dict, data.edge_attr_dict)
 
     # Forward pass
-    out_x_dict, g = model(data.x_dict, data.edge_index_dict, data.edge_attr_dict)
-    print(f"Output x_dict: {out_x_dict}")
-    print(f"Global embedding g: {g}")
+    g = model(data.x_dict, data.edge_index_dict, data.edge_attr_dict)
+    # print(f"Output x_dict shapes: {[x.shape for x in out_x_dict.values()]}")
+    print(f"Global embedding g shape: {g.shape}")

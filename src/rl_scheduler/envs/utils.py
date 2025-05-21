@@ -56,7 +56,7 @@ def make_env(
 
     if not isinstance(observation_handler, ObservationHandler):
         # Special case
-        if observation_handler == "mlp" or observation_handler == "cnn":
+        if observation_handler in ["mlp", "cnn", "gnn"]:
             # MLPHandler requires a MJHandler
             if not isinstance(action_handler, MJHandler):
                 raise ValueError(

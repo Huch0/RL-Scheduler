@@ -14,6 +14,7 @@ from .observation_handler import (
     BasicStateHandler,
     ObservationHandler,
     CNNHandler,
+    GNNHandler,
 )
 from .reward_handler import ProfitCostHandler, MakespanHandler, RewardHandler
 from .info_handler import InfoHandler, BasicInfoHandler
@@ -34,6 +35,7 @@ _OBSERVATION_HANDLERS: Mapping[str, Type[ObservationHandler]] = {
     "basic": BasicStateHandler,
     "mlp": MLPHandler,
     "cnn": CNNHandler,
+    "gnn": GNNHandler,
 }
 
 _REWARD_HANDLERS: Mapping[str, Type[RewardHandler]] = {
