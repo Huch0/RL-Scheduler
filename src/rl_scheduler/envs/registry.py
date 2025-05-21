@@ -5,11 +5,16 @@ from typing import Mapping, Type
 from rl_scheduler.contract_generator import (
     ContractGenerator,
     DeterministicGenerator,
-    StochasticGenerator
+    StochasticGenerator,
 )
 
 from .action_handler import MJHandler, MJRHandler, ActionHandler
-from .observation_handler import MLPHandler, BasicStateHandler, ObservationHandler
+from .observation_handler import (
+    MLPHandler,
+    BasicStateHandler,
+    ObservationHandler,
+    CNNHandler,
+)
 from .reward_handler import ProfitCostHandler, MakespanHandler, RewardHandler
 from .info_handler import InfoHandler, BasicInfoHandler
 from rl_scheduler.scheduler import Scheduler
@@ -28,6 +33,7 @@ _ACTION_HANDLERS: Mapping[str, Type[ActionHandler]] = {
 _OBSERVATION_HANDLERS: Mapping[str, Type[ObservationHandler]] = {
     "basic": BasicStateHandler,
     "mlp": MLPHandler,
+    "cnn": CNNHandler,
 }
 
 _REWARD_HANDLERS: Mapping[str, Type[RewardHandler]] = {
