@@ -68,10 +68,28 @@ class RJSPGNN(nn.Module):
 
         self.out_dim = 2 * hidden_dim
 
-    def forward(self, x_dict, edge_index_dict, edge_attr_dict):
+    def forward(self, x_dict, edge_index_dict, edge_attr_dict=None):
         # 1) Encoding node features
         x_dict["machine"] = self.machine_encoder(x_dict["machine"])
         x_dict["operation"] = self.operation_encoder(x_dict["operation"])
+
+        # 2) Ensure edge_attr_dict exists for GINEConv relations
+        if edge_attr_dict is None:
+            edge_attr_dict = {}
+
+        # Provide zero‑filled dummies for relations that expect features
+        feature_dims = {
+            ("machine", "assignment", "operation"): self.num_features_assignment,
+            ("operation", "completion", "operation"): self.num_features_completion,
+        }
+        for rel, dim in feature_dims.items():
+            if rel in edge_index_dict and rel not in edge_attr_dict:
+                num_e = edge_index_dict[rel].size(1)
+                edge_attr_dict[rel] = torch.zeros(
+                    (num_e, dim),
+                    dtype=x_dict["machine"].dtype,
+                    device=edge_index_dict[rel].device,
+                )
 
         # 2) Message passing
         for conv in self.convs:
@@ -116,12 +134,15 @@ class RJSPGNN(nn.Module):
                 f"Edge types in edge_index_dict should be " f"{required_edge_types}."
             )
 
-        # Assignment and Completion edges should have features
-        if edge_attr_dict[("machine", "assignment", "operation")] is None:
-            raise ValueError("Edge attributes for assignment edges should not be None.")
-
-        if edge_attr_dict[("operation", "completion", "operation")] is None:
-            raise ValueError("Edge attributes for completion edges should not be None.")
+        # assignment / completion may be absent; if present, must match dim
+        for rel, dim in [
+            (("machine", "assignment", "operation"), self.num_features_assignment),
+            (("operation", "completion", "operation"), self.num_features_completion),
+        ]:
+            if rel in edge_index_dict:
+                if rel in edge_attr_dict and edge_attr_dict[rel] is not None:
+                    if edge_attr_dict[rel].size(1) != dim:
+                        raise ValueError(f"Edge_attr dim mismatch for {rel}.")
 
         # Type_valid edges should have no features
         if edge_attr_dict.get(("operation", "type_valid", "machine")) is not None:
