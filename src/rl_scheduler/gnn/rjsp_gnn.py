@@ -3,6 +3,7 @@ from torch_geometric.nn import HeteroConv, GINEConv, SAGEConv
 from torch_geometric.nn import Linear
 import torch.nn as nn
 from torch_geometric.data import HeteroData
+from torch_geometric.nn import AttentionalAggregation
 
 NUM_FEATURES_MACHINE = 3
 NUM_FEATURES_OPERATION = 4
@@ -18,6 +19,7 @@ class RJSPGNN(nn.Module):
         num_features_operation=NUM_FEATURES_OPERATION,
         num_features_assignment=NUM_FEATURES_ASSIGNMENT,
         num_features_completion=NUM_FEATURES_COMPLETION,
+        use_global_attention=False,
     ):
         super().__init__()
         self.convs = nn.ModuleList()
@@ -54,6 +56,18 @@ class RJSPGNN(nn.Module):
             )
         )
 
+        # Global Attention Layer (if needed)
+        self.use_global_attention = use_global_attention
+        if self.use_global_attention:
+            self.global_machine_attention = AttentionalAggregation(
+                gate_nn=Linear(hidden_dim, hidden_dim)
+            )
+            self.global_operation_attention = AttentionalAggregation(
+                gate_nn=Linear(hidden_dim, hidden_dim)
+            )
+
+        self.out_dim = 2 * hidden_dim
+
     def forward(self, x_dict, edge_index_dict, edge_attr_dict):
         # 1) Encoding node features
         x_dict["machine"] = self.machine_encoder(x_dict["machine"])
@@ -63,11 +77,21 @@ class RJSPGNN(nn.Module):
         for conv in self.convs:
             x_dict = conv(x_dict, edge_index_dict, edge_attr_dict)
 
-        # 3) Global Embedding for each node type
-        g_machine = x_dict["machine"].mean(dim=0, keepdim=True)
-        g_operation = x_dict["operation"].mean(dim=0, keepdim=True)
+        # 3) Global embedding
+        if self.use_global_attention:
+            # Global attention pooling
+            g_machine = self.global_machine_attention(
+                x_dict["machine"]
+            )  # [1, hidden_dim]
+            g_operation = self.global_operation_attention(
+                x_dict["operation"]
+            )  # [1, hidden_dim]
+        else:
+            # Average pooling
+            g_machine = x_dict["machine"].mean(dim=0, keepdim=True)
+            g_operation = x_dict["operation"].mean(dim=0, keepdim=True)
 
-        # 4) Concatenate global embeddings
+        # Concatenate global embeddings
         # [1, 2 * hidden_dim]
         g = torch.cat([g_machine, g_operation], dim=-1)
 
@@ -216,10 +240,10 @@ if __name__ == "__main__":
     print(f"Data: {data}")
 
     # Initialize the model
-    model = RJSPGNN(hidden_dim=64)
+    model = RJSPGNN(hidden_dim=64, use_global_attention=True)
     model.check_validity(data.x_dict, data.edge_index_dict, data.edge_attr_dict)
 
     # Forward pass
     out_x_dict, g = model(data.x_dict, data.edge_index_dict, data.edge_attr_dict)
-    print(f"Output x_dict: {out_x_dict}")
-    print(f"Global embedding g: {g}")
+    print(f"Output x_dict shapes: {[x.shape for x in out_x_dict.values()]}")
+    print(f"Global embedding g shape: {g.shape}")
