@@ -1,97 +1,93 @@
 # ── pyg_converter.py ──────────────────────────────────────
 from typing import Dict, List, Tuple
-import networkx as nx
-import torch
+import networkx as nx, torch
 from torch_geometric.data import HeteroData
 
-# ── 노드/엣지 인코딩 헬퍼 ────────────────────────────────────
+# -------------------- helpers ----------------------------
 def encode_node(feat: Dict, ntype: str) -> List[float]:
-    if ntype == "operation":
+    if ntype == "operation":           # 4-dim
         return [
             feat.get("id", 0),
             feat.get("type", 0),
             feat.get("duration", 0),
             feat.get("job_id", 0),
         ]
-    elif ntype == "machine":
+    if ntype == "machine":             # 3-dim
         return [
             feat.get("id", 0),
             feat.get("queue_len", 0),
             feat.get("busy_until", 0),
         ]
-    else:
-        return []
+    return []
 
 def encode_edge(feat: Dict, etype: str) -> List[float]:
-    if etype == "assignment":      # 3-dim
+    if etype == "assignment":          # [start, end, rep]
         return [
             feat.get("start_time", 0.0),
             feat.get("end_time",   0.0),
             feat.get("repetition", 0.0),
         ]
-    elif etype == "completion":    # 1-dim
-        return [feat.get("repetition", 0.0)]
-    else:                          # no features
-        return []
+    if etype == "completion":          # [rep]  (≡ job_id fallback)
+        return [feat.get("repetition", feat.get("job_instance_id", 0.0))]
+    return []                          # type_valid / logical
 
-# ── 메인 변환 함수 ─────────────────────────────────────────
+# -------------------- main -------------------------------
 def graph_to_heterodata(G: nx.MultiDiGraph) -> HeteroData:
     data = HeteroData()
 
-    # 1) 노드 id 재매핑 (타입별 개별 인덱스)
-    op_nodes      = [n for n,d in G.nodes(data=True) if d["ntype"]=="operation"]
-    mach_nodes    = [n for n,d in G.nodes(data=True) if d["ntype"]=="machine"]
-    op_id_map     = {n:i for i,n in enumerate(op_nodes)}
-    mach_id_map   = {n:i for i,n in enumerate(mach_nodes)}
+    # 1) 타입별 id 재매핑 ---------------------------------------------------
+    ops   = [n for n, d in G.nodes(data=True) if d["ntype"] == "operation"]
+    machs = [n for n, d in G.nodes(data=True) if d["ntype"] == "machine"]
+    op_id   = {n: i for i, n in enumerate(ops)}
+    mach_id = {n: i for i, n in enumerate(machs)}
 
-    # 2) 노드 feature 텐서
+    # 2) 노드 feature -------------------------------------------------------
     data["operation"].x = torch.tensor(
-        [encode_node(G.nodes[n]["features"], "operation") for n in op_nodes],
+        [encode_node(G.nodes[n]["features"], "operation") for n in ops],
         dtype=torch.float,
     )
     data["machine"].x = torch.tensor(
-        [encode_node(G.nodes[n]["features"], "machine") for n in mach_nodes],
+        [encode_node(G.nodes[n]["features"], "machine") for n in machs],
         dtype=torch.float,
     )
 
-    # 3) 엣지 관계별 버킷 초기화
-    buckets: Dict[Tuple[str,str,str], List[List[int]]] = {}
-    eattr  : Dict[Tuple[str,str,str], List[List[float]]] = {}
+    # 3) relation bucket ----------------------------------------------------
+    buckets: dict[Tuple[str, str, str], list[list[int]]] = {}
+    eattrs : dict[Tuple[str, str, str], list[list[float]]] = {}
 
-    def push(src, rel, dst, u, v, attr):
-        key = (src, rel, dst)
+    def push(src_t, rel, dst_t, u_raw, v_raw, attr):
+        try:
+            u = op_id[u_raw]   if src_t == "operation" else mach_id[u_raw]
+            v = op_id[v_raw]   if dst_t == "operation" else mach_id[v_raw]
+        except KeyError:       # 방어적 skip (예: mapping 실패)
+            return
+        key = (src_t, rel, dst_t)
         buckets.setdefault(key, []).append([u, v])
         if attr is not None:
-            eattr.setdefault(key, []).append(attr)
+            eattrs.setdefault(key, []).append(attr)
 
-    # 4) 모든 엣지를 타입별로 수집
-    for u,v,k,d in G.edges(keys=True, data=True):
-        etype = d["etype"]
-        if etype=="assignment":
-            push("machine","assignment","operation",
-                 mach_id_map[u], op_id_map[v],
-                 encode_edge(d["features"], "assignment"))
-        elif etype=="completion":
-            push("operation","completion","operation",
-                 op_id_map[u], op_id_map[v],
-                 encode_edge(d["features"], "completion"))
-        elif etype=="type_valid":
-            push("operation","type_valid","machine",
-                 op_id_map[u], mach_id_map[v], None)
-        elif etype=="logical":
-            push("operation","logical","operation",
-                 op_id_map[u], op_id_map[v], None)
+    # 4) 엣지 수집 ----------------------------------------------------------
+    for u, v, _, d in G.edges(keys=True, data=True):
+        et = d["etype"]
+        if et == "assignment":
+            push("machine", "assignment", "operation",
+                 u, v, encode_edge(d["features"], et))
+        elif et == "completion":
+            push("operation", "completion", "operation",
+                 u, v, encode_edge(d["features"], et))
+        elif et == "type_valid":
+            push("operation", "type_valid", "machine", u, v, None)
+        elif et == "logical":
+            push("operation", "logical", "operation", u, v, None)
 
-    # 5) buckets → HeteroData
-    for rel, edges in buckets.items():
+    # 5) HeteroData 채우기 --------------------------------------------------
+    for rel, edge_list in buckets.items():
         src, rel_name, dst = rel
-        ei = torch.tensor(edges, dtype=torch.long).t().contiguous()  # [2, E]
-        data[src, rel_name, dst].edge_index = ei
-
-        # edge_attr 존재 여부에 따라 저장
-        if rel in eattr:
-            data[src, rel_name, dst].edge_attr = torch.tensor(
-                eattr[rel], dtype=torch.float
+        ei = torch.tensor(edge_list, dtype=torch.long).t().contiguous()
+        data[(src, rel_name, dst)].edge_index = ei
+        if rel in eattrs:                                    # feature 존재
+            data[(src, rel_name, dst)].edge_attr = torch.tensor(
+                eattrs[rel], dtype=torch.float
             )
 
     return data
