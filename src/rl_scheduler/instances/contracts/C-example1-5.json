@@ -1,0 +1,110 @@
+{
+    "contracts": {
+        "job_0": [
+            {
+                "job_instance_id": 0,
+                "price": 1000.0,
+                "deadline": 15,
+                "late_penalty": 50.0
+            },
+            {
+                "job_instance_id": 1,
+                "price": 1000.0,
+                "deadline": 16,
+                "late_penalty": 50.0
+            },
+            {
+                "job_instance_id": 2,
+                "price": 1000.0,
+                "deadline": 17,
+                "late_penalty": 50.0
+            }
+        ],
+        "job_1": [
+            {
+                "job_instance_id": 0,
+                "price": 1500.0,
+                "deadline": 25,
+                "late_penalty": 75.0
+            },
+            {
+                "job_instance_id": 1,
+                "price": 1500.0,
+                "deadline": 26,
+                "late_penalty": 75.0
+            },
+            {
+                "job_instance_id": 2,
+                "price": 1500.0,
+                "deadline": 27,
+                "late_penalty": 75.0
+            }
+        ],
+        "job_2": [
+            {
+                "job_instance_id": 0,
+                "price": 1200.0,
+                "deadline": 20,
+                "late_penalty": 60.0
+            },
+            {
+                "job_instance_id": 1,
+                "price": 1200.0,
+                "deadline": 21,
+                "late_penalty": 60.0
+            },
+            {
+                "job_instance_id": 2,
+                "price": 1200.0,
+                "deadline": 22,
+                "late_penalty": 60.0
+            }
+        ],
+        "job_3": [
+            {
+                "job_instance_id": 0,
+                "price": 1800.0,
+                "deadline": 22,
+                "late_penalty": 80.0
+            },
+            {
+                "job_instance_id": 1,
+                "price": 1800.0,
+                "deadline": 23,
+                "late_penalty": 80.0
+            },
+            {
+                "job_instance_id": 2,
+                "price": 1800.0,
+                "deadline": 24,
+                "late_penalty": 80.0
+            }
+        ],
+        "job_4": [
+            {
+                "job_instance_id": 0,
+                "price": 2000.0,
+                "deadline": 30,
+                "late_penalty": 100.0
+            },
+            {
+                "job_instance_id": 1,
+                "price": 2000.0,
+                "deadline": 31,
+                "late_penalty": 100.0
+            },
+            {
+                "job_instance_id": 2,
+                "price": 2000.0,
+                "deadline": 32,
+                "late_penalty": 100.0
+            },
+            {
+                "job_instance_id": 3,
+                "price": 2000.0,
+                "deadline": 33,
+                "late_penalty": 100.0
+            }
+        ]
+    }
+}
